@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import TerminalLogMonitorPanel from '../TerminalLogMonitorPanel.vue'
+import TerminalLogMonitorPanel from '../TerminalLogMonitorPanel.vue';
 </script>
 
 <style scoped lang="scss">

@@ -1,6 +1,7 @@
 <template>
   <div class="add-tab-container">
     <button
+      ref="buttonRef"
       @click="toggleMenu"
       class="add-tab-btn"
       :class="{ 'menu-open': showMenu }"
@@ -10,7 +11,15 @@
     </button>
 
     <!-- Add Tab Menu -->
-    <div v-if="showMenu" class="add-tab-menu" @click.stop>
+    <div 
+      v-if="showMenu" 
+      class="add-tab-menu" 
+      @click.stop
+      :style="{
+        top: menuPosition.top + 'px',
+        left: menuPosition.left + 'px'
+      }"
+    >
       <!-- Terminal (Direct Action) -->
       <button 
         @click="addTab('terminal')"
@@ -41,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 
 interface Emits {
   (e: 'add-tab', type: 'terminal' | 'ai-agent'): void
@@ -50,11 +59,32 @@ interface Emits {
 const emit = defineEmits<Emits>()
 
 const showMenu = ref(false)
+const menuPosition = ref({ top: 0, left: 0 })
+const buttonRef = ref<HTMLElement | null>(null)
 
-const toggleMenu = () => {
+const toggleMenu = async () => {
   console.log('🔥 Toggle menu clicked, current state:', showMenu.value)
   showMenu.value = !showMenu.value
   console.log('🔥 Menu state after toggle:', showMenu.value)
+  
+  if (showMenu.value && buttonRef.value) {
+    // Calculate position relative to viewport for fixed positioning
+    const rect = buttonRef.value.getBoundingClientRect()
+    menuPosition.value = {
+      top: rect.bottom + 2, // 2px gap
+      left: rect.right - 180 // Align to right edge, accounting for menu width
+    }
+    console.log('🔥 Calculated menu position:', menuPosition.value)
+  }
+  
+  // Debug: Check if menu element exists in DOM
+  await nextTick()
+  const menuEl = document.querySelector('.add-tab-menu')
+  console.log('🔥 Menu element in DOM:', menuEl)
+  if (menuEl) {
+    const rect = menuEl.getBoundingClientRect()
+    console.log('🔥 Menu actual position:', { top: rect.top, left: rect.left, width: rect.width, height: rect.height })
+  }
 }
 
 const addTab = (type: 'terminal' | 'ai-agent') => {
@@ -95,6 +125,7 @@ onUnmounted(() => {
 .add-tab-container {
   position: relative;
   flex-shrink: 0;
+  z-index: 1000; /* Ensure container has higher z-index */
 }
 
 .add-tab-btn {
@@ -124,16 +155,14 @@ onUnmounted(() => {
 }
 
 .add-tab-menu {
-  @include context-menu;
-  
-  position: absolute;
-  top: 100%;
-  right: 0;
+  position: fixed !important; // Use fixed positioning to escape overflow containers
   min-width: 180px;
-  overflow: hidden;
-  z-index: 1000; // Ensure menu appears above other elements
-  background-color: var(--color-bg-primary); // Ensure background is set
-  border: 1px solid var(--color-border-primary); // Add border for visibility
+  z-index: 10000; // Very high z-index to ensure visibility
+  background-color: #2d2d2d; // Solid background color
+  border: 1px solid #444; // Visible border
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); // Enhanced shadow for better visibility
+  padding: 4px 0;
 }
 
 .menu-section {
@@ -145,21 +174,33 @@ onUnmounted(() => {
 }
 
 .menu-item {
-  @include context-menu-item;
-  
-  gap: $spacing-sm;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   position: relative;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: #3d3d3d;
+  }
 
   &.terminal-item:hover {
-    background-color: var(--color-secondary-light);
-    color: var(--color-secondary);
+    background-color: #2196f3;
+    color: #ffffff;
   }
 
   &.ai-agent-item:hover {
-    background-color: var(--color-accent-purple-light);
-    color: var(--color-accent-purple);
+    background-color: #9c27b0;
+    color: #ffffff;
   }
-
 }
 
 .menu-icon {
@@ -178,25 +219,7 @@ onUnmounted(() => {
   background: transparent;
 }
 
-// Animation for menu item appearance
-.menu-item {
-  opacity: 0;
-  transform: translateY(-4px);
-  animation: menuItemAppear 0.2s ease forwards;
-
-  @for $i from 1 through 5 {
-    &:nth-child(#{$i}) {
-      animation-delay: #{($i - 1) * 0.03}s;
-    }
-  }
-}
-
-@keyframes menuItemAppear {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+// Remove animations for now to ensure visibility
 
 // Enhanced hover effects
 .menu-item {

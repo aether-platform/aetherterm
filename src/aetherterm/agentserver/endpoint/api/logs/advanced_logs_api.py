@@ -13,8 +13,8 @@ from typing import Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from aetherterm.agentserver.infrastructure.config.storage_config import StorageConfig
-from aetherterm.agentserver.logprocessing.log_processing_manager import LogProcessingManager
+from aetherterm.langchain.config.storage_config import StorageConfig
+from aetherterm.logprocessing.log_processing_manager import LogProcessingManager
 
 logger = logging.getLogger(__name__)
 

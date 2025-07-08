@@ -17,6 +17,7 @@
         @select-all="handleSelectAll"
       />
       <div class="pane-content">
+        <TerminalStatus :session-id="panes[0].sessionId" />
         <AetherTerminalComponent 
           :id="panes[0].id" 
           mode="pane"
@@ -46,6 +47,7 @@
           @export-buffer="handleExportBuffer"
         />
         <div class="pane-content">
+          <TerminalStatus :session-id="pane.sessionId" />
           <AetherTerminalComponent 
             :id="pane.id" 
             mode="pane"
@@ -81,6 +83,7 @@
           @export-buffer="handleExportBuffer"
         />
         <div class="pane-content">
+          <TerminalStatus :session-id="pane.sessionId" />
           <AetherTerminalComponent 
             :id="pane.id" 
             mode="pane"
@@ -121,6 +124,7 @@
           @export-buffer="handleExportBuffer"
         />
         <div class="pane-content">
+          <TerminalStatus :session-id="pane.sessionId" />
           <AetherTerminalComponent 
             :id="pane.id" 
             mode="pane"
@@ -138,6 +142,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTerminalPaneStore, type TerminalPane } from '../../stores/terminalPaneStore'
 import AetherTerminalComponent from './AetherTerminalComponent.vue'
 import PaneHeader from './PaneHeader.vue'
+import TerminalStatus from './TerminalStatus.vue'
 
 interface Props {
   tabId: string

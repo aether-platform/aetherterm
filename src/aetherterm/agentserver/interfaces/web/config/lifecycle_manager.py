@@ -43,6 +43,7 @@ class SocketIOEventRegistrar:
             ("create_terminal", socket_handlers.create_terminal),
             ("resume_workspace", socket_handlers.resume_workspace),
             ("resume_terminal", socket_handlers.resume_terminal),
+            ("reconnect_session", socket_handlers.reconnect_session),
             ("terminal_input", socket_handlers.terminal_input),
             ("terminal_resize", socket_handlers.terminal_resize),
         ]

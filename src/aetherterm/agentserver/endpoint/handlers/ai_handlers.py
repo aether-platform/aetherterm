@@ -15,8 +15,9 @@ from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import As
 log = logging.getLogger("aetherterm.handlers.ai")
 
 
-async def ai_chat_message(sid, data, sio_instance):
+async def ai_chat_message(sid, data):
     """Handle AI chat message requests."""
+    from aetherterm.agentserver.endpoint.websocket.socket_handlers import sio_instance
     container = get_container()
     ai_service = container.infrastructure.ai_service()
     try:
@@ -82,8 +83,9 @@ async def ai_chat_message(sid, data, sio_instance):
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
 
 
-async def ai_log_search(sid, data, sio_instance):
+async def ai_log_search(sid, data):
     """Search logs using AI-enhanced matching."""
+    from aetherterm.agentserver.endpoint.websocket.socket_handlers import sio_instance
     container = get_container()
     ai_service = container.infrastructure.ai_service()
     try:
@@ -122,8 +124,9 @@ async def ai_log_search(sid, data, sio_instance):
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
 
 
-async def ai_search_suggestions(sid, data, sio_instance):
+async def ai_search_suggestions(sid, data):
     """Get search term suggestions for log search."""
+    from aetherterm.agentserver.endpoint.websocket.socket_handlers import sio_instance
     container = get_container()
     ai_service = container.infrastructure.ai_service()
     try:
@@ -140,6 +143,44 @@ async def ai_search_suggestions(sid, data, sio_instance):
 
     except Exception as e:
         log.error(f"Failed to get search suggestions: {e}")
+        await sio_instance.emit("error", {"message": str(e)}, room=sid)
+
+
+async def ai_get_info(sid, data):
+    """Get AI service information and status."""
+    print(f"DEBUG: ai_get_info called from sid: {sid}")
+    log.info(f"ai_get_info called from sid: {sid}")
+    
+    # Get sio_instance from global or container
+    from aetherterm.agentserver.endpoint.websocket.socket_handlers import sio_instance
+    
+    container = get_container()
+    ai_service = container.infrastructure.ai_service()
+    print(f"DEBUG: AI service provider: {ai_service.provider}")
+    try:
+        # Get AI service info
+        provider_name = ai_service.provider_name
+        model_info = ai_service.get_model_info()
+        is_connected = await ai_service.check_connection()
+        
+        response_data = {
+            "provider": provider_name,
+            "model": model_info.get("model", "unknown"),
+            "available": is_connected,  # Frontend expects 'available' not 'is_connected'
+            "status": "connected" if is_connected else "disconnected",
+            "capabilities": {
+                "chat": True,
+                "log_search": True,
+                "streaming": True
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        log.info(f"Sending ai_info_response: {response_data}")
+        await sio_instance.emit("ai_info_response", response_data, room=sid)
+        
+    except Exception as e:
+        log.error(f"Failed to get AI info: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
 
 

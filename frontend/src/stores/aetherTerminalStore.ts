@@ -6,7 +6,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 
 // 型定義
@@ -57,11 +57,21 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     connectionState.error = undefined
 
     try {
-      // Socket.IO接続を作成
+      // Get workspace token for cross-window session sharing
+      const { WorkspaceTokenManager } = await import('./workspace/workspaceToken')
+      const workspaceToken = WorkspaceTokenManager.getOrCreateToken()
+      
+      // Socket.IO接続を作成 - Performance optimized
       socket.value = io('http://localhost:57575', {
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-        forceNew: true
+        transports: ['websocket'], // Websocket only for better performance
+        timeout: 5000, // Reduced timeout
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
+        auth: {
+          workspaceToken
+        }
       })
 
       // 接続イベントのセットアップ
@@ -73,14 +83,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
           connectionState.isConnecting = false
           connectionState.error = 'Connection timeout'
           resolve(false)
-        }, 10000)
+        }, 5000) // Reduced connection timeout
 
         socket.value?.on('connect', () => {
           clearTimeout(timeout)
           connectionState.isConnected = true
           connectionState.isConnecting = false
           connectionState.lastConnected = new Date()
-          console.log('✅ AETHER_TERMINAL: Connected successfully')
+          console.log('✅ AETHER_TERMINAL: Connected successfully with token:', workspaceToken)
           resolve(true)
         })
 
@@ -111,11 +121,12 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       console.log('🔌 AETHER_TERMINAL: Disconnected:', reason)
     })
 
-    // ターミナル出力イベント（統一）
+    // ターミナル出力イベント（統一）- Performance optimized
     socket.value.on('terminal_output', (data: any) => {
       if (data?.session && data?.data) {
         const callback = outputCallbacks.value.get(data.session)
         if (callback) {
+          // Remove debug logging for performance
           callback(data.data)
         }
       }
@@ -130,20 +141,90 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     })
   }
 
+  // Session reconnection attempt - 最適化された再接続
+  const attemptSessionReconnection = async (sessionId: string): Promise<boolean> => {
+    if (!socket.value?.connected) {
+      return false
+    }
+
+    return new Promise((resolve) => {
+      const handleTerminalReady = (data: any) => {
+        if (data.session === sessionId) {
+          socket.value?.off('terminal_ready', handleTerminalReady)
+          socket.value?.off('terminal_error', handleError)
+          
+          // Register the reconnected session
+          sessions.value.set(sessionId, {
+            id: sessionId,
+            type: data.type || 'pane',
+            terminalId: data.terminalId || sessionId,
+            isActive: true,
+            createdAt: new Date()
+          })
+          resolve(true)
+        }
+      }
+
+      const handleError = (data: any) => {
+        if (data.session === sessionId) {
+          socket.value?.off('terminal_ready', handleTerminalReady)
+          socket.value?.off('terminal_error', handleError)
+          resolve(false)
+        }
+      }
+
+      socket.value?.on('terminal_ready', handleTerminalReady)
+      socket.value?.on('terminal_error', handleError)
+      
+      // Use resume_terminal instead of reconnect_session for better history support
+      socket.value?.emit('resume_terminal', { 
+        sessionId: sessionId,
+        cols: 80,
+        rows: 24
+      })
+
+      // Reduced timeout for faster UX
+      setTimeout(() => {
+        socket.value?.off('terminal_ready', handleTerminalReady)
+        socket.value?.off('terminal_error', handleError)
+        resolve(false)
+      }, 2000)
+    })
+  }
+
   // セッション管理
   const requestSession = async (
     terminalId: string, 
     mode: 'tab' | 'pane', 
     subType: string = 'pure'
   ): Promise<string | null> => {
-    if (!socket.value?.connected) {
-      console.error('❌ AETHER_TERMINAL: Cannot request session - no connection')
+    // Check both connection state and socket connection
+    if (!connectionState.isConnected || !socket.value?.connected) {
+      console.error('❌ AETHER_TERMINAL: Cannot request session - no connection', {
+        connectionState: connectionState.isConnected,
+        socketConnected: socket.value?.connected,
+        socketExists: !!socket.value
+      })
       return null
     }
 
-    const sessionId = `aether_${mode}_${terminalId}_${Date.now()}`
+    const sessionId = `aether_${mode}_${terminalId}`
     
-    console.log('🔄 AETHER_TERMINAL: Requesting session:', sessionId)
+    // Check if session already exists and is active
+    const existingSession = sessions.value.get(sessionId)
+    if (existingSession && existingSession.isActive) {
+      console.log('🔄 AETHER_TERMINAL: Using existing session:', sessionId)
+      return sessionId
+    }
+    
+    // Check if this session exists on the server (reconnection scenario)
+    const reconnectAttempt = await attemptSessionReconnection(sessionId)
+    if (reconnectAttempt) {
+      console.log('✅ AETHER_TERMINAL: Successfully reconnected to existing session:', sessionId)
+      return sessionId
+    }
+    
+    console.log('🔄 AETHER_TERMINAL: Requesting new session:', sessionId)
 
     return new Promise((resolve) => {
       const handleTerminalReady = (data: any) => {
@@ -170,7 +251,8 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         cols: 80,
         rows: 24,
         [mode === 'pane' ? 'paneId' : 'tabId']: terminalId,
-        subType: subType
+        subType: subType,
+        reconnect: existingSession ? true : false // Indicate if this is a reconnection attempt
       })
 
       // タイムアウト処理
@@ -224,10 +306,78 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     console.log('🔌 AETHER_TERMINAL: Disconnected and cleaned up')
   }
 
+  // セッション再接続
+  const reconnectSession = (sessionId: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (!socket.value?.connected) {
+        console.warn('⚠️ AETHER_TERMINAL: Cannot reconnect - no connection')
+        resolve(false)
+        return
+      }
+
+      console.log('🔄 AETHER_TERMINAL: Attempting to reconnect to session:', sessionId)
+      
+      const handleReady = (data: any) => {
+        if (data.session === sessionId) {
+          socket.value?.off('terminal_ready', handleReady)
+          socket.value?.off('terminal_error', handleError)
+          console.log('✅ AETHER_TERMINAL: Reconnected to session:', sessionId)
+          resolve(true)
+        }
+      }
+
+      const handleError = (data: any) => {
+        socket.value?.off('terminal_ready', handleReady)
+        socket.value?.off('terminal_error', handleError)
+        console.error('❌ AETHER_TERMINAL: Failed to reconnect:', data.error)
+        resolve(false)
+      }
+
+      socket.value.on('terminal_ready', handleReady)
+      socket.value.on('terminal_error', handleError)
+      
+      // Send reconnect_session event
+      socket.value.emit('reconnect_session', { session: sessionId })
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        socket.value?.off('terminal_ready', handleReady)
+        socket.value?.off('terminal_error', handleError)
+        resolve(false)
+      }, 5000)
+    })
+  }
+
+  // セッション情報取得（デバッグ用）
+  const getSessionInfo = (sessionId: string): Promise<any> => {
+    return new Promise((resolve) => {
+      if (!socket.value?.connected) {
+        resolve({ error: 'Not connected' })
+        return
+      }
+
+      const handleInfo = (data: any) => {
+        socket.value?.off('session_info', handleInfo)
+        resolve(data)
+      }
+
+      socket.value.on('session_info', handleInfo)
+      socket.value.emit('get_session_info', { session: sessionId })
+
+      setTimeout(() => {
+        socket.value?.off('session_info', handleInfo)
+        resolve({ error: 'Timeout' })
+      }, 2000)
+    })
+  }
+
+  // Getter for socket
+  const getSocket = () => socket.value
+
   return {
     // 状態
     connectionState,
-    socket,
+    socket: computed(() => socket.value),
     sessions,
 
     // 接続管理
@@ -237,10 +387,15 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     // セッション管理
     requestSession,
     closeSession,
+    reconnectSession,
 
     // 通信
     sendInput,
     registerOutputCallback,
-    unregisterOutputCallback
+    unregisterOutputCallback,
+
+    // Helper
+    getSocket,
+    getSessionInfo
   }
 })

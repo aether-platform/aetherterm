@@ -9,7 +9,7 @@
 ```bash
 # Backend setup
 uv sync && make build-frontend
-make run-agentserver ARGS="--host=localhost --port=57575 --unsecure --debug"
+make run  # Starts development server with supervisord
 
 # Frontend development  
 cd frontend && pnpm install && pnpm dev
@@ -38,35 +38,49 @@ cd frontend && pnpm install && pnpm dev
 **Add dependencies**: Python (`pyproject.toml` + `uv sync`), Node (`package.json` + `pnpm install`)  
 **Testing**: `pytest` (Python), `pnpm type-check` (frontend)
 
+## Development Server Commands
+
+```bash
+make run      # Start development server with supervisord
+make stop     # Stop server
+make restart  # Restart server  
+make status   # Check server status
+make logs     # View server logs
+```
+
 ## Troubleshooting
 
-**Process monitoring**: `ps aux | grep agentserver`  
+**Process monitoring**: `make status` or `ps aux | grep agentserver`  
 **Port status**: `ss -tulpn | grep 57575` or `lsof -i :57575`  
 **Health check**: `curl http://localhost:57575/health`  
 **Dependencies**: Missing modules → `uv add <module>` → `uv sync`
 
 ## Supervisord Process Management
 
-**Setup**: `supervisord` already installed at `/root/.local/bin/supervisord`
+**IMPORTANT**: This project EXCLUSIVELY uses supervisord for process management and logging.
 
-**Config file** (`/etc/supervisor/conf.d/aetherterm.conf`):
-```ini
-[program:agentserver]
-command=uv run aetherterm-agentserver --host=localhost --port=57575 --unsecure --debug
-directory=/mnt/c/workspace/vibecoding-platform/app/terminal
-user=root
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=/var/log/supervisor/agentserver.log
-stdout_logfile_maxbytes=50MB
-stdout_logfile_backups=10
+**Design Decision**: 
+- Supervisord handles all process lifecycle management
+- Reduces token usage by eliminating manual process management
+- Prevents coding agents from spending time on infrastructure tasks
+- Enables focus on actual application development
+
+**Configuration**: `./supervisord.conf` (local file)  
+**Logs**: `./run/agentserver.log` (local directory)  
+**PID files**: `./run/` (local directory)
+
+**Usage**:
+```bash
+make run      # Start once - runs continuously
+make restart  # Only when needed
+make status   # Check process health
+make logs     # View aggregated logs
 ```
 
-**Commands**:
-- Start: `supervisorctl start agentserver`
-- Stop: `supervisorctl stop agentserver`
-- Restart: `supervisorctl restart agentserver`
-- Status: `supervisorctl status`
-- Logs: `supervisorctl tail -f agentserver`
-- Real-time logs: `tail -f /var/log/supervisor/agentserver.log`
+**DO NOT**:
+- Manually start/stop Python processes
+- Use `python -m uvicorn` directly
+- Manage process states manually
+- Implement custom process management
+
+The `make run` command handles all supervisord startup and management automatically.

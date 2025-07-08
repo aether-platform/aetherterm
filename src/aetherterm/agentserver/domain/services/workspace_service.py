@@ -1,221 +1,215 @@
 """
-Workspace Management Service - Application Layer
+Workspace Service for AetherTerm
 
-Handles workspace and terminal lifecycle operations.
+Manages workspace persistence in memory for session continuity
 """
 
+from typing import Dict, List, Optional
+from datetime import datetime
 import logging
-from typing import Any, Dict, List
-from uuid import uuid4
+import json
 
-from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
+from ..entities.workspace import Workspace, WorkspaceTab, WorkspacePane
 
-log = logging.getLogger("aetherterm.application.workspace")
+log = logging.getLogger(__name__)
 
 
 class WorkspaceService:
-    """Manages workspace and terminal lifecycle operations."""
-
+    """Service for managing workspaces in memory"""
+    
     def __init__(self):
-        self.session_owners: Dict[str, str] = {}  # session_id -> client_sid
-        self.client_sids: Dict[str, List[str]] = {}  # client_sid -> session_ids
-
-    async def create_terminal(
-        self,
-        client_sid: str,
-        session_id: str,
-        tab_id: str,
-        pane_id: str,
-        sub_type: str = "terminal",
-        pane_type: str = "terminal",
-        cols: int = 80,
-        rows: int = 24,
-        user: str = "",
-        path: str = "",
-    ) -> Dict[str, Any]:
-        """Create a new terminal session."""
-        try:
-            log.info(f"Creating terminal session {session_id} for client {client_sid}")
-
-            terminal = AsyncioTerminal(
-                session_id=session_id, cols=cols, rows=rows, user=user, path=path
+        # In-memory storage for workspaces
+        # Key: user_id, Value: Dict[workspace_id, Workspace]
+        self._user_workspaces: Dict[str, Dict[str, Workspace]] = {}
+        
+        # Quick lookup for active workspaces
+        # Key: user_id, Value: workspace_id
+        self._active_workspaces: Dict[str, str] = {}
+        
+        log.info("WorkspaceService initialized with in-memory storage")
+    
+    def create_workspace(self, user_id: str, name: str = "Default Workspace") -> Workspace:
+        """Create a new workspace for a user"""
+        workspace = Workspace(user_id=user_id, name=name)
+        
+        # Initialize user's workspace dict if not exists
+        if user_id not in self._user_workspaces:
+            self._user_workspaces[user_id] = {}
+        
+        # Store the workspace
+        self._user_workspaces[user_id][workspace.id] = workspace
+        
+        # Set as active workspace
+        self._active_workspaces[user_id] = workspace.id
+        
+        log.info(f"Created workspace {workspace.id} for user {user_id}")
+        return workspace
+    
+    def get_workspace(self, user_id: str, workspace_id: str) -> Optional[Workspace]:
+        """Get a specific workspace"""
+        if user_id in self._user_workspaces:
+            workspace = self._user_workspaces[user_id].get(workspace_id)
+            if workspace:
+                workspace.update_last_accessed()
+                return workspace
+        return None
+    
+    def get_user_workspaces(self, user_id: str) -> List[Workspace]:
+        """Get all workspaces for a user"""
+        if user_id in self._user_workspaces:
+            return list(self._user_workspaces[user_id].values())
+        return []
+    
+    def get_active_workspace(self, user_id: str) -> Optional[Workspace]:
+        """Get the active workspace for a user"""
+        if user_id in self._active_workspaces:
+            workspace_id = self._active_workspaces[user_id]
+            return self.get_workspace(user_id, workspace_id)
+        
+        # If no active workspace, try to get the most recent one
+        workspaces = self.get_user_workspaces(user_id)
+        if workspaces:
+            # Sort by last accessed
+            workspaces.sort(key=lambda w: w.last_accessed, reverse=True)
+            workspace = workspaces[0]
+            self._active_workspaces[user_id] = workspace.id
+            return workspace
+        
+        return None
+    
+    def set_active_workspace(self, user_id: str, workspace_id: str) -> bool:
+        """Set the active workspace for a user"""
+        workspace = self.get_workspace(user_id, workspace_id)
+        if workspace:
+            self._active_workspaces[user_id] = workspace_id
+            workspace.is_active = True
+            
+            # Deactivate other workspaces
+            for ws_id, ws in self._user_workspaces.get(user_id, {}).items():
+                if ws_id != workspace_id:
+                    ws.is_active = False
+            
+            log.info(f"Set active workspace to {workspace_id} for user {user_id}")
+            return True
+        return False
+    
+    def update_workspace(self, user_id: str, workspace_id: str, workspace_data: Dict) -> Optional[Workspace]:
+        """Update a workspace with new data"""
+        workspace = self.get_workspace(user_id, workspace_id)
+        if workspace:
+            # Update workspace from dict
+            if 'name' in workspace_data:
+                workspace.name = workspace_data['name']
+            
+            if 'tabs' in workspace_data:
+                workspace.tabs = [WorkspaceTab.from_dict(tab) for tab in workspace_data['tabs']]
+            
+            if 'layout' in workspace_data:
+                layout = workspace_data['layout']
+                workspace.layout_type = layout.get('type', workspace.layout_type)
+                workspace.layout_config = layout.get('configuration', workspace.layout_config)
+            
+            workspace.update_last_accessed()
+            log.info(f"Updated workspace {workspace_id} for user {user_id}")
+            return workspace
+        return None
+    
+    def delete_workspace(self, user_id: str, workspace_id: str) -> bool:
+        """Delete a workspace"""
+        if user_id in self._user_workspaces and workspace_id in self._user_workspaces[user_id]:
+            del self._user_workspaces[user_id][workspace_id]
+            
+            # If this was the active workspace, clear it
+            if self._active_workspaces.get(user_id) == workspace_id:
+                del self._active_workspaces[user_id]
+            
+            log.info(f"Deleted workspace {workspace_id} for user {user_id}")
+            return True
+        return False
+    
+    def save_workspace_from_client(self, user_id: str, workspace_data: Dict) -> Optional[Workspace]:
+        """Save or update a workspace from client data"""
+        workspace_id = workspace_data.get('id')
+        
+        if not workspace_id:
+            # Create new workspace
+            workspace = Workspace.from_dict(workspace_data)
+            workspace.user_id = user_id
+            
+            if user_id not in self._user_workspaces:
+                self._user_workspaces[user_id] = {}
+            
+            self._user_workspaces[user_id][workspace.id] = workspace
+            log.info(f"Saved new workspace {workspace.id} for user {user_id}")
+            return workspace
+        else:
+            # Update existing workspace
+            return self.update_workspace(user_id, workspace_id, workspace_data)
+    
+    def get_or_create_default_workspace(self, user_id: str) -> Workspace:
+        """Get the active workspace or create a default one"""
+        workspace = self.get_active_workspace(user_id)
+        if not workspace:
+            workspace = self.create_workspace(user_id, "Default Workspace")
+            
+            # Add a default terminal tab
+            default_tab = WorkspaceTab(
+                id=f"tab_{datetime.utcnow().timestamp()}",
+                title="Terminal 1",
+                type='terminal',
+                is_active=True
             )
-
-            terminal.client_sids.add(client_sid)
-
-            # Track session ownership
-            self.session_owners[session_id] = client_sid
-            if client_sid not in self.client_sids:
-                self.client_sids[client_sid] = []
-            self.client_sids[client_sid].append(session_id)
-
-            await terminal.start()
-
-            return {
-                "status": "success",
-                "session_id": session_id,
-                "tab_id": tab_id,
-                "pane_id": pane_id,
-                "type": pane_type,
-                "sub_type": sub_type,
-                "cols": cols,
-                "rows": rows,
-            }
-
-        except Exception as e:
-            log.error(f"Failed to create terminal {session_id}: {e}")
-            return {"status": "error", "error": str(e), "session_id": session_id}
-
-    async def resume_workspace(
-        self, client_sid: str, workspace_id: str, tabs: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Resume a workspace with multiple tabs and panes."""
-        try:
-            log.info(f"Resuming workspace {workspace_id} for client {client_sid}")
-
-            resumed_tabs = []
-            created_tabs = []
-
-            for tab in tabs:
-                tab_id = tab.get("tabId")
-                tab_title = tab.get("title", f"Tab {tab_id}")
-                tab_layout = tab.get("layout", {})
-                panes = tab.get("panes", [])
-
-                resumed_panes = []
-                created_panes = []
-
-                for pane in panes:
-                    pane_result = await self._process_pane(client_sid, tab_id, pane)
-
-                    if pane_result["status"] == "resumed":
-                        resumed_panes.append(pane_result)
-                    else:
-                        created_panes.append(pane_result)
-
-                if resumed_panes:
-                    resumed_tabs.append(
-                        {
-                            "tabId": tab_id,
-                            "title": tab_title,
-                            "layout": tab_layout,
-                            "panes": resumed_panes,
-                            "status": "resumed",
-                        }
-                    )
-
-                if created_panes:
-                    created_tabs.append(
-                        {
-                            "tabId": tab_id,
-                            "title": tab_title,
-                            "layout": tab_layout,
-                            "panes": created_panes,
-                            "status": "created",
-                        }
-                    )
-
-            return {
-                "workspaceId": workspace_id,
-                "status": "success",
-                "resumedTabs": resumed_tabs,
-                "createdTabs": created_tabs,
-                "totalTabs": len(tabs),
-                "totalPanes": sum(len(tab.get("panes", [])) for tab in resumed_tabs + created_tabs),
-                "message": f"Workspace resumed with {len(resumed_tabs)} existing and {len(created_tabs)} new tab configurations",
-            }
-
-        except Exception as e:
-            log.error(f"Failed to resume workspace {workspace_id}: {e}")
-            return {"workspaceId": workspace_id, "status": "error", "error": str(e)}
-
-    async def _process_pane(
-        self, client_sid: str, tab_id: str, pane: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Process individual pane - resume or create new."""
-        pane_id = pane.get("paneId")
-        session_id = pane.get("sessionId")
-        pane_type = pane.get("type", "terminal")
-        sub_type = pane.get("subType", "terminal")
-        pane_title = pane.get("title", f"Pane {pane_id}")
-        position = pane.get("position", {})
-
-        # Check if session exists and is active
-        if session_id and session_id in AsyncioTerminal.sessions:
-            existing_terminal = AsyncioTerminal.sessions[session_id]
-            if not existing_terminal.closed:
-                log.info(f"Resuming existing terminal session {session_id} for pane {pane_id}")
-                existing_terminal.client_sids.add(client_sid)
-
-                return {
-                    "paneId": pane_id,
-                    "sessionId": session_id,
-                    "status": "resumed",
-                    "type": pane_type,
-                    "subType": sub_type,
-                    "title": pane_title,
-                    "position": position,
-                    "history": existing_terminal.history,
-                }
-
-        # Create new terminal session
-        new_session_id = session_id or f"terminal_{pane_id}_{uuid4().hex[:8]}"
-
-        result = await self.create_terminal(
-            client_sid=client_sid,
-            session_id=new_session_id,
-            tab_id=tab_id,
-            pane_id=pane_id,
-            sub_type=sub_type,
-            pane_type=pane_type,
-            cols=80,
-            rows=24,
-        )
-
-        return {
-            "paneId": pane_id,
-            "sessionId": new_session_id,
-            "status": "created",
-            "type": pane_type,
-            "subType": sub_type,
-            "title": pane_title,
-            "position": position,
+            workspace.add_tab(default_tab)
+        
+        return workspace
+    
+    def export_user_workspaces(self, user_id: str) -> str:
+        """Export all user workspaces as JSON"""
+        workspaces = self.get_user_workspaces(user_id)
+        data = {
+            'userId': user_id,
+            'workspaces': [ws.to_dict() for ws in workspaces],
+            'activeWorkspaceId': self._active_workspaces.get(user_id),
+            'exportedAt': datetime.utcnow().isoformat()
         }
-
-    async def terminal_input(self, session_id: str, data: str) -> bool:
-        """Send input to terminal session."""
+        return json.dumps(data, indent=2)
+    
+    def import_user_workspaces(self, user_id: str, json_data: str) -> int:
+        """Import workspaces from JSON data"""
         try:
-            if session_id in AsyncioTerminal.sessions:
-                terminal = AsyncioTerminal.sessions[session_id]
-                if not terminal.closed:
-                    await terminal.write(data)
-                    return True
-            return False
+            data = json.loads(json_data)
+            imported_count = 0
+            
+            # Clear existing workspaces for the user
+            self._user_workspaces[user_id] = {}
+            
+            # Import workspaces
+            for ws_data in data.get('workspaces', []):
+                workspace = Workspace.from_dict(ws_data)
+                workspace.user_id = user_id
+                self._user_workspaces[user_id][workspace.id] = workspace
+                imported_count += 1
+            
+            # Set active workspace
+            active_id = data.get('activeWorkspaceId')
+            if active_id and active_id in self._user_workspaces[user_id]:
+                self._active_workspaces[user_id] = active_id
+            
+            log.info(f"Imported {imported_count} workspaces for user {user_id}")
+            return imported_count
+            
         except Exception as e:
-            log.error(f"Failed to send input to terminal {session_id}: {e}")
-            return False
-
-    async def terminal_resize(self, session_id: str, cols: int, rows: int) -> bool:
-        """Resize terminal session."""
-        try:
-            if session_id in AsyncioTerminal.sessions:
-                terminal = AsyncioTerminal.sessions[session_id]
-                if not terminal.closed:
-                    await terminal.resize(cols, rows)
-                    return True
-            return False
-        except Exception as e:
-            log.error(f"Failed to resize terminal {session_id}: {e}")
-            return False
-
-    def cleanup_client_sessions(self, client_sid: str):
-        """Clean up sessions when client disconnects."""
-        if client_sid in self.client_sids:
-            session_ids = self.client_sids[client_sid]
-            for session_id in session_ids:
-                if session_id in self.session_owners:
-                    del self.session_owners[session_id]
-                if session_id in AsyncioTerminal.sessions:
-                    terminal = AsyncioTerminal.sessions[session_id]
-                    terminal.client_sids.discard(client_sid)
-            del self.client_sids[client_sid]
+            log.error(f"Error importing workspaces: {e}")
+            return 0
+    
+    def get_stats(self) -> Dict:
+        """Get service statistics"""
+        total_users = len(self._user_workspaces)
+        total_workspaces = sum(len(ws) for ws in self._user_workspaces.values())
+        
+        return {
+            'totalUsers': total_users,
+            'totalWorkspaces': total_workspaces,
+            'activeWorkspaces': len(self._active_workspaces),
+            'memoryUsage': 'in-memory'
+        }

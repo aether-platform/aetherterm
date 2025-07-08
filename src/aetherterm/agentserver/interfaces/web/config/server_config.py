@@ -208,7 +208,7 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, str]:
     
     # Validate AI provider
     ai_provider = config.get("ai_provider", "mock")
-    valid_ai_providers = ["anthropic", "mock", "openai"]
+    valid_ai_providers = ["anthropic", "mock", "openai", "lmstudio"]
     if ai_provider not in valid_ai_providers:
         errors["ai_provider"] = f"AI provider must be one of {valid_ai_providers}, got: {ai_provider}"
     

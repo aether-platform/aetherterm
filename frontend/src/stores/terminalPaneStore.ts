@@ -22,6 +22,8 @@ export interface TerminalPane {
 export interface TerminalTabWithPanes {
   id: string
   title: string
+  type?: 'terminal' | 'ai-agent' | 'log-monitor' // タブタイプを追加
+  subType?: 'pure' | 'inventory' | 'agent' | 'main-agent'
   isActive: boolean
   panes: TerminalPane[]
   layout: 'single' | 'horizontal' | 'vertical' | 'grid'
@@ -104,6 +106,11 @@ export const useTerminalPaneStore = defineStore('terminalPane', () => {
   const getPaneSession = (paneId: string): string | undefined => {
     const pane = panes.value.find(p => p.id === paneId)
     return pane?.sessionId
+  }
+  
+  // Simply return existing session if available, don't create new ones
+  const getExistingSession = (paneId: string): string | undefined => {
+    return getPaneSession(paneId)
   }
 
   const splitPane = (
@@ -209,6 +216,7 @@ export const useTerminalPaneStore = defineStore('terminalPane', () => {
     createPane,
     setPaneSession,
     getPaneSession,
+    getExistingSession,
     splitPane,
     closePane,
     switchToPane,

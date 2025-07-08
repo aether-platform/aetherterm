@@ -10,6 +10,11 @@ const router = createRouter({
       component: TerminalComponent
     },
     {
+      path: '/debug/workspace',
+      name: 'workspace-debug',
+      component: () => import('../views/WorkspaceDebugPage.vue')
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }

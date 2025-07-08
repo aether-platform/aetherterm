@@ -30,14 +30,23 @@
       v-show="tab.isActive && !terminalTabStore.isLogMonitorActive"
       class="tab-content"
     >
-      <!-- Pane Container for modern layout -->
+      <!-- Use PaneContainer only for terminal tabs -->
       <PaneContainer
+        v-if="!tab.type || tab.type === 'terminal'"
         :tab-id="tab.id"
         :layout="tab.layout"
         @layout-changed="handleLayoutChange(tab.id, $event)"
         @pane-created="handlePaneCreated"
         @pane-closed="handlePaneClosed"
       />
+      
+      <!-- AI Agent Tab -->
+      <AIAgentTab 
+        v-else-if="tab.type === 'ai-agent'"
+        :tab-id="tab.id"
+      />
+      
+      <!-- Other special tabs can be added here -->
     </div>
     
     <!-- Fallback: Legacy Terminal Tab Content -->
@@ -187,6 +196,15 @@ const handlePaneClosed = (paneId: string) => {
   flex: 1;
   overflow: hidden;
   position: relative;
+  height: 100%;
+}
+
+.tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .command-execution-overlay {

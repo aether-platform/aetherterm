@@ -12,6 +12,7 @@ from typing import Dict, Tuple, Any
 import socketio
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 
 from aetherterm.agentserver.interfaces.web.config import (
     DEFAULT_CONFIG,
@@ -70,10 +71,13 @@ class ASGIApplicationFactory:
             version="1.0.0"
         )
         
-        # Mount static files
+        # Add Gzip compression for better performance
+        fastapi_app.add_middleware(GZipMiddleware, minimum_size=500)
+        
+        # Mount static files with optimizations
         static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
         if os.path.exists(static_path):
-            fastapi_app.mount("/static", StaticFiles(directory=static_path), name="static")
+            fastapi_app.mount("/static", StaticFiles(directory=static_path, html=True, check_dir=False), name="static")
             log.info("Static files mounted from %s", static_path)
 
         # Include routers

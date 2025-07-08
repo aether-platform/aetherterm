@@ -62,12 +62,9 @@ async def index(request: Request):
 
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "aetherterm-agentserver",
-        "version": "1.0.0",
-    }
+    """Lightweight health check endpoint for fast response."""
+    # Return minimal response for performance
+    return {"status": "ok"}
 
 
 @router.get("/local.js")

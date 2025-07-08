@@ -30,6 +30,12 @@
 
     <!-- Pane Actions -->
     <div class="pane-actions">
+      <!-- Permission Control -->
+      <TerminalPermissionControl 
+        v-if="pane.sessionId"
+        :session-id="pane.sessionId"
+      />
+      
       <!-- Search Control -->
       <v-btn
         icon
@@ -206,6 +212,14 @@
                 <td><strong>Last Activity:</strong></td>
                 <td>{{ formatDate(pane.lastActivity) }}</td>
               </tr>
+              <tr>
+                <td><strong>Buffer Lines:</strong></td>
+                <td>{{ bufferStats.totalLines }} / {{ bufferStats.maxLines }}</td>
+              </tr>
+              <tr>
+                <td><strong>Current Position:</strong></td>
+                <td>{{ bufferStats.currentLine + 1 }}</td>
+              </tr>
             </tbody>
           </table>
         </v-card-text>
@@ -222,6 +236,7 @@
 import { ref, computed, nextTick } from 'vue'
 import { useTerminalPaneStore, type TerminalPane } from '../../stores/terminalPaneStore'
 import { useScreenBufferStore } from '../../stores/screenBufferStore'
+import TerminalPermissionControl from './TerminalPermissionControl.vue'
 
 interface Props {
   pane: TerminalPane

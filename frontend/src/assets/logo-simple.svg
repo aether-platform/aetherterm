@@ -1,0 +1,13 @@
+<svg width="180" height="50" viewBox="0 0 180 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simple version with just icon and text -->
+  
+  <!-- Terminal Icon -->
+  <rect x="10" y="10" width="30" height="30" rx="4" stroke="#00ff00" stroke-width="2" fill="none"/>
+  <path d="M15 18 L20 23 L15 28" stroke="#00ff00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="23" y1="28" x2="30" y2="28" stroke="#00ff00" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Text Only -->
+  <text x="50" y="30" font-family="'Courier New', monospace" font-size="22" font-weight="bold">
+    <tspan fill="#00ff00">Aether</tspan><tspan fill="#4caf50">Term</tspan>
+  </text>
+</svg>

@@ -8,16 +8,16 @@ import AetherTermService from './services/AetherTermService'
 import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useThemeStore } from './stores/themeStore'
-import { initializeTelemetry, getEnvironmentConfig } from './utils/telemetry'
+import { initializeTelemetry } from './utils/telemetry'
 
-// Initialize OpenTelemetry for frontend tracing
-try {
-  const telemetryConfig = getEnvironmentConfig()
-  initializeTelemetry(telemetryConfig)
-  console.log('🔬 Frontend telemetry initialized')
-} catch (error) {
-  console.warn('⚠️ Frontend telemetry initialization failed:', error)
+// Initialize telemetry (currently disabled)
+const telemetryConfig = {
+  serviceName: 'aetherterm-frontend',
+  environment: import.meta.env.MODE || 'development',
+  enableConsole: import.meta.env.DEV
 }
+
+initializeTelemetry(telemetryConfig)
 
 // Register vue-advanced-chat
 register()
@@ -54,7 +54,11 @@ const initializeApp = async () => {
     console.log('🎨 THEME: Theme system initialized successfully')
     
     // Connect to service
-    await terminalStore.connect()
+    const connected = await terminalStore.connect()
+    if (!connected) {
+      console.error('🚀 APP: Failed to connect to terminal service')
+      throw new Error('Failed to connect to terminal service')
+    }
     
     // Initialize workspace system (this will resume last workspace or create default)
     await workspaceStore.initializeWorkspace()
@@ -63,7 +67,7 @@ const initializeApp = async () => {
   } catch (error) {
     console.error('🚀 APP: Failed to initialize application:', error)
     // Fallback: create default workspace if everything fails
-    workspaceStore.createDefaultWorkspace()
+    await workspaceStore.createDefaultWorkspace()
   }
 }
 

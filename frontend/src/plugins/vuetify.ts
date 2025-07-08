@@ -10,6 +10,7 @@ import {
   VCard,
   VCardText,
   VCardTitle,
+  VCardActions,
   VSelect,
   VTextField,
   VTabs,
@@ -39,6 +40,8 @@ import {
   VRadio,
   VRadioGroup,
   VTextarea,
+  VAlert,
+  VSpacer,
 } from 'vuetify/components'
 
 import { Ripple } from 'vuetify/directives'
@@ -51,6 +54,7 @@ export default createVuetify({
     VCard,
     VCardText,
     VCardTitle,
+    VCardActions,
     VSelect,
     VTextField,
     VTabs,
@@ -80,6 +84,8 @@ export default createVuetify({
     VRadio,
     VRadioGroup,
     VTextarea,
+    VAlert,
+    VSpacer,
   },
   directives: {
     Ripple,

@@ -73,8 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import TerminalTab from './AetherTerminalComponent.vue'
+import { computed, onMounted, ref } from 'vue'
 import { useTerminalTabStore } from '../../stores/terminalTabStore'
 
 interface Props {

@@ -75,7 +75,10 @@ export const useScreenBufferStore = defineStore('screenBuffer', {
         buffer.lines.splice(0, excess)
         buffer.currentLine = Math.max(0, buffer.currentLine - excess)
       }
+      
+      // Note: Persistence is handled by the backend, not localStorage
     },
+
 
     clearBuffer(sessionId: string) {
       const buffer = this.getBuffer(sessionId)

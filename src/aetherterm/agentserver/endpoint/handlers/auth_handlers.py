@@ -22,6 +22,50 @@ def get_user_info_from_environ(environ):
         "forwarded_for": environ.get("HTTP_X_FORWARDED_FOR"),
         "user_agent": environ.get("HTTP_USER_AGENT"),
     }
+    
+    # Extract JWT roles from headers (common proxy patterns)
+    # Proxies often pass roles in headers like X-Auth-Roles, X-User-Roles, etc.
+    roles = []
+    
+    # Check various common header patterns for roles
+    role_headers = [
+        "HTTP_X_AUTH_ROLES",
+        "HTTP_X_USER_ROLES",
+        "HTTP_X_ROLES",
+        "HTTP_X_JWT_ROLES",
+        "HTTP_X_AUTH_GROUPS",
+        "HTTP_X_USER_GROUPS"
+    ]
+    
+    for header in role_headers:
+        header_value = environ.get(header)
+        if header_value:
+            # Roles might be comma-separated or JSON array
+            if header_value.startswith('['):
+                # JSON array format
+                try:
+                    import json
+                    roles = json.loads(header_value)
+                    break
+                except:
+                    pass
+            else:
+                # Comma-separated format
+                roles = [r.strip() for r in header_value.split(',')]
+                break
+    
+    # Also check for JWT claims header
+    jwt_claims = environ.get("HTTP_X_JWT_CLAIMS")
+    if jwt_claims and not roles:
+        try:
+            import json
+            claims = json.loads(jwt_claims)
+            roles = claims.get("roles", [])
+        except:
+            pass
+    
+    user_info["roles"] = roles
+    
     return user_info
 
 

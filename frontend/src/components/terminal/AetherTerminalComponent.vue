@@ -9,17 +9,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch, watchEffect, nextTick } from 'vue'
-import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
-import { useTerminalTabStore } from '../../stores/terminalTabStore'
-import { useTerminalPaneStore } from '../../stores/terminalPaneStore'
-import { useThemeStore } from '../../stores/themeStore'
-import { useScreenBufferStore } from '../../stores/screenBufferStore'
+import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
+import { useScreenBufferStore } from '../../stores/screenBufferStore'
+import { useTerminalPaneStore } from '../../stores/terminalPaneStore'
+import { useTerminalTabStore } from '../../stores/terminalTabStore'
+import { useThemeStore } from '../../stores/themeStore'
+import { hasRole } from '@/utils/jwtUtils'
+import { useTerminalPermissionsStore } from '../../stores/terminalPermissionsStore'
 
 interface Props {
   id: string // ターミナルのID（tabId または paneId）
@@ -114,11 +116,13 @@ const terminalTheme = computed(() => {
   }
 })
 
-// セッション管理（統一）
+// セッション管理（統一）- 安定したセッション管理
 const getCurrentSession = () => {
-  return props.mode === 'pane' 
-    ? paneStore.getPaneSession(props.id)
-    : tabStore.getTabSession(props.id)
+  if (props.mode === 'pane') {
+    return paneStore.getPaneSession(props.id)
+  } else {
+    return tabStore.getTabSession(props.id)
+  }
 }
 
 const setCurrentSession = (newSessionId: string) => {
@@ -130,9 +134,18 @@ const setCurrentSession = (newSessionId: string) => {
   sessionId.value = newSessionId
 }
 
+// 既存のセッションIDを取得（サーバーが割り当てたもののみ）
+const getExistingSession = () => {
+  if (props.mode === 'pane') {
+    return paneStore.getPaneSession(props.id)
+  } else {
+    return tabStore.getTabSession(props.id)
+  }
+}
+
 // ターミナル初期化（シンプル化）
 const initializeTerminal = async () => {
-  console.log(`🎬 AETHER_TERMINAL: Initializing ${props.mode}:`, props.id)
+  // Reduced logging for performance
   
   await nextTick()
   
@@ -147,11 +160,16 @@ const initializeTerminal = async () => {
     theme: terminalTheme.value,
     fontSize: themeStore.themeConfig.fontSize,
     fontFamily: themeStore.themeConfig.fontFamily,
-    // 固定サイズを削除 - FitAddonに任せる
-    scrollback: 5000, // Increased to match screen buffer store capacity
-    fastScrollModifier: 'shift', // 高速スクロール有効化
-    rightClickSelectsWord: false, // 選択処理オーバーヘッド削減
-    // rendererType: 'canvas' // xterm.js 5.x では廃止されたオプション
+    scrollback: 2000, // Reduced for better performance
+    fastScrollModifier: 'shift',
+    rightClickSelectsWord: false,
+    allowProposedApi: true, // Enable performance optimizations
+    allowTransparency: false, // Disable transparency for performance
+    disableStdin: false,
+    convertEol: true,
+    // Performance optimizations
+    drawBoldTextInBrightColors: false,
+    minimumContrastRatio: 1 // Disable contrast checking for performance
   })
 
   // Load addons
@@ -188,17 +206,36 @@ const initializeTerminal = async () => {
   isInitialized.value = true
   emit('terminal-initialized')
   
-  console.log(`✅ AETHER_TERMINAL: Initialized ${props.mode}:`, props.id)
+  // Terminal initialized
 }
 
 // 入力処理（シンプル化）
 const setupInput = () => {
   if (!terminal.value) return
 
+  const permissionsStore = useTerminalPermissionsStore()
+  
   terminal.value.onData((data) => {
     if (sessionId.value) {
-      // Add input to screen buffer
-      screenBufferStore.addLine(sessionId.value, data, 'input')
+      // Check if user has Viewer role
+      const isViewer = hasRole('Viewer')
+      if (isViewer) {
+        console.warn(`⚠️ AETHER_TERMINAL: Input blocked for Viewer role`)
+        terminal.value?.write('\r\n\x1b[33m[Read-only mode: Input disabled for Viewer role]\x1b[0m\r\n')
+        return
+      }
+      
+      // Check if user has control permission
+      if (!permissionsStore.hasControlPermission(sessionId.value)) {
+        console.warn(`⚠️ AETHER_TERMINAL: Input blocked - no permission`)
+        terminal.value?.write('\r\n\x1b[33m[Read-only mode: You do not have permission to control this terminal]\x1b[0m\r\n')
+        return
+      }
+      
+      // Add input to screen buffer (only for meaningful input)
+      if (data.length > 0 && !data.match(/^\x1b/)) { // Skip escape sequences
+        screenBufferStore.addLine(sessionId.value, data, 'input')
+      }
       aetherStore.sendInput(sessionId.value, data)
     } else {
       console.warn(`⚠️ AETHER_TERMINAL: No session for ${props.mode}:`, props.id)
@@ -207,24 +244,37 @@ const setupInput = () => {
 
   // Keyboard shortcuts
   terminal.value.attachCustomKeyEventHandler((event) => {
-    // Ctrl+Shift+F for search
+    const permissionsStore = useTerminalPermissionsStore()
+    const isViewer = hasRole('Viewer')
+    const hasPermission = sessionId.value ? permissionsStore.hasControlPermission(sessionId.value) : true
+    
+    // Ctrl+Shift+F for search (allowed for all roles)
     if (event.ctrlKey && event.shiftKey && event.key === 'F') {
       event.preventDefault()
       openSearch()
       return false
     }
     
-    // Ctrl+Shift+C for copy
+    // Ctrl+Shift+C for copy (allowed for all roles)
     if (event.ctrlKey && event.shiftKey && event.key === 'C') {
       event.preventDefault()
       copySelection()
       return false
     }
     
-    // Ctrl+Shift+V for paste
+    // Ctrl+Shift+V for paste (blocked for Viewer role or no permission)
     if (event.ctrlKey && event.shiftKey && event.key === 'V') {
       event.preventDefault()
+      if (isViewer || !hasPermission) {
+        console.warn('Paste disabled: no permission')
+        return false
+      }
       pasteFromClipboard()
+      return false
+    }
+    
+    // Block all other keyboard input for Viewer role or no permission
+    if (isViewer || !hasPermission) {
       return false
     }
     
@@ -232,28 +282,71 @@ const setupInput = () => {
   })
 }
 
-// セッション要求（統一）
+// セッション要求（統一）- 安定したセッション管理
 const requestSession = async () => {
-  // 既存セッションをチェック
-  const existingSession = getCurrentSession()
+  // First check if we already have a server-assigned session ID
+  const existingSession = props.mode === 'pane' 
+    ? paneStore.getPaneSession(props.id)
+    : tabStore.getTabSession(props.id)
+    
   if (existingSession) {
-    console.log(`📋 AETHER_TERMINAL: Using existing session for ${props.mode}:`, props.id)
+    console.log(`📺 AETHER_TERMINAL: Using existing server session: ${existingSession}`)
     sessionId.value = existingSession
     setupOutput()
     return
   }
-
-  // 新しいセッションを要求
-  console.log(`🔄 AETHER_TERMINAL: Requesting new session for ${props.mode}:`, props.id)
+  // Ensure connection is established before proceeding
+  if (!aetherStore.connectionState.isConnected) {
+    console.log('⏳ AETHER_TERMINAL: Waiting for connection before requesting session...')
+    
+    // Wait a bit for the global connection to be established
+    let retries = 0
+    while (!aetherStore.connectionState.isConnected && retries < 10) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+      retries++
+    }
+    
+    if (!aetherStore.connectionState.isConnected) {
+      console.log('⏳ AETHER_TERMINAL: Still not connected, attempting direct connection...')
+      const connected = await aetherStore.connect()
+      if (!connected) {
+        console.error('❌ AETHER_TERMINAL: Failed to establish connection for session request')
+        // Continue with local-only mode
+      }
+    }
+  }
   
-  const newSessionId = await aetherStore.requestSession(props.id, props.mode, props.subType)
-  
-  if (newSessionId) {
-    setCurrentSession(newSessionId)
+  // Check if we already have a server-assigned session ID
+  const existingSessionId = getExistingSession()
+  if (existingSessionId) {
+    console.log(`📺 AETHER_TERMINAL: Found existing session: ${existingSessionId}`)
+    sessionId.value = existingSessionId
     setupOutput()
-    console.log(`✅ AETHER_TERMINAL: Session created for ${props.mode}:`, props.id, newSessionId)
-  } else {
-    console.error(`❌ AETHER_TERMINAL: Failed to create session for ${props.mode}:`, props.id)
+    
+    // Try to reconnect to this existing session
+    try {
+      const reconnected = await aetherStore.reconnectSession(existingSessionId)
+      if (reconnected) {
+        console.log(`📺 AETHER_TERMINAL: Successfully reconnected to backend session`)
+        // Backend will send history automatically via terminal_output events
+        return
+      }
+    } catch (error) {
+      console.warn('⚠️ AETHER_TERMINAL: Backend reconnection failed:', error)
+    }
+  }
+  
+  // Create new backend session if reconnection failed
+  try {
+    const newSessionId = await aetherStore.requestSession(props.id, props.mode, props.subType || 'pure')
+    if (newSessionId) {
+      // Always use the server-generated session ID
+      console.log(`📺 AETHER_TERMINAL: Server created session: ${newSessionId}`)
+      setCurrentSession(newSessionId)
+      setupOutput() // Re-setup output with new session ID
+    }
+  } catch (error) {
+    console.error('❌ AETHER_TERMINAL: Failed to create backend session:', error)
   }
 }
 
@@ -272,17 +365,68 @@ const setupOutput = () => {
     
     flushTimeout = setTimeout(() => {
       if (outputBuffer && terminal.value && sessionId.value) {
-        terminal.value.write(outputBuffer)
-        // Add output to screen buffer
-        screenBufferStore.addLine(sessionId.value, outputBuffer, 'output')
+        try {
+          // Batch write for better performance
+          terminal.value.write(outputBuffer)
+          // Add output to screen buffer - handle history vs live output
+          processOutputForScreenBuffer(sessionId.value, outputBuffer)
+        } catch (error) {
+          // Simplified error handling for performance
+          const filteredBuffer = outputBuffer.replace(/[\x7F\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+          if (filteredBuffer) {
+            try {
+              terminal.value.write(filteredBuffer)
+              processOutputForScreenBuffer(sessionId.value, filteredBuffer)
+            } catch (retryError) {
+              // Silent fail for performance
+            }
+          }
+        }
         outputBuffer = ''
       }
       flushTimeout = null
-    }, 16) // ~60fps でフラッシュ
+    }, 8) // Faster flush for better responsiveness
   }
 
   aetherStore.registerOutputCallback(sessionId.value, outputCallback)
   console.log(`📺 AETHER_TERMINAL: Output setup for ${props.mode}:`, props.id)
+}
+
+// Process output for screen buffer - simplified
+const processOutputForScreenBuffer = (sessionId: string, data: string) => {
+  // Simply add to buffer for local display
+  screenBufferStore.addLine(sessionId, data, 'output')
+}
+
+// Restore terminal content from screen buffer - 高速化
+const restoreTerminalFromBuffer = (buffer: any) => {
+  if (!terminal.value || !buffer || buffer.lines.length === 0) return
+  
+  // ターミナルをクリアしてから復元
+  terminal.value.clear()
+  
+  // バッファの内容を一括で書き込み（パフォーマンス向上）
+  const allContent = buffer.lines
+    .filter((line: any) => line.content)
+    .map((line: any) => line.content)
+    .join('')
+  
+  if (allContent && terminal.value) {
+    try {
+      terminal.value.write(allContent)
+    } catch (error) {
+      // エラーがあった場合は一行ずつ処理
+      buffer.lines.forEach((line: any) => {
+        if (line.content && terminal.value) {
+          try {
+            terminal.value.write(line.content)
+          } catch (lineError) {
+            // サイレントフェイル
+          }
+        }
+      })
+    }
+  }
 }
 
 // テーマ更新
@@ -341,27 +485,49 @@ watchEffect(() => {
   }
 })
 
+// Watch for connection state changes
+watch(() => aetherStore.connectionState.isConnected, (isConnected) => {
+  if (isConnected && !terminal.value && terminalRef.value) {
+    console.log('🔄 AETHER_TERMINAL: Connection established, initializing terminal...')
+    initializeTerminal()
+  }
+})
+
 // ライフサイクル
 onMounted(async () => {
-  console.log(`🎬 AETHER_TERMINAL: Mounted ${props.mode}:`, props.id)
+  // Terminal mounted
   
-  // 接続確保
-  if (!aetherStore.connectionState.isConnected) {
-    await aetherStore.connect()
+  // Initialize terminal immediately if already connected
+  if (aetherStore.connectionState.isConnected) {
+    initializeTerminal()
+  } else {
+    // Connection will be handled by the watcher above
+    console.log('⏳ AETHER_TERMINAL: Waiting for connection to initialize terminal...')
   }
-  
-  initializeTerminal()
 })
 
 onBeforeUnmount(() => {
-  console.log(`🗑️ AETHER_TERMINAL: Unmounting ${props.mode}:`, props.id)
+  // Terminal unmounting
   
   // クリーンアップ
   if (sessionId.value) {
     aetherStore.unregisterOutputCallback(sessionId.value)
   }
   
-  terminal.value?.dispose()
+  // Safely dispose terminal and addons
+  if (terminal.value) {
+    try {
+      terminal.value.dispose()
+    } catch (error) {
+      console.warn('⚠️ AETHER_TERMINAL: Error disposing terminal:', error)
+    }
+  }
+  
+  // Clear references
+  terminal.value = null
+  fitAddon.value = null
+  searchAddon.value = null
+  webLinksAddon.value = null
 })
 
 // Screen buffer API

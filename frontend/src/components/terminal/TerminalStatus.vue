@@ -26,27 +26,45 @@
       </div>
     </div>
 
+    <!-- Viewer Role Read-Only Status -->
+    <div v-if="isViewerRole" class="status-bar viewer-status">
+      <div class="status-indicator">
+        👁️ Read-Only Mode (Viewer Role)
+      </div>
+    </div>
+
+    <!-- No Permission Status -->
+    <div v-if="!isViewerRole && hasNoPermission" class="status-bar no-permission-status">
+      <div class="status-indicator">
+        🔒 Read-Only Mode (No Permission)
+      </div>
+    </div>
+
     <!-- Terminal Blocked Overlay -->
     <div v-if="terminalStore.isTerminalBlocked" class="terminal-overlay"></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { computed } from 'vue';
+import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore';
+import { hasRole } from '@/utils/jwtUtils';
+import { useTerminalPermissionsStore } from '../../stores/terminalPermissionsStore';
 
 interface Props {
   isTerminalPaused?: boolean
+  sessionId?: string
 }
 
 interface Emits {
   (e: 'resume'): void
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 defineEmits<Emits>()
 
 const terminalStore = useAetherTerminalServiceStore()
+const permissionsStore = useTerminalPermissionsStore()
 
 // Connection status computed properties
 const connectionStatusClass = computed(() => {
@@ -74,6 +92,21 @@ const connectionStatusText = computed(() => {
       return 'Disconnected'
   }
 })
+
+// Check if user has Viewer role
+const isViewerRole = computed(() => hasRole('Viewer'))
+
+// Check if user has control permission
+const hasNoPermission = computed(() => {
+  if (!props.sessionId) return false
+  return !permissionsStore.hasControlPermission(props.sessionId)
+})
+
+// Check if current user is the owner
+const isOwner = computed(() => {
+  if (!props.sessionId) return false
+  return permissionsStore.isOwner(props.sessionId)
+})
 </script>
 
 <style scoped lang="scss">
@@ -99,6 +132,18 @@ const connectionStatusText = computed(() => {
 }
 
 .pause-status {
+  background-color: var(--color-status-warning);
+  text-align: center;
+  color: var(--color-bg-primary);
+}
+
+.viewer-status {
+  background-color: var(--color-status-info, #1976d2);
+  text-align: center;
+  color: var(--color-text-primary);
+}
+
+.no-permission-status {
   background-color: var(--color-status-warning);
   text-align: center;
   color: var(--color-bg-primary);

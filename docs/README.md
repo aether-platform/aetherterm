@@ -1,35 +1,36 @@
-# AetherTerm Documentation
+# AetherTerm Documentation Index
 
-## 📖 Current Documentation
+## Essential Documentation
 
-### Core Integration
-- **[AGENT_INTEGRATION.md](../AGENT_INTEGRATION.md)** - MainAgent制御によるエージェント統合システム
-  - P0 Priority Features - Agent Communication Protocol  
-  - MainAgent-Controlled Startup Methods
-  - 仕様インプットシステム
-  - Max Plan環境連携
+### Root Directory
+- **[README.md](../README.md)** - Project overview and quick start
+- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - System architecture and design
+- **[CLAUDE.md](../CLAUDE.md)** - AI assistant instructions
+- **[DESIGN.md](../DESIGN.md)** - UI/UX design principles
 
-### Quick Start
-- **[CLAUDE.md](../CLAUDE.md)** - プロジェクト設定とコマンド
-- **[README.md](../README.md)** - 基本情報
+### Component Documentation
+- **[frontend/README.md](../frontend/README.md)** - Frontend development guide
+- **[controlserver/README.md](../src/aetherterm/controlserver/README.md)** - Control server documentation
 
-### Archived Documentation
-- **[archived/](./archived/)** - 廃止されたAgentShell関連の古いドキュメント
+## Archived Documentation
 
-## 🚀 Quick Reference
+The `archived/` directory contains historical documentation organized by category:
 
-### Development Commands
-```bash
-# Backend setup  
-uv sync && make build-frontend
-make run-agentserver ARGS="--host=localhost --port=57575 --unsecure --debug"
+- **analysis/** - Technical analysis and migration reports
+- **demo/** - Demo and integration reports
+- **developers/** - Detailed developer guides and phase documentation
+- **users/** - User guides and operational documentation
+- **migration/** - Clean architecture migration artifacts
 
-# Frontend development
-cd frontend && pnpm install && pnpm dev
-```
+### Archive Directory
+- **[archive/AGENT_INTEGRATION.md](./archive/AGENT_INTEGRATION.md)** - Legacy agent integration docs
 
-### Architecture
-**Flow**: ControlServer (8765) → AgentServer (57575) → MainAgent → SubAgents  
-**Key**: MainAgent controls all startup methods and agent coordination
+## Documentation Guidelines
 
-For detailed implementation and usage, see [AGENT_INTEGRATION.md](../AGENT_INTEGRATION.md).
+1. **Keep it current** - Update docs as code changes
+2. **Be concise** - Essential information only
+3. **Archive wisely** - Move outdated docs to archived/
+4. **Link appropriately** - Reference other docs when needed
+
+---
+*Use the essential docs for daily work. Archived docs for historical context.*

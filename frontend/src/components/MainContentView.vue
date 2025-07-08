@@ -42,23 +42,6 @@
       </div>
     </div>
     
-    <!-- Sidebar toggle buttons -->
-    <div class="sidebar-controls">
-      <v-btn
-        :color="showAdminPanel ? 'primary' : 'default'"
-        size="small"
-        icon="mdi-shield-account"
-        @click="toggleAdminPanel"
-        title="Toggle Admin Panel"
-      />
-      <v-btn
-        :color="showDebugPanel ? 'primary' : 'default'"
-        size="small"
-        icon="mdi-bug"
-        @click="toggleDebugPanel"
-        title="Toggle Debug Panel"
-      />
-    </div>
   </div>
 </template>
 
@@ -103,12 +86,15 @@ const toggleDebugPanel = () => {
   flex: 1;
   overflow: hidden;
   position: relative;
+  height: 100%;
 }
 
 .terminal-area {
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 .sidebar-panels {
@@ -153,21 +139,6 @@ const toggleDebugPanel = () => {
   padding: 16px;
 }
 
-.sidebar-controls {
-  position: fixed;
-  top: 50%;
-  right: 16px;
-  transform: translateY(-50%);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--v-theme-surface);
-  border: 1px solid var(--v-theme-outline);
-  border-radius: 8px;
-  padding: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
 
 .tab-content {
   display: flex;

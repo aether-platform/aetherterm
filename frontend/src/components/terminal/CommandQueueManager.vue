@@ -3,9 +3,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useTerminalTabStore } from '../../stores/terminalTabStore'
+import { ref, watch } from 'vue'
 import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { useTerminalTabStore } from '../../stores/terminalTabStore'
 
 interface QueuedCommand {
   id: string

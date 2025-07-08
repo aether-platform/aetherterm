@@ -41,33 +41,48 @@ async def create_terminal(
     sio_instance
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
-    """Create a new terminal session."""
+    """Create a new terminal session or reconnect to existing one."""
     try:
         session_id = data.get("session") or f"terminal_{uuid4().hex[:8]}"
         tab_id = data.get("tabId", "default")
         pane_id = data.get("paneId", "default")
         cols = data.get("cols", 80)
         rows = data.get("rows", 24)
+        is_reconnect = data.get("reconnect", False)
 
-        # Use injected workspace service for terminal creation
-        # result = await workspace_service.create_terminal(
-        #     client_sid=sid,
-        #     session_id=session_id,
-        #     tab_id=tab_id,
-        #     pane_id=pane_id,
-        #     cols=cols,
-        #     rows=rows,
-        # )
+        log.info(f"Terminal request - Session: {session_id}, SID: {sid}, Reconnect: {is_reconnect}")
+
+        # Use injected workspace service for terminal creation/reconnection
+        # if is_reconnect:
+        #     result = await workspace_service.reconnect_terminal(
+        #         client_sid=sid,
+        #         session_id=session_id,
+        #         cols=cols,
+        #         rows=rows,
+        #     )
+        # else:
+        #     result = await workspace_service.create_terminal(
+        #         client_sid=sid,
+        #         session_id=session_id,
+        #         tab_id=tab_id,
+        #         pane_id=pane_id,
+        #         cols=cols,
+        #         rows=rows,
+        #     )
+        
+        # Temporary mock result
         result = {
-            "session_id": session_id,
+            "session": session_id,  # Changed from session_id to session to match frontend expectation
             "tab_id": tab_id,
             "pane_id": pane_id,
             "cols": cols,
             "rows": rows,
-            "disabled": "dependency injection temporarily disabled"
+            "reconnected": is_reconnect,
+            "status": "mock_ready"
         }
 
         await sio_instance.emit("terminal_ready", result, room=sid)
+        log.info(f"Terminal ready event sent for session: {session_id}")
 
     except Exception as e:
         log.error(f"Failed to create terminal: {e}")

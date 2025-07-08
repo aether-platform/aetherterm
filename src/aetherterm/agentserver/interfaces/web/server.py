@@ -50,7 +50,7 @@ from aetherterm.agentserver.interfaces.web.config.lifecycle_manager import (
     ServerSetupOrchestrator,
     UvicornServerManager
 )
-from aetherterm.agentserver.endpoint.routes import router
+from aetherterm.agentserver.endpoint.routes.routes import router
 from aetherterm.agentserver.endpoint.websocket import socket_handlers
 
 
@@ -336,14 +336,18 @@ async def start_server(**kwargs):
     sio.on("resume_terminal", socket_handlers.resume_terminal)
     sio.on("terminal_input", socket_handlers.terminal_input)
     sio.on("terminal_resize", socket_handlers.terminal_resize)
+    sio.on("reconnect_session", socket_handlers.reconnect_session)
+    sio.on("get_session_info", socket_handlers.get_session_info)
+    
+    # Workspace management handlers
+    sio.on("save_workspace", socket_handlers.save_workspace)
+    sio.on("load_workspace", socket_handlers.load_workspace)
+    sio.on("list_workspaces", socket_handlers.list_workspaces)
 
     # Register Wrapper session sync handlers
     sio.on("wrapper_session_sync", socket_handlers.wrapper_session_sync)
     sio.on("get_wrapper_sessions", socket_handlers.get_wrapper_sessions)
 
-    # Register Block/Unblock handlers
-    sio.on("unblock_request", socket_handlers.unblock_request)
-    sio.on("get_block_status", socket_handlers.get_block_status)
 
     # P0 緊急対応: MainAgent-SubAgent通信ハンドラーを登録
     # DEPRECATED: 後方互換性のため一時的に保持（将来削除予定）
@@ -366,16 +370,13 @@ async def start_server(**kwargs):
     sio.on("log_monitor_unsubscribe", socket_handlers.log_monitor_unsubscribe)
     sio.on("log_monitor_search", socket_handlers.log_monitor_search)
 
-    # コンテキスト推論
-    sio.on("context_inference_subscribe", socket_handlers.context_inference_subscribe)
-    sio.on("predict_next_commands", socket_handlers.predict_next_commands)
-    sio.on("get_operation_analytics", socket_handlers.get_operation_analytics)
     
     # AI チャットとログ検索
     from aetherterm.agentserver.endpoint.handlers import ai_handlers
-    sio.on("ai_chat", ai_handlers.ai_chat_message)
+    sio.on("ai_chat_message", ai_handlers.ai_chat_message)  # Fixed: Match frontend event name
     sio.on("ai_log_search", ai_handlers.ai_log_search)
     sio.on("ai_search_suggestions", ai_handlers.ai_search_suggestions)
+    sio.on("ai_get_info", ai_handlers.ai_get_info)  # Added: Missing handler for AI info
 
     # Supervisord プロセス管理 - check if module exists
     try:
@@ -451,6 +452,7 @@ def create_app(**kwargs):
     import os
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
+    from fastapi.middleware.cors import CORSMiddleware
     
     from aetherterm.agentserver.infrastructure.config.di_container import setup_di_container
     
@@ -487,6 +489,15 @@ def create_app(**kwargs):
     # Apply OpenTelemetry instrumentation to FastAPI
     if telemetry:
         telemetry.instrument_app(fastapi_app)
+    
+    # Configure CORS
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],  # Vite dev servers
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     # Calculate path to static files (go up from web/server.py to agentserver/static)
     static_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "static")
     if os.path.exists(static_path):
@@ -532,27 +543,21 @@ def setup_app(**kwargs):
     sio.on("resume_terminal", socket_handlers.resume_terminal)
     sio.on("terminal_input", socket_handlers.terminal_input)
     sio.on("terminal_resize", socket_handlers.terminal_resize)
+    sio.on("reconnect_session", socket_handlers.reconnect_session)
 
     # Register AI-specific handlers
     sio.on("wrapper_session_sync", socket_handlers.wrapper_session_sync)
     sio.on("get_wrapper_sessions", socket_handlers.get_wrapper_sessions)
-    sio.on("unblock_request", socket_handlers.unblock_request)
-    sio.on("get_block_status", socket_handlers.get_block_status)
+    # TODO: Add unblock handlers when implemented
+    # sio.on("unblock_request", socket_handlers.unblock_request)
+    # sio.on("get_block_status", socket_handlers.get_block_status)
 
     # Register log monitoring handlers
     sio.on("log_monitor_subscribe", socket_handlers.log_monitor_subscribe)
     sio.on("log_monitor_unsubscribe", socket_handlers.log_monitor_unsubscribe)
     sio.on("log_monitor_search", socket_handlers.log_monitor_search)
 
-    # Register context inference handlers
-    sio.on("context_inference_subscribe", socket_handlers.context_inference_subscribe)
-    sio.on("predict_next_commands", socket_handlers.predict_next_commands)
-    sio.on("get_operation_analytics", socket_handlers.get_operation_analytics)
     
-    # Register AI chat and log search handlers
-    sio.on("ai_chat", socket_handlers.ai_chat)
-    sio.on("ai_log_search", socket_handlers.log_search)
-    sio.on("ai_search_suggestions", socket_handlers.search_suggestions)
 
     # P0 緊急対応: MainAgent-SubAgent通信ハンドラー
     # DEPRECATED: 後方互換性のため一時的に保持（将来削除予定）
@@ -569,6 +574,13 @@ def setup_app(**kwargs):
 
     # エージェント初期化ハンドラー
     sio.on("agent_hello", socket_handlers.agent_hello)
+
+    # AI Chat and Log Search handlers
+    from aetherterm.agentserver.endpoint.handlers import ai_handlers
+    sio.on("ai_chat_message", ai_handlers.ai_chat_message)
+    sio.on("ai_log_search", ai_handlers.ai_log_search)
+    sio.on("ai_search_suggestions", ai_handlers.ai_search_suggestions)
+    sio.on("ai_get_info", ai_handlers.ai_get_info)
 
     # Set up auto-blocker integration
     try:

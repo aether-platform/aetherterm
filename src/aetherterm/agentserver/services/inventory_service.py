@@ -6,8 +6,17 @@ The actual inventory service functionality is not implemented.
 """
 
 import logging
+from typing import Dict, Any
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+class ConnectionConfig(BaseModel):
+    """Connection configuration model."""
+    provider: str
+    name: str
+    credentials: Dict[str, Any]
+    enabled: bool = True
 
 class InventoryService:
     """Placeholder inventory service."""

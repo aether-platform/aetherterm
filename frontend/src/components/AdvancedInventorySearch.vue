@@ -311,11 +311,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { inventoryApiService } from '../services/InventoryApiService'
-import SteampipeConnectionManager from './SteampipeConnectionManager.vue'
 import { useTerminalTabStore } from '../stores/terminalTabStore'
 import type { InventoryItem } from '../types/inventory'
+import SteampipeConnectionManager from './SteampipeConnectionManager.vue'
 
 const tabStore = useTerminalTabStore()
 

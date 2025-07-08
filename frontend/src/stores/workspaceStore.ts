@@ -1,20 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { useAetherTerminalServiceStore } from './aetherTerminalServiceStore'
-import { useTerminalTabStore, type TerminalTab } from './terminalTabStore'
-import { useTerminalPaneStore, type TerminalTabWithPanes, type TerminalPane } from './terminalPaneStore'
+import { useAetherTerminalStore } from './aetherTerminalStore'
+import { WorkspaceSessionManager } from './workspace/sessionManager'
+import { getWorkspaceCrossTabSync, type WorkspaceSyncMessage } from './workspace/crossTabSync'
+import { workspaceEventBus } from './workspace/workspaceEventBus'
+import type { WorkspaceState, TerminalTabWithPanes, TerminalPane } from './workspace/workspaceTypes'
 
-export interface WorkspaceState {
-  id: string
-  name: string
-  lastAccessed: Date
-  tabs: TerminalTabWithPanes[] // ペーン対応タブ
-  isActive: boolean
-  layout: {
-    type: 'tabs' | 'grid' | 'mosaic'
-    configuration?: any
-  }
-}
+// Re-export types for other modules
+export type { WorkspaceState, TerminalTabWithPanes, TerminalPane }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   // State
@@ -22,67 +15,262 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const workspaces = ref<WorkspaceState[]>([])
   const isResuming = ref(false)
   const resumeError = ref<string | null>(null)
+  const serverSyncEnabled = ref(true) // Always true for server-only
+  const lastServerSync = ref<Date | null>(null)
 
   // Store references
-  const terminalService = useAetherTerminalServiceStore()
-  const terminalTabStore = useTerminalTabStore()
-  const terminalPaneStore = useTerminalPaneStore()
+  const terminalService = useAetherTerminalStore()
+  
+  // Cross-tab sync
+  const crossTabSync = getWorkspaceCrossTabSync()
 
   // Getters
   const hasCurrentWorkspace = computed(() => !!currentWorkspace.value)
   const workspaceCount = computed(() => workspaces.value.length)
 
-  // Actions
-  const createWorkspace = (name?: string): WorkspaceState => {
-    const workspaceId = `workspace_${Date.now()}`
-    const workspace: WorkspaceState = {
-      id: workspaceId,
-      name: name || `Workspace ${workspaces.value.length + 1}`,
-      lastAccessed: new Date(),
-      tabs: [],
-      isActive: true,
-      layout: {
-        type: 'tabs'
-      }
+  // Server communication helpers
+  const getSocket = () => {
+    const socket = terminalService.getSocket()
+    if (!socket || !socket.connected) {
+      throw new Error('No server connection')
     }
+    return socket
+  }
 
-    workspaces.value.push(workspace)
-    currentWorkspace.value = workspace
-    
-    console.log('📋 WORKSPACE: Created workspace:', workspace)
+  // Server-side workspace operations
+  const createWorkspaceOnServer = async (name?: string): Promise<WorkspaceState | null> => {
+    try {
+      const socket = getSocket()
+      
+      return new Promise((resolve) => {
+        const handleSuccess = (data: any) => {
+          socket.off('workspace_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          if (data.success && data.workspace) {
+            const workspace: WorkspaceState = {
+              ...data.workspace,
+              lastAccessed: new Date(data.workspace.lastAccessed),
+              tabs: []
+            }
+            console.log('📋 WORKSPACE: Created on server:', workspace.id)
+            resolve(workspace)
+          } else {
+            resolve(null)
+          }
+        }
+        
+        const handleError = (data: any) => {
+          socket.off('workspace_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          console.error('📋 WORKSPACE: Server creation error:', data.error)
+          resolve(null)
+        }
+        
+        socket.on('workspace_created', handleSuccess)
+        socket.on('workspace_error', handleError)
+        
+        socket.emit('workspace_create', {
+          name: name || `Workspace ${workspaces.value.length + 1}`
+        })
+        
+        setTimeout(() => {
+          socket.off('workspace_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          resolve(null)
+        }, 5000)
+      })
+    } catch (error) {
+      console.error('📋 WORKSPACE: Error creating workspace on server:', error)
+      return null
+    }
+  }
+
+  const createTabOnServer = async (
+    workspaceId: string, 
+    title: string, 
+    type: 'terminal' | 'ai-agent' | 'log-monitor' = 'terminal',
+    subType?: string
+  ): Promise<TerminalTabWithPanes | null> => {
+    try {
+      const socket = getSocket()
+      
+      return new Promise((resolve) => {
+        const handleSuccess = (data: any) => {
+          socket.off('tab_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          if (data.success && data.tab) {
+            const tab: TerminalTabWithPanes = {
+              ...data.tab,
+              lastActivity: new Date(data.tab.lastActivity),
+              panes: data.tab.panes || []
+            }
+            console.log('📋 WORKSPACE: Created tab on server:', tab.id)
+            resolve(tab)
+          } else {
+            resolve(null)
+          }
+        }
+        
+        const handleError = (data: any) => {
+          socket.off('tab_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          console.error('📋 WORKSPACE: Server tab creation error:', data.error)
+          resolve(null)
+        }
+        
+        socket.on('tab_created', handleSuccess)
+        socket.on('workspace_error', handleError)
+        
+        socket.emit('tab_create', {
+          workspaceId,
+          title,
+          type,
+          subType
+        })
+        
+        setTimeout(() => {
+          socket.off('tab_created', handleSuccess)
+          socket.off('workspace_error', handleError)
+          resolve(null)
+        }, 5000)
+      })
+    } catch (error) {
+      console.error('📋 WORKSPACE: Error creating tab on server:', error)
+      return null
+    }
+  }
+
+  const getWorkspaceFromServer = async (workspaceId: string): Promise<WorkspaceState | null> => {
+    try {
+      const socket = getSocket()
+      
+      return new Promise((resolve) => {
+        const handleSuccess = (data: any) => {
+          socket.off('workspace_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          if (data.success && data.workspace) {
+            const workspace: WorkspaceState = {
+              ...data.workspace,
+              lastAccessed: new Date(data.workspace.lastAccessed),
+              tabs: data.workspace.tabs.map((tab: any) => ({
+                ...tab,
+                lastActivity: new Date(tab.lastActivity)
+              }))
+            }
+            console.log('📋 WORKSPACE: Loaded from server:', workspace.id)
+            resolve(workspace)
+          } else {
+            resolve(null)
+          }
+        }
+        
+        const handleError = (data: any) => {
+          socket.off('workspace_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          console.error('📋 WORKSPACE: Server load error:', data.error)
+          resolve(null)
+        }
+        
+        socket.on('workspace_data', handleSuccess)
+        socket.on('workspace_error', handleError)
+        
+        socket.emit('workspace_get', { workspaceId })
+        
+        setTimeout(() => {
+          socket.off('workspace_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          resolve(null)
+        }, 5000)
+      })
+    } catch (error) {
+      console.error('📋 WORKSPACE: Error loading from server:', error)
+      return null
+    }
+  }
+  
+  const listWorkspacesFromServer = async (): Promise<WorkspaceState[]> => {
+    try {
+      const socket = getSocket()
+      
+      return new Promise((resolve) => {
+        const handleSuccess = (data: any) => {
+          socket.off('workspace_list_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          if (data.success && data.workspaces) {
+            const workspaces = data.workspaces.map((ws: any) => ({
+              ...ws,
+              lastAccessed: new Date(ws.lastAccessed),
+              tabs: ws.tabs.map((tab: any) => ({
+                ...tab,
+                lastActivity: new Date(tab.lastActivity)
+              }))
+            }))
+            console.log('📋 WORKSPACE: Listed from server:', workspaces.length, 'workspaces')
+            resolve(workspaces)
+          } else {
+            resolve([])
+          }
+        }
+        
+        const handleError = (data: any) => {
+          socket.off('workspace_list_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          console.error('📋 WORKSPACE: Server list error:', data.error)
+          resolve([])
+        }
+        
+        socket.on('workspace_list_data', handleSuccess)
+        socket.on('workspace_error', handleError)
+        
+        socket.emit('workspace_list', {})
+        
+        setTimeout(() => {
+          socket.off('workspace_list_data', handleSuccess)
+          socket.off('workspace_error', handleError)
+          resolve([])
+        }, 5000)
+      })
+    } catch (error) {
+      console.error('📋 WORKSPACE: Error listing from server:', error)
+      return []
+    }
+  }
+
+  // Actions
+  const createWorkspace = async (name?: string): Promise<WorkspaceState | null> => {
+    const workspace = await createWorkspaceOnServer(name)
+    if (workspace) {
+      workspaces.value.push(workspace)
+      currentWorkspace.value = workspace
+      console.log('📋 WORKSPACE: Created workspace:', workspace)
+    }
     return workspace
   }
 
-  const switchToWorkspace = (workspaceId: string) => {
-    const workspace = workspaces.value.find(w => w.id === workspaceId)
+  const switchToWorkspace = async (workspaceId: string) => {
+    // First, get the latest workspace state from server
+    const workspace = await getWorkspaceFromServer(workspaceId)
     if (workspace) {
       if (currentWorkspace.value) {
         currentWorkspace.value.isActive = false
       }
       
       workspace.isActive = true
-      workspace.lastAccessed = new Date()
       currentWorkspace.value = workspace
+      
+      // Update local list
+      const index = workspaces.value.findIndex(w => w.id === workspaceId)
+      if (index >= 0) {
+        workspaces.value[index] = workspace
+      } else {
+        workspaces.value.push(workspace)
+      }
+      
+      // Broadcast switch to other tabs
+      crossTabSync.broadcastSwitch(workspaceId)
       
       console.log('📋 WORKSPACE: Switched to workspace:', workspace.name)
     }
-  }
-
-  const saveCurrentWorkspace = () => {
-    if (!currentWorkspace.value) {
-      console.warn('📋 WORKSPACE: No current workspace to save')
-      return
-    }
-
-    // Capture current tabs with panes
-    currentWorkspace.value.tabs = terminalPaneStore.tabsWithPanes.map(tab => ({
-      ...tab,
-      lastActivity: new Date()
-    }))
-    
-    currentWorkspace.value.lastAccessed = new Date()
-    
-    console.log('📋 WORKSPACE: Saved workspace with', currentWorkspace.value.tabs.length, 'tabs and panes')
   }
 
   const resumeWorkspace = async (workspaceId?: string): Promise<boolean> => {
@@ -93,164 +281,177 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       let targetWorkspace: WorkspaceState | null = null
 
       if (workspaceId) {
-        targetWorkspace = workspaces.value.find(w => w.id === workspaceId) || null
+        targetWorkspace = await getWorkspaceFromServer(workspaceId)
       } else {
-        // Find the most recently accessed workspace
-        targetWorkspace = workspaces.value
-          .filter(w => w.tabs.length > 0)
-          .sort((a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime())[0] || null
+        // Get list from server and find most recent
+        const serverWorkspaces = await listWorkspacesFromServer()
+        if (serverWorkspaces.length > 0) {
+          targetWorkspace = serverWorkspaces
+            .filter(w => w.tabs.length > 0)
+            .sort((a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime())[0] || null
+        }
       }
 
       if (!targetWorkspace) {
-        console.log('📋 WORKSPACE: No workspace to resume, creating default')
-        createDefaultWorkspace()
+        await createDefaultWorkspace()
         return true
       }
 
-      console.log('📋 WORKSPACE: Resuming workspace:', targetWorkspace.name, 'with', targetWorkspace.tabs.length, 'tabs')
-
-      // Ensure we have a socket connection
-      if (!terminalService.socket) {
-        console.log('📋 WORKSPACE: No socket connection, connecting first...')
-        await terminalService.connect()
+      // Update current workspace
+      currentWorkspace.value = targetWorkspace
+      targetWorkspace.isActive = true
+      
+      // Resume sessions
+      const socket = terminalService.getSocket()
+      if (socket && socket.connected) {
+        const result = await WorkspaceSessionManager.resumeWorkspace(targetWorkspace, socket)
+        if (result.success) {
+          console.log('📋 WORKSPACE: Resumed workspace successfully')
+          workspaceEventBus.emitWorkspaceResumed(targetWorkspace)
+          isResuming.value = false
+          return true
+        } else {
+          resumeError.value = result.error || 'Failed to resume workspace sessions'
+        }
       }
 
-      // Send workspace resume request to backend
-      return new Promise((resolve) => {
-        const resumeData = {
-          workspaceId: targetWorkspace!.id,
-          tabs: targetWorkspace!.tabs.map(tab => ({
-            id: tab.id,
-            title: tab.title,
-            layout: tab.layout,
-            panes: tab.panes.map(pane => ({
-              id: pane.id,
-              sessionId: pane.sessionId,
-              type: pane.type,
-              subType: pane.subType,
-              title: pane.title,
-              position: pane.position
-            }))
-          }))
-        }
-
-        console.log('📋 WORKSPACE: Sending resume_workspace event:', resumeData)
-
-        // Listen for workspace resume response
-        const handleWorkspaceResumed = (data: any) => {
-          console.log('📋 WORKSPACE: Received workspace_resumed:', data)
-          
-          terminalService.socket?.off('workspace_resumed', handleWorkspaceResumed)
-          terminalService.socket?.off('workspace_error', handleWorkspaceError)
-
-          if (data.workspaceId === targetWorkspace!.id) {
-            // Update current workspace
-            currentWorkspace.value = targetWorkspace
-            targetWorkspace!.isActive = true
-            targetWorkspace!.lastAccessed = new Date()
-
-            // Update sessions for resumed and created panes
-            const allTabResults = (data.resumedTabs || []).concat(data.createdTabs || [])
-            allTabResults.forEach((tabResult: any) => {
-              // Handle pane-level session mapping
-              if (tabResult.panes) {
-                tabResult.panes.forEach((paneResult: any) => {
-                  terminalPaneStore.setPaneSession(paneResult.paneId, paneResult.sessionId)
-                })
-              }
-              // Backward compatibility: direct tab session
-              if (tabResult.sessionId) {
-                terminalTabStore.setTabSession(tabResult.tabId, tabResult.sessionId)
-              }
-            })
-
-            console.log('📋 WORKSPACE: Workspace resumed successfully:', data.message)
-            resolve(true)
-          }
-        }
-
-        const handleWorkspaceError = (data: any) => {
-          console.error('📋 WORKSPACE: Workspace resume error:', data)
-          
-          terminalService.socket?.off('workspace_resumed', handleWorkspaceResumed)
-          terminalService.socket?.off('workspace_error', handleWorkspaceError)
-          
-          resumeError.value = data.error || 'Failed to resume workspace'
-          resolve(false)
-        }
-
-        terminalService.socket?.on('workspace_resumed', handleWorkspaceResumed)
-        terminalService.socket?.on('workspace_error', handleWorkspaceError)
-
-        // Send the resume request
-        terminalService.socket?.emit('resume_workspace', resumeData)
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          terminalService.socket?.off('workspace_resumed', handleWorkspaceResumed)
-          terminalService.socket?.off('workspace_error', handleWorkspaceError)
-          resumeError.value = 'Workspace resume timeout'
-          resolve(false)
-        }, 10000)
-      })
-
-    } catch (error) {
-      console.error('📋 WORKSPACE: Error resuming workspace:', error)
-      resumeError.value = error instanceof Error ? error.message : 'Unknown error'
-      return false
-    } finally {
       isResuming.value = false
+      return true
+    } catch (error) {
+      console.error('📋 WORKSPACE: Failed to resume workspace:', error)
+      resumeError.value = error instanceof Error ? error.message : 'Unknown error'
+      isResuming.value = false
+      return false
     }
   }
 
-  const createDefaultWorkspace = () => {
-    const workspace = createWorkspace('Default Workspace')
+  const createDefaultWorkspace = async () => {
+    console.log('📋 WORKSPACE: Creating default workspace...')
     
-    // Create a default tab with pane
-    const tabId = `tab-${Date.now()}`
-    const defaultPane = terminalPaneStore.createPane(tabId, 'terminal', 'Terminal 1', 'pure')
-    
-    // Create tab with panes structure
-    const defaultTab = {
-      id: tabId,
-      title: 'Main',
-      isActive: true,
-      panes: [defaultPane],
-      layout: 'single' as const,
-      lastActivity: new Date()
+    const workspace = await createWorkspace('Default Workspace')
+    if (!workspace) {
+      console.error('📋 WORKSPACE: Failed to create default workspace')
+      return
     }
-    
-    workspace.tabs = [defaultTab]
-    workspace.layout = {
-      type: 'tabs' as const
+
+    // Create default terminal tab on server
+    const tab = await createTabOnServer(workspace.id, 'Terminal 1', 'terminal', 'pure')
+    if (tab) {
+      workspace.tabs.push(tab)
+      console.log('📋 WORKSPACE: Created default terminal tab')
     }
-    
-    console.log('📋 WORKSPACE: Created default workspace with pane structure')
   }
 
   const initializeWorkspace = async () => {
-    console.log('📋 WORKSPACE: Initializing workspace system...')
+    console.log('📋 WORKSPACE: Initializing workspace system (server-only)...')
     
-    // Try to resume the last workspace, or create default
-    const resumed = await resumeWorkspace()
-    
-    if (!resumed && !currentWorkspace.value) {
-      createDefaultWorkspace()
+    // Check connection
+    const socket = terminalService.getSocket()
+    if (!socket || !socket.connected) {
+      console.log('📋 WORKSPACE: No connection - deferring initialization')
+      return
     }
     
-    console.log('📋 WORKSPACE: Workspace system initialized')
+    // Load workspaces from server only
+    try {
+      const serverWorkspaces = await listWorkspacesFromServer()
+      if (serverWorkspaces.length > 0) {
+        workspaces.value = serverWorkspaces
+        
+        // Resume the most recent workspace
+        const mostRecent = serverWorkspaces.sort((a: WorkspaceState, b: WorkspaceState) => 
+          b.lastAccessed.getTime() - a.lastAccessed.getTime()
+        )[0]
+        
+        const resumed = await resumeWorkspace(mostRecent.id)
+        if (!resumed) {
+          // If resume failed, create default workspace
+          await createDefaultWorkspace()
+        }
+      } else {
+        // No workspaces on server, create default
+        await createDefaultWorkspace()
+      }
+    } catch (error) {
+      console.error('📋 WORKSPACE: Failed to load from server:', error)
+      await createDefaultWorkspace()
+    }
+    
+    // Set up cross-tab sync listener (for session coordination only)
+    crossTabSync.addListener('workspace-store', handleCrossTabSync)
+    
+    console.log('📋 WORKSPACE: Workspace system initialized (server-only)')
   }
 
-  const updateWorkspaceFromTabs = () => {
-    if (currentWorkspace.value) {
-      saveCurrentWorkspace()
+  // Public tab/pane creation methods that use server
+  const createTab = async (
+    type: 'terminal' | 'ai-agent' | 'log-monitor' = 'terminal',
+    options?: { name?: string; terminalId?: string; subType?: string }
+  ): Promise<TerminalTabWithPanes | null> => {
+    if (!currentWorkspace.value) {
+      console.error('📋 WORKSPACE: No active workspace to add tab')
+      return null
+    }
+
+    const title = options?.name || `${type === 'terminal' ? 'Terminal' : type} ${currentWorkspace.value.tabs.length + 1}`
+    const tab = await createTabOnServer(
+      currentWorkspace.value.id,
+      title,
+      type,
+      options?.subType
+    )
+
+    if (tab) {
+      currentWorkspace.value.tabs.push(tab)
+      
+      // Deactivate other tabs
+      currentWorkspace.value.tabs.forEach(t => {
+        t.isActive = t.id === tab.id
+      })
+      
+      currentWorkspace.value.activeTabId = tab.id
+      
+      // Emit event for tab creation
+      workspaceEventBus.emitTabCreated(tab)
+      
+      console.log('📋 WORKSPACE: Created tab:', tab)
+    }
+
+    return tab
+  }
+
+  const createPane = async (
+    tabId: string,
+    type: 'terminal' | 'ai-agent' | 'log-monitor' = 'terminal',
+    options?: { terminalId?: string; subType?: string }
+  ): Promise<TerminalPane | null> => {
+    console.warn('📋 WORKSPACE: createPane not yet implemented for server-side architecture')
+    // TODO: Implement server-side pane creation
+    return null
+  }
+
+  // Handle cross-tab sync messages
+  const handleCrossTabSync = (message: WorkspaceSyncMessage) => {
+    switch (message.type) {
+      case 'workspace_update':
+        // Refresh from server instead of trusting cross-tab data
+        if (message.workspace && currentWorkspace.value?.id === message.workspace.id) {
+          getWorkspaceFromServer(message.workspace.id).then(workspace => {
+            if (workspace) {
+              currentWorkspace.value = workspace
+              console.log('📡 CROSS-TAB: Refreshed workspace from server')
+            }
+          })
+        }
+        break
+        
+      case 'workspace_switch':
+        if (message.workspaceId && message.workspaceId !== currentWorkspace.value?.id) {
+          console.log('📡 CROSS-TAB: Another tab switched to workspace:', message.workspaceId)
+        }
+        break
     }
   }
-
-  // Automatically save workspace when tabs change
-  terminalTabStore.$subscribe(() => {
-    updateWorkspaceFromTabs()
-  })
 
   return {
     // State
@@ -258,6 +459,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     workspaces,
     isResuming,
     resumeError,
+    serverSyncEnabled,
+    lastServerSync,
 
     // Getters
     hasCurrentWorkspace,
@@ -266,10 +469,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // Actions
     createWorkspace,
     switchToWorkspace,
-    saveCurrentWorkspace,
     resumeWorkspace,
     createDefaultWorkspace,
     initializeWorkspace,
-    updateWorkspaceFromTabs
+    createTab,
+    createPane,
+    
+    // Backward compatibility (will be removed)
+    createTabWithPane: createTab,
+    createSpecialTab: createTab,
+    saveCurrentWorkspace: () => Promise.resolve(), // No-op
+    updateWorkspaceFromTabs: () => Promise.resolve(), // No-op
   }
 })

@@ -5,19 +5,24 @@
   import ChatComponent from './components/ChatComponent.vue'
   import SimpleChatComponent from './components/SimpleChatComponent.vue'
   import TerminalComponent from './components/TerminalComponent.vue'
+  import TerminalDebug from './components/TerminalDebug.vue'
   import DevJWTRegister from './components/DevJWTRegister.vue'
   import ServerInventoryPanel from './components/ServerInventoryPanel.vue'
   import ThemeSelector from './components/ThemeSelector.vue'
   import ThemeToggle from './components/ThemeToggle.vue'
+  import S3BrowserSidebar from './components/S3BrowserSidebar.vue'
+  import AICostSidebar from './components/AICostSidebar.vue'
   import { useChatStore } from './stores/chatStore'
   import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore'
   import { useTheme } from './composables/useTheme'
   import { enableJWTDevRegister } from './config/environment'
+  import { useRouter } from 'vue-router'
 
   const chatStore = useChatStore()
   const terminalStore = useAetherTerminalServiceStore()
   const { initialize: initializeTheme } = useTheme()
-  const activeTab = ref('chat') // 'chat', 'inventory', 'supervisor', 'theme', or 'debug'
+  const router = useRouter()
+  const activeTab = ref('chat') // 'chat', 'inventory', 'supervisor', 'theme', 's3', 'cost', or 'debug'
   const isSupervisorPanelFloating = ref(false)
   const isSupervisorPanelVisible = ref(false)
 
@@ -154,6 +159,12 @@
     savePanelVisibility()
   }
 
+  const openS3BrowserFromTerminal = () => {
+    activeTab.value = 's3'
+    isSupervisorPanelVisible.value = true
+    savePanelVisibility()
+  }
+
   // 初期化時に保存された設定を読み込み
   onMounted(async () => {
     loadPanelWidth()
@@ -171,6 +182,8 @@
       isSupervisorPanelVisible.value = true
     })
   })
+
+
 
   onUnmounted(() => {
     document.removeEventListener('mousemove', onDrag)
@@ -195,7 +208,7 @@
     <div class="main-content">
       <!-- Terminal Container (Full Width) -->
       <div id="terminal-container">
-        <TerminalComponent />
+        <TerminalComponent @open-s3-browser="openS3BrowserFromTerminal" />
       </div>
     </div>
 
@@ -242,6 +255,12 @@
         <button :class="{ active: activeTab === 'inventory' }" @click="activeTab = 'inventory'">
           🖥️ Inventory
         </button>
+        <button :class="{ active: activeTab === 's3' }" @click="activeTab = 's3'">
+          🗂️ S3
+        </button>
+        <button :class="{ active: activeTab === 'cost' }" @click="activeTab = 'cost'">
+          💰 AI Costs
+        </button>
         <button :class="{ active: activeTab === 'supervisor' }" @click="activeTab = 'supervisor'">
           👮 Admin
         </button>
@@ -264,6 +283,12 @@
       </div>
       <div v-if="activeTab === 'inventory'" class="tab-content inventory-tab">
         <ServerInventoryPanel />
+      </div>
+      <div v-if="activeTab === 's3'" class="tab-content s3-tab">
+        <S3BrowserSidebar />
+      </div>
+      <div v-if="activeTab === 'cost'" class="tab-content cost-tab">
+        <AICostSidebar />
       </div>
       <div v-if="activeTab === 'supervisor'" class="tab-content supervisor-tab">
         <SupervisorControlPanel />
@@ -291,22 +316,64 @@
           {{ isSupervisorPanelVisible ? '→' : '←' }}
         </button>
         
-        <!-- Sidebar Navigation Buttons -->
+        <!-- Assistant Button -->
         <button 
-          @click="activeTab = 'chat'; togglePanelVisibility()"
+          @click="activeTab = 'chat'; isSupervisorPanelVisible = true"
           class="sidebar-tab-btn"
-          :class="{ active: activeTab === 'chat' }"
+          :class="{ active: activeTab === 'chat' && isSupervisorPanelVisible }"
           title="Open Assistant"
         >
           🤖
         </button>
+        
+        <!-- Inventory Button -->
         <button 
-          @click="activeTab = 'inventory'; togglePanelVisibility()"
+          @click="activeTab = 'inventory'; isSupervisorPanelVisible = true"
           class="sidebar-tab-btn"
-          :class="{ active: activeTab === 'inventory' }"
+          :class="{ active: activeTab === 'inventory' && isSupervisorPanelVisible }"
           title="Open Server Inventory"
         >
           🖥️
+        </button>
+        
+        <!-- S3 Browser Button -->
+        <button 
+          @click="activeTab = 's3'; isSupervisorPanelVisible = true"
+          class="sidebar-tab-btn"
+          :class="{ active: activeTab === 's3' && isSupervisorPanelVisible }"
+          title="Open S3 Browser"
+        >
+          🗂️
+        </button>
+        
+        <!-- AI Costs Button -->
+        <button 
+          @click="activeTab = 'cost'; isSupervisorPanelVisible = true"
+          class="sidebar-tab-btn"
+          :class="{ active: activeTab === 'cost' && isSupervisorPanelVisible }"
+          title="AI Costs"
+        >
+          💰
+        </button>
+        
+        <!-- Admin Button -->
+        <button 
+          @click="activeTab = 'supervisor'; isSupervisorPanelVisible = true"
+          class="sidebar-tab-btn"
+          :class="{ active: activeTab === 'supervisor' && isSupervisorPanelVisible }"
+          title="Admin Panel"
+        >
+          👮
+        </button>
+        
+        <!-- Theme Button -->
+        <button 
+          @click="activeTab = 'theme'; isSupervisorPanelVisible = true"
+          class="sidebar-tab-btn"
+          :class="{ active: activeTab === 'theme' && isSupervisorPanelVisible }"
+          title="Theme Settings"
+        >
+          🎨
         </button>
       </div>
     </div>
@@ -318,6 +385,9 @@
       <div>Panel Floating: {{ isSupervisorPanelFloating }}</div>
       <div>Sidebar Should Show: {{ !isSupervisorPanelVisible }}</div>
     </div>
+
+    <!-- Terminal Debug Panel (temporary for debugging) -->
+    <TerminalDebug v-if="true" />
 
   </div>
 </template>
@@ -383,6 +453,17 @@
     /* Debugタブは通常のパディング */
     padding: 0; /* DevJWTRegisterコンポーネントが独自のパディングを持つ */
   }
+
+  .tab-content.s3-tab {
+    /* S3タブはパディングなし */
+    padding: 0; /* S3Browserコンポーネントが独自のパディングを持つ */
+  }
+
+  .tab-content.cost-tab {
+    /* AI Costsタブはパディングなし */
+    padding: 0; /* AICostSidebarコンポーネントが独自のパディングを持つ */
+  }
+
 
 
 

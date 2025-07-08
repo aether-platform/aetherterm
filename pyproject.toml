@@ -38,6 +38,7 @@ dependencies = [
     "websockets",
     "toml",
     "aiohttp",
+    "pandas>=2.0.0",
     # LangChain関連依存関係
     "langchain>=0.1.0",
     "langchain-openai>=0.1.0",
@@ -52,7 +53,6 @@ dependencies = [
     "asyncpg>=0.29.0",
     "sentence-transformers>=2.2.0",
     "numpy>=1.24.0",
-    "pandas>=2.0.0",
     "tiktoken>=0.5.0",
     # Steampipe統合用 (PostgreSQL経由)
     "psutil>=5.9.0",

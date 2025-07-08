@@ -1,11 +1,14 @@
 <template>
   <div 
     class="main-container"
-    :class="[`theme-${themeStore.isDarkMode ? 'dark' : 'light'}`, `scheme-${themeStore.themeConfig.colorScheme}`]"
+    :class="[
+      `theme-${themeStore.isDarkMode ? 'dark' : 'light'}`, 
+      `scheme-${themeStore.themeConfig.colorScheme}`
+    ]"
     @contextmenu.prevent
   >
     <!-- Tab Bar -->
-    <TerminalTabBar />
+    <TerminalTabBar @open-s3-browser="openS3Browser" />
 
     <!-- Main Content Area -->
     <MainContentView 
@@ -16,19 +19,26 @@
     
     <!-- Connection Status Overlay -->
     <ConnectionStatusBanner />
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from 'vue'
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
 import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
 import { useThemeStore } from '../../stores/themeStore'
+import { useWorkspaceStore } from '../../stores/workspaceStore'
 import ConnectionStatusBanner from './ConnectionStatusBanner.vue'
 import TerminalTabBar from '../TabBarContainer.vue'
 import MainContentView from '../MainContentView.vue'
 
+const emit = defineEmits(['open-s3-browser'])
+
+const aetherTerminalStore = useAetherTerminalStore()
 const terminalStore = useAetherTerminalServiceStore()
 const themeStore = useThemeStore()
+const workspaceStore = useWorkspaceStore()
 
 // Terminal pause state
 const isTerminalPaused = ref(false)
@@ -51,11 +61,18 @@ const onTerminalInitialized = () => {
   console.log('Terminal initialized in container')
 }
 
+const openS3Browser = () => {
+  emit('open-s3-browser')
+}
+
 onMounted(async () => {
   console.log('MainContainer mounted')
   
-  // Initialize connection after container is setup
-  terminalStore.connect()
+  // Initialize connection using aetherTerminalStore (simpler WebSocket implementation)
+  await aetherTerminalStore.connect()
+  
+  // Then initialize workspace system (will load from localStorage and reconnect sessions)
+  await workspaceStore.initializeWorkspace()
 })
 
 // Apply theme changes reactively
@@ -101,5 +118,18 @@ defineExpose({
 .main-container.theme-light {
   background-color: var(--terminal-background);
   color: var(--terminal-foreground);
+}
+
+// Layout adjustments when sidebar is visible
+.main-container.has-sidebar {
+  padding-right: 320px; // Fixed width for any sidebar
+  transition: padding-right 0.3s ease;
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+  .main-container.has-sidebar {
+    padding-right: 0; // Remove padding on mobile
+  }
 }
 </style>

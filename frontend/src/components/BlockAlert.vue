@@ -61,7 +61,7 @@
 
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, ref } from 'vue'
-  import { useTerminalBlockStore } from '../stores/terminalBlockStore'
+import { useTerminalBlockStore } from '../stores/terminalBlockStore'
 
   interface Props {
     sessionId: string

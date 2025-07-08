@@ -1,5 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { workspaceEventBus } from './workspace/workspaceEventBus'
+import { PaneFactory } from './workspace/paneFactory'
+import type { TerminalTabWithPanes } from './workspace/workspaceTypes'
+import { useWorkspaceStore } from './workspaceStore'
 
 export interface ServerContext {
   id: string
@@ -59,17 +63,22 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
 
   // Actions
   const createTab = (
-    type: 'terminal' | 'ai-agent', 
+    type: 'terminal' | 'ai-agent' | 'log-monitor', 
     title?: string, 
-    subType?: 'pure' | 'inventory',
+    subType?: 'pure' | 'inventory' | 'agent' | 'main-agent',
     serverContext?: ServerContext
   ): TerminalTab => {
     console.log('📋 STORE: createTab called with:', { type, title, subType, serverContext })
     
     const id = `tab-${nextTabId.value++}`
-    let defaultTitle = type === 'terminal' 
-      ? `Terminal ${terminalTabs.value.length + 1}` 
-      : `AI Chat ${aiChatTabs.value.length + 1}`
+    let defaultTitle = ''
+    if (type === 'terminal') {
+      defaultTitle = `Terminal ${terminalTabs.value.length + 1}`
+    } else if (type === 'ai-agent') {
+      defaultTitle = `AI Chat ${aiChatTabs.value.length + 1}`
+    } else if (type === 'log-monitor') {
+      defaultTitle = 'Log Monitor'
+    }
     
     // Override title for inventory terminals with server context
     if (type === 'terminal' && subType === 'inventory' && serverContext) {
@@ -92,6 +101,19 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
     activeTabId.value = id
     console.log('📋 STORE: Tab added to store, total tabs:', tabs.value.length)
     console.log('📋 STORE: Active tab ID set to:', id)
+    
+    // Emit tab created event for workspace synchronization
+    const workspaceTab: TerminalTabWithPanes = {
+      id,
+      title: title || defaultTitle,
+      type,
+      subType,
+      isActive: true,
+      panes: type === 'terminal' ? [PaneFactory.createTerminalPane(title || defaultTitle)] : [],
+      layout: 'single',
+      lastActivity: new Date()
+    }
+    workspaceEventBus.emitTabCreated(workspaceTab)
 
     return newTab
   }
@@ -122,6 +144,9 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
       const remainingTabs = tabs.value.filter(t => t.isActive && t.id !== tabId)
       activeTabId.value = remainingTabs.length > 0 ? remainingTabs[remainingTabs.length - 1].id : null
     }
+    
+    // Emit tab closed event
+    workspaceEventBus.emitTabClosed(tabId)
 
     // Remove the tab after a delay to allow for cleanup
     setTimeout(() => {
@@ -142,9 +167,20 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
     }
     
     const tab = tabs.value.find(t => t.id === tabId)
-    if (tab && tab.isActive) {
+    if (tab) {
       activeTabId.value = tabId
       tab.lastActivity = new Date()
+      
+      // Mark all tabs as inactive first
+      tabs.value.forEach(t => {
+        t.isActive = false
+      })
+      
+      // Mark selected tab as active
+      tab.isActive = true
+      
+      // Emit tab activated event
+      workspaceEventBus.emitTabActivated(tabId)
     }
   }
   
@@ -419,6 +455,13 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
 
   // Initialize with default terminal tab and log monitor
   const initializeDefaultTab = () => {
+    // Skip if workspace mode is active
+    const workspaceStore = useWorkspaceStore()
+    if (workspaceStore.currentWorkspace) {
+      console.log('📋 TAB STORE: Skipping legacy tab initialization - workspace mode is active')
+      return
+    }
+    
     if (tabs.value.length === 0) {
       createTab('terminal', 'Terminal 1')
     }

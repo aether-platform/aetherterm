@@ -43,6 +43,7 @@ class AsyncioTerminal(BaseTerminal):
     sessions = {}
     closed_sessions = set()  # Track closed session IDs
     session_owners = {}  # Track session owners: {session_id: user_info}
+    session_buffers = {}  # Persistent buffer storage: {session_id: buffer_data}
 
     # Log processing infrastructure
     log_buffer = []  # Global log buffer for all sessions
@@ -107,6 +108,15 @@ class AsyncioTerminal(BaseTerminal):
         }
         self.session_owners[session] = owner_info
 
+        # Initialize persistent buffer storage for this session
+        if session not in self.session_buffers:
+            self.session_buffers[session] = {
+                "lines": [],
+                "max_lines": 5000,
+                "created_at": __import__("time").time(),
+                "last_updated": __import__("time").time()
+            }
+
         log.info("Terminal opening with session: %s and socket %r" % (self.session, self.socket))
         self.path = path
         self.user = user if user else None
@@ -143,6 +153,9 @@ class AsyncioTerminal(BaseTerminal):
             if len(self.history) > self.history_size:
                 self.history = self.history[-self.history_size :]
 
+            # Update persistent buffer storage
+            self._update_persistent_buffer(message)
+
             # Add to log buffer for processing
             self.add_to_log_buffer(message)
 
@@ -154,6 +167,86 @@ class AsyncioTerminal(BaseTerminal):
                     self.broadcast(self.session, chunk)
             else:
                 self.broadcast(self.session, message)
+
+    def _update_persistent_buffer(self, message):
+        """Update the persistent buffer storage for this session."""
+        try:
+            if self.session not in self.session_buffers:
+                log.warning(f"Session {self.session} not found in session_buffers, initializing...")
+                self.session_buffers[self.session] = {
+                    "lines": [],
+                    "max_lines": 5000,
+                    "created_at": __import__("time").time(),
+                    "last_updated": __import__("time").time()
+                }
+            
+            buffer_data = self.session_buffers[self.session]
+            
+            # Add new line to buffer
+            buffer_line = {
+                "content": message,
+                "timestamp": __import__("time").time(),
+                "type": "output"
+            }
+            
+            buffer_data["lines"].append(buffer_line)
+            buffer_data["last_updated"] = __import__("time").time()
+            
+            # Log buffer status periodically
+            line_count = len(buffer_data["lines"])
+            if line_count % 100 == 0:
+                log.debug(f"Session {self.session} buffer now has {line_count} lines")
+            
+            # Trim buffer if it exceeds max lines
+            max_lines = buffer_data.get("max_lines", 5000)
+            if len(buffer_data["lines"]) > max_lines:
+                excess = len(buffer_data["lines"]) - max_lines
+                buffer_data["lines"] = buffer_data["lines"][excess:]
+                log.debug(f"Trimmed {excess} lines from session {self.session} buffer")
+                    
+        except Exception as e:
+            log.error(f"Error updating persistent buffer for session {self.session}: {e}", exc_info=True)
+
+    @classmethod
+    def get_session_buffer(cls, session_id: str) -> dict:
+        """Get the persistent buffer for a session."""
+        return cls.session_buffers.get(session_id, {
+            "lines": [],
+            "max_lines": 5000,
+            "created_at": __import__("time").time(),
+            "last_updated": __import__("time").time()
+        })
+
+    @classmethod
+    def get_session_buffer_content(cls, session_id: str) -> str:
+        """Get the buffer content as a string for sending to clients."""
+        buffer_data = cls.get_session_buffer(session_id)
+        lines = buffer_data.get("lines", [])
+        return "".join([line.get("content", "") for line in lines])
+
+    @classmethod
+    def clear_session_buffer(cls, session_id: str):
+        """Clear the persistent buffer for a session."""
+        if session_id in cls.session_buffers:
+            cls.session_buffers[session_id]["lines"] = []
+            cls.session_buffers[session_id]["last_updated"] = __import__("time").time()
+
+    @classmethod
+    def cleanup_old_buffers(cls, max_age_hours: int = 24):
+        """Clean up old buffer data for inactive sessions."""
+        current_time = __import__("time").time()
+        max_age_seconds = max_age_hours * 3600
+        
+        sessions_to_remove = []
+        for session_id, buffer_data in cls.session_buffers.items():
+            if (current_time - buffer_data.get("last_updated", 0)) > max_age_seconds:
+                # Only remove if session is also closed
+                if session_id in cls.closed_sessions or session_id not in cls.sessions:
+                    sessions_to_remove.append(session_id)
+        
+        for session_id in sessions_to_remove:
+            del cls.session_buffers[session_id]
+            log.info(f"Cleaned up old buffer for session {session_id}")
 
     async def start_pty(self):
         """Start the PTY process using asyncio."""

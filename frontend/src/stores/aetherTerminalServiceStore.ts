@@ -378,7 +378,7 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
     addToOutput('[SYSTEM] Starting reconnection process...')
   }
 
-  const connect = () => {
+  const connect = (): Promise<boolean> => {
     console.log('🔌 STORE: Connect function called')
     console.log('🔌 STORE: Current state:', {
       isConnected: connectionState.value.isConnected,
@@ -387,29 +387,81 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
       socketConnected: socket.value?.connected
     })
     
-    if (connectionState.value.isConnected || connectionState.value.isConnecting) {
-      console.log('⚠️ STORE: Already connected or connecting, returning')
-      return
-    }
-
-    connectionState.value.isConnecting = true
-    addToOutput('[SYSTEM] Connecting to AetherTerm service...')
-    console.log('🔧 STORE: Setting connecting state to true')
-
-    // Setup socket listeners and initiate connection if socket exists
-    if (socket.value) {
-      console.log('🔧 STORE: Socket exists, setting up listeners...')
-      setupSocketListeners()
-      // Explicitly connect if not already connected
-      if (!socket.value.connected) {
-        console.log('🔧 STORE: Socket not connected, initiating connection...')
-        socket.value.connect()
-      } else {
-        console.log('✅ STORE: Socket already connected')
+    return new Promise((resolve) => {
+      if (connectionState.value.isConnected) {
+        console.log('⚠️ STORE: Already connected, returning')
+        resolve(true)
+        return
       }
-    } else {
-      console.error('❌ STORE: No socket available!')
-    }
+      
+      if (connectionState.value.isConnecting) {
+        console.log('⚠️ STORE: Already connecting, waiting for connection...')
+        // Wait for existing connection attempt
+        const checkConnection = setInterval(() => {
+          if (connectionState.value.isConnected) {
+            clearInterval(checkConnection)
+            resolve(true)
+          } else if (!connectionState.value.isConnecting) {
+            clearInterval(checkConnection)
+            resolve(false)
+          }
+        }, 100)
+        return
+      }
+
+      connectionState.value.isConnecting = true
+      addToOutput('[SYSTEM] Connecting to AetherTerm service...')
+      console.log('🔧 STORE: Setting connecting state to true')
+
+      // Setup socket listeners and initiate connection if socket exists
+      if (socket.value) {
+        console.log('🔧 STORE: Socket exists, setting up listeners...')
+        
+        // Set up one-time connection handler
+        const handleConnect = () => {
+          console.log('✅ STORE: Connection successful')
+          socket.value?.off('connect', handleConnect)
+          socket.value?.off('connect_error', handleError)
+          resolve(true)
+        }
+        
+        const handleError = (error: Error) => {
+          console.error('❌ STORE: Connection error:', error)
+          socket.value?.off('connect', handleConnect)
+          socket.value?.off('connect_error', handleError)
+          connectionState.value.isConnecting = false
+          resolve(false)
+        }
+        
+        // Listen for connection events
+        socket.value.once('connect', handleConnect)
+        socket.value.once('connect_error', handleError)
+        
+        setupSocketListeners()
+        // Explicitly connect if not already connected
+        if (!socket.value.connected) {
+          console.log('🔧 STORE: Socket not connected, initiating connection...')
+          socket.value.connect()
+        } else {
+          console.log('✅ STORE: Socket already connected')
+          resolve(true)
+        }
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          socket.value?.off('connect', handleConnect)
+          socket.value?.off('connect_error', handleError)
+          if (!connectionState.value.isConnected) {
+            connectionState.value.isConnecting = false
+            resolve(false)
+          }
+        }, 10000)
+      } else {
+        console.error('❌ STORE: No socket available!')
+        connectionState.value.isConnecting = false
+        resolve(false)
+      }
+    })
   }
 
   // Event Registration

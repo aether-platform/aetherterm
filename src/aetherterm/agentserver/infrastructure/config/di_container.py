@@ -5,6 +5,7 @@ Simple DI container using standard library for managing service dependencies.
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional
 
 from aetherterm.agentserver.infrastructure.external.ai_service import AIService
@@ -17,14 +18,50 @@ class SimpleContainer:
     
     def __init__(self):
         self._instances: Dict[str, Any] = {}
+        # Check environment variables for LM Studio configuration
+        # Check both AETHERTERM_AI_PROVIDER and AI_PROVIDER
+        ai_provider = os.getenv("AETHERTERM_AI_PROVIDER") or os.getenv("AI_PROVIDER", "mock")
+        lmstudio_url = os.getenv("LMSTUDIO_URL", "http://localhost:1234")
+        
+        # Log the environment variables
+        logging.info(f"AI_PROVIDER from env: {ai_provider}")
+        logging.info(f"LMSTUDIO_URL from env: {lmstudio_url}")
+        
+        # Auto-detect LM Studio if it's running and provider is mock
+        if ai_provider == "mock":
+            import socket
+            try:
+                # Extract host and port from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(lmstudio_url)
+                host = parsed.hostname or 'localhost'
+                port = parsed.port or 1234
+                
+                # Test if LM Studio is running
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                result = sock.connect_ex((host, port))
+                sock.close()
+                if result == 0:
+                    ai_provider = "lmstudio"
+                    logging.info(f"LM Studio detected on {host}:{port}, switching to lmstudio provider")
+                else:
+                    logging.info(f"LM Studio not detected on {host}:{port} (connection result: {result})")
+            except Exception as e:
+                logging.warning(f"LM Studio auto-detection failed: {e}")
+        elif ai_provider == "lmstudio":
+            logging.info(f"Using explicitly configured LMStudio provider at {lmstudio_url}")
+        
+        logging.info(f"Final AI provider: {ai_provider}")
+        
         self._config: Dict[str, Any] = {
             "debug": False,
             "more": False,
             "ai": {
-                "provider": "lmstudio",  # デフォルトをLMStudioに変更
-                "api_key": "",
-                "model": "default",
-                "lmstudio_url": "http://localhost:1234"
+                "provider": ai_provider,
+                "api_key": os.getenv("AI_API_KEY", ""),
+                "model": os.getenv("AI_MODEL", "default"),
+                "lmstudio_url": lmstudio_url
             },
             "jupyterhub": {
                 "hub_api_url": "http://hub:8081/hub/api",

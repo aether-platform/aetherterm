@@ -1,207 +1,146 @@
 # ⚡ AetherTerm
 
-## Description
+AI-enhanced terminal platform with real-time WebSocket communication and hierarchical agent system.
 
-AetherTerm is a xterm compatible terminal that runs in your browser.
+## Quick Start
 
-## Features
+```bash
+# Install and run
+pip install aetherterm
+aetherterm --host=localhost --port=57575
 
-- xterm compatible (support a lot of unused features!)
+# Development setup
+uv sync && make build-frontend
+make run  # Starts development server with supervisord
+```
+
+## Key Features
+
+### Terminal
+- Full xterm compatibility with 16M color support
 - Native browser scroll and search
-- Theming in css / sass - endless possibilities!
-- HTML in your terminal! cat images and use <table>
-- Multiple sessions support (à la screen -x) to simultaneously access a terminal from several places on the planet!
-- Secure authentication with X509 certificates!
-- 16,777,216 colors support!
-- Keyboard text selection!
-- Desktop notifications on terminal output!
-- Geolocation from browser!
-- **MOTD (Message of the Day)** - Customizable welcome message with connection info and branding!
-- Cross-browser compatibility!
+- HTML rendering in terminal
+- Multiple session support (screen -x style)
+- Desktop notifications
 
-## Try it
+### AI Integration
+- Hierarchical agent system with MainAgent orchestration
+- LangChain integration for advanced AI capabilities
+- Real-time response streaming
+- Specification-based task execution
 
-```bash
-$ pip install aetherterm
-$ pip install aetherterm[themes]  # If you want to use themes
-$ pip install aetherterm[systemd]  # If you want to use systemd
-$ aetherterm
-```
+### Security
+- X.509 certificate authentication
+- PAM integration for system auth
+- Role-based access control (RBAC)
+- SSL/TLS encryption
 
-A new tab should appear in your browser. Then type
+## Documentation
 
-```bash
-$ aetherterm help
-```
+- **[Architecture](./ARCHITECTURE.md)** - System design and components
+- **[Claude Instructions](./CLAUDE.md)** - AI assistant configuration
+- **[UI Design](./DESIGN.md)** - Interface principles and layout
 
-To get an overview of AetherTerm features.
-
-## Run it as a server
+## Installation Options
 
 ```bash
-$ aetherterm --host=myhost --port=57575
+# Basic installation
+pip install aetherterm
+
+# With themes support
+pip install aetherterm[themes]
+
+# With systemd integration
+pip install aetherterm[systemd]
 ```
 
-Or with login prompt
+## Server Deployment
 
+### Standard Server
 ```bash
-$ aetherterm --host=myhost --port=57575 --login
+# Basic server
+aetherterm --host=myhost --port=57575
+
+# With login prompt
+aetherterm --host=myhost --port=57575 --login
+
+# With PAM authentication (requires root)
+sudo aetherterm --host=myhost --port=57575 --login --pam_profile=sshd
 ```
 
-Or with PAM authentication (ROOT required)
-
+### Docker
 ```bash
-# aetherterm --host=myhost --port=57575 --login --pam_profile=sshd
-```
-
-You can change `sshd` to your preferred PAM profile.
-
-## Run it with systemd (linux)
-
-Systemd provides a way to automatically activate daemons when needed (socket activation):
-
-```bash
-$ cd /etc/systemd/system
-$ # Create service files for aetherterm
-$ systemctl enable aetherterm.socket
-$ systemctl start aetherterm.socket
-```
-
-Don't forget to update the /etc/aetherterm/aetherterm.conf file with your server options (host, port, shell, ...) and to install aetherterm with the [systemd] flag.
-
-## Contribute
-
-and make the world better (or just AetherTerm).
-
-Don't hesitate to fork the repository and start hacking on it, I am very open to pull requests.
-
-If you don't know what to do go to the github issues and pick one you like.
-
-Client side development use modern web technologies.
-
-## Credits
-
-The js part is based on [term.js](https://github.com/chjj/term.js/) which is based on [jslinux](http://bellard.org/jslinux/).
-
-## Author
-
-[Florian Mounier](http://paradoxxxzero.github.io/)
-
-## License
-
-```
-Copyright 2025
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
-
-## Docker
-
-### Example usage
-
-Starting with login and password
-
-```bash
+# With password
 docker run --env PASSWORD=password -d aetherterm/aetherterm --login
-```
 
-Starting with no password
-
-```bash
+# Without password
 docker run -d -p 57575:57575 aetherterm/aetherterm
-```
 
-Starting with a different port
-
-```bash
+# Custom port
 docker run -d -p 12345:12345 aetherterm/aetherterm --port=12345
 ```
 
-## APM Monitoring with Grafana Cloud
+### Supervisord (Development)
+```bash
+make run      # Start development server
+make stop     # Stop server
+make restart  # Restart server
+make status   # Check status
+make logs     # View logs
+```
 
-AetherTerm includes built-in OpenTelemetry instrumentation for comprehensive observability through Grafana Cloud APM.
+## Monitoring
 
-### Features
-
-- **Distributed Tracing**: Track requests across terminal sessions, WebSocket connections, and AI agent interactions
-- **Custom Metrics**: Monitor terminal sessions, WebSocket traffic, AI token usage, and system resources
-- **Structured Logging**: Correlated logs with trace IDs for debugging
-- **Service Map**: Visualize dependencies and service interactions
-
-### Setup
-
-1. **Get Grafana Cloud Credentials**
-   - Sign up for [Grafana Cloud](https://grafana.com/cloud/)
-   - Create an API key with push permissions
-   - Note your instance ID
-
-2. **Configure Environment Variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Grafana Cloud credentials
-   ```
-
-3. **Required Environment Variables**
-   ```bash
-   GRAFANA_CLOUD_INSTANCE_ID="your-instance-id"
-   GRAFANA_CLOUD_API_KEY="your-api-key"
-   ENVIRONMENT="development"  # or staging, production
-   ```
-
-4. **Optional Configuration**
-   ```bash
-   OTEL_ENABLE_TRACING="true"
-   OTEL_ENABLE_METRICS="true"
-   OTEL_ENABLE_LOGGING="true"
-   OTEL_TRACE_SAMPLE_RATE="1.0"
-   ```
-
-### Usage
-
-Once configured, telemetry data will automatically be sent to Grafana Cloud:
+Built-in OpenTelemetry integration with Grafana Cloud APM:
 
 ```bash
-# Start with APM enabled (default)
-make run-agentserver
+# Configure environment
+cp .env.example .env
+# Edit .env with Grafana Cloud credentials
 
-# Start with APM disabled
-OTEL_ENABLE_TRACING=false make run-agentserver
+# Required variables
+GRAFANA_CLOUD_INSTANCE_ID="your-instance-id"
+GRAFANA_CLOUD_API_KEY="your-api-key"
+ENVIRONMENT="development"
 ```
 
 ### Available Metrics
-
-- `aetherterm.terminal.sessions.active` - Active terminal sessions
-- `aetherterm.websocket.connections.active` - Active WebSocket connections
-- `aetherterm.ai.requests.total` - Total AI agent requests
-- `aetherterm.ai.tokens.usage.total` - AI token consumption
-- `aetherterm.system.memory.usage` - Memory usage
-- `aetherterm.errors.total` - Error counts
-
-### Grafana Dashboards
-
-Pre-built dashboards are available for:
-- Terminal session monitoring
-- WebSocket connection health
-- AI agent performance
+- Terminal sessions and WebSocket connections
+- AI agent requests and token usage
 - System resource utilization
-- Error tracking and alerting
+- Error tracking and alerts
 
-### Development
+## Development
 
-Enable console output for local development:
-
+### Frontend Development
 ```bash
-export OTEL_ENABLE_CONSOLE="true"
+cd frontend
+pnpm install
+pnpm dev          # Development server
+pnpm build        # Production build
+pnpm type-check   # TypeScript validation
 ```
 
-This will print telemetry data to the console in addition to sending to Grafana Cloud.
+### Backend Development
+```bash
+uv sync           # Install Python dependencies
+pytest            # Run tests
+uv add <package>  # Add new dependency
+```
+
+### Common Tasks
+- **Build frontend**: `make build-frontend`
+- **Server management**: `make run | stop | restart | status | logs`
+- **Check ports**: `lsof -i :57575`
+- **Health check**: `curl http://localhost:57575/health`
+
+## Contributing
+
+Fork the repository and submit pull requests. Check GitHub issues for tasks to work on.
+
+## License
+
+Apache License 2.0 - See LICENSE file for details
+
+---
+*Part of the AetherPlatform ecosystem*

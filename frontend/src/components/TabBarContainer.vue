@@ -7,7 +7,35 @@
   >
     <!-- Existing Tabs -->
     <div class="tab-list">
+      <!-- Workspace tabs (priority) -->
       <div
+        v-for="tab in workspaceStore.currentWorkspace?.tabs || []"
+        :key="`ws-${tab.id}`"
+        class="terminal-tab"
+        :class="{ 
+          'active': tab.isActive,
+          'terminal': !tab.type || tab.type === 'terminal',
+          'ai-agent': tab.type === 'ai-agent',
+          'log-monitor': tab.type === 'log-monitor'
+        }"
+        @click="switchToWorkspaceTab(tab.id)"
+      >
+        <div class="tab-content">
+          <span class="tab-icon">
+            {{ (!tab.type || tab.type === 'terminal')
+                ? '💻' 
+                : tab.type === 'ai-agent'
+                  ? '🤖'
+                  : '📈' }}
+          </span>
+          <span class="tab-title">{{ tab.title }}</span>
+        </div>
+        <button @click.stop="closeTab(tab.id)" class="tab-close">×</button>
+      </div>
+      
+      <!-- Legacy tabs (fallback) -->
+      <div
+        v-if="!workspaceStore.currentWorkspace"
         v-for="tab in tabStore.displayTabs"
         :key="tab.id"
         class="terminal-tab"
@@ -58,15 +86,64 @@
       </div>
     </div>
 
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, computed, ref, onUnmounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTerminalTabStore } from '../stores/terminalTabStore'
+import { useWorkspaceStore } from '../stores/workspaceStore'
+import { getWorkspaceCrossTabSync } from '../stores/workspace/crossTabSync'
 import TabCreationMenu from './terminal/tabs/TabCreationMenu.vue'
 
 const tabStore = useTerminalTabStore()
+const workspaceStore = useWorkspaceStore()
+
+// Switch to workspace tab and update activation states
+const switchToWorkspaceTab = (tabId: string) => {
+  if (!workspaceStore.currentWorkspace) return
+  
+  // Update all tabs' isActive state
+  workspaceStore.currentWorkspace.tabs.forEach(tab => {
+    tab.isActive = tab.id === tabId
+  })
+  
+  // Save the workspace state
+  workspaceStore.saveCurrentWorkspace()
+  
+  console.log('🔥 SWITCHED TO WORKSPACE TAB:', tabId)
+}
+
+// Close workspace tab
+const closeTab = (tabId: string) => {
+  if (!workspaceStore.currentWorkspace) return
+  
+  const tabIndex = workspaceStore.currentWorkspace.tabs.findIndex(tab => tab.id === tabId)
+  if (tabIndex === -1) return
+  
+  const wasActive = workspaceStore.currentWorkspace.tabs[tabIndex].isActive
+  
+  // Remove the tab
+  workspaceStore.currentWorkspace.tabs.splice(tabIndex, 1)
+  
+  // If this was the active tab and there are remaining tabs, activate the last one
+  if (wasActive && workspaceStore.currentWorkspace.tabs.length > 0) {
+    const lastTab = workspaceStore.currentWorkspace.tabs[workspaceStore.currentWorkspace.tabs.length - 1]
+    lastTab.isActive = true
+  }
+  
+  // Save the workspace state
+  workspaceStore.saveCurrentWorkspace()
+  
+  // Broadcast tab close to other tabs
+  const crossTabSync = getWorkspaceCrossTabSync()
+  crossTabSync.broadcastTabClose(workspaceStore.currentWorkspace.id, tabId)
+  
+  console.log('🔥 CLOSED WORKSPACE TAB:', tabId)
+}
+const router = useRouter()
 
 // リアクティブなサイドバー状態（DOM検出のみ）
 const isSidebarOpen = ref(false)
@@ -100,10 +177,28 @@ const switchToLogMonitor = () => {
   tabStore.switchToLogMonitor()
 }
 
+
 const addNewTab = (type: 'terminal' | 'ai-agent') => {
   console.log('🔥 ADD NEW TAB CALLED:', { type })
-  const newTab = tabStore.createTab(type)
-  console.log('🔥 NEW TAB CREATED:', newTab)
+  
+  // Use workspace store for modern tab management
+  if (workspaceStore.currentWorkspace) {
+    const tabId = `tab-${Date.now()}`
+    
+    if (type === 'terminal') {
+      // Create terminal tab with pane
+      const newTab = workspaceStore.createTabWithPane(tabId, 'Terminal', 'terminal', 'pure')
+      console.log('🔥 NEW TERMINAL TAB WITH PANE CREATED:', newTab)
+    } else if (type === 'ai-agent') {
+      // Create AI Agent tab without pane
+      const newTab = workspaceStore.createSpecialTab(tabId, 'AI Agent', 'ai-agent')
+      console.log('🔥 NEW AI AGENT TAB CREATED:', newTab)
+    }
+  } else {
+    // Fallback to legacy tab store
+    const newTab = tabStore.createTab(type)
+    console.log('🔥 NEW TAB CREATED (legacy):', newTab)
+  }
 }
 
 
@@ -151,7 +246,8 @@ onUnmounted(() => {
   min-height: 40px;
   position: relative;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: visible !important; /* Make sure overflow is visible for dropdown */
+  z-index: 100; /* Ensure tab bar has proper z-index */
 }
 
 /* サイドバーが閉じているときのみ右マージンを追加 */
@@ -206,6 +302,7 @@ onUnmounted(() => {
   border-top: 2px solid #ff9800;
 }
 
+
 .terminal-tab.pure-terminal {
   border-top: 2px solid #2196f3;
 }
@@ -233,6 +330,7 @@ onUnmounted(() => {
 .terminal-tab.active.log-monitor {
   border-top: 2px solid #f57c00;
 }
+
 
 /* Fixed tab styling */
 .terminal-tab.fixed-tab {
@@ -324,6 +422,37 @@ onUnmounted(() => {
   51%, 100% { opacity: 0; }
 }
 
+.tab-close {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.tab-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.terminal-tab.active .tab-close {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.terminal-tab.active .tab-close:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
 .tab-close-btn {
   background: none;
   border: none;
@@ -367,4 +496,5 @@ onUnmounted(() => {
     font-size: 12px;
   }
 }
+
 </style>

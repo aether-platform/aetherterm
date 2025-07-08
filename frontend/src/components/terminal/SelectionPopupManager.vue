@@ -6,8 +6,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useTerminalTabStore } from '../../stores/terminalTabStore'
 import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { useTerminalTabStore } from '../../stores/terminalTabStore'
 
 // Selection popup state
 const showSelectionPopup = ref(false)

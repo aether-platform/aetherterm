@@ -35,7 +35,8 @@ export default defineConfig({
           'vue-vendor': ['vue', 'vue-router', 'pinia'],
           'vuetify': ['vuetify'],
           'terminal': ['@xterm/xterm', 'xterm'],
-          'socket': ['socket.io-client']
+          'socket': ['socket.io-client'],
+          'vega': ['vega', 'vega-lite', 'vega-embed']
         }
       }
     },
@@ -46,6 +47,18 @@ export default defineConfig({
   server: {
     watch: {
       usePolling: true
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:57575',
+        changeOrigin: true,
+        secure: false
+      },
+      '/socket.io': {
+        target: 'http://localhost:57575',
+        changeOrigin: true,
+        ws: true
+      }
     }
   },
   optimizeDeps: {
