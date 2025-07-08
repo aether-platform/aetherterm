@@ -21,9 +21,11 @@ router = APIRouter()
 log = logging.getLogger("aetherterm.routes.main")
 
 # Templates - go up from routes to agentserver level
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "..", "templates"))
+templates = Jinja2Templates(
+    directory=os.path.join(os.path.dirname(__file__), "..", "..", "templates")
+)
 
-# Mount static files directory - go up from routes to agentserver level  
+# Mount static files directory - go up from routes to agentserver level
 static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
 if os.path.exists(static_dir) and os.listdir(static_dir):
     router.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -32,7 +34,7 @@ if os.path.exists(static_dir) and os.listdir(static_dir):
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main index route that serves the terminal interface."""
-    # Dynamically find the hashed asset filenames - go up from routes to agentserver level 
+    # Dynamically find the hashed asset filenames - go up from routes to agentserver level
     assets_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static", "assets")
     js_bundle = ""
     css_bundle = ""

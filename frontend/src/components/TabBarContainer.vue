@@ -178,23 +178,45 @@ const switchToLogMonitor = () => {
 }
 
 
-const addNewTab = (type: 'terminal' | 'ai-agent') => {
+const addNewTab = async (type: 'terminal' | 'ai-agent') => {
   console.log('🔥 ADD NEW TAB CALLED:', { type })
+  console.log('🔥 Current workspace:', workspaceStore.currentWorkspace)
+  
+  // Wait for workspace initialization if needed
+  if (!workspaceStore.currentWorkspace && !workspaceStore.isResuming) {
+    console.log('🔥 WAITING FOR WORKSPACE INITIALIZATION...')
+    await workspaceStore.initializeWorkspace()
+    
+    // Wait a bit more for workspace to be ready
+    let retries = 0
+    while (!workspaceStore.currentWorkspace && retries < 10) {
+      await new Promise(resolve => setTimeout(resolve, 200))
+      retries++
+    }
+  }
   
   // Use workspace store for modern tab management
   if (workspaceStore.currentWorkspace) {
-    const tabId = `tab-${Date.now()}`
-    
-    if (type === 'terminal') {
-      // Create terminal tab with pane
-      const newTab = workspaceStore.createTabWithPane(tabId, 'Terminal', 'terminal', 'pure')
-      console.log('🔥 NEW TERMINAL TAB WITH PANE CREATED:', newTab)
-    } else if (type === 'ai-agent') {
-      // Create AI Agent tab without pane
-      const newTab = workspaceStore.createSpecialTab(tabId, 'AI Agent', 'ai-agent')
-      console.log('🔥 NEW AI AGENT TAB CREATED:', newTab)
+    try {
+      if (type === 'terminal') {
+        // Create terminal tab with pane
+        const newTab = await workspaceStore.createTabWithPane()
+        console.log('🔥 NEW TERMINAL TAB WITH PANE CREATED:', newTab)
+        console.log('🔥 Workspace tabs after creation:', workspaceStore.currentWorkspace.tabs)
+      } else if (type === 'ai-agent') {
+        // Create AI Agent tab without pane
+        const newTab = await workspaceStore.createSpecialTab()
+        console.log('🔥 NEW AI AGENT TAB CREATED:', newTab)
+        console.log('🔥 Workspace tabs after creation:', workspaceStore.currentWorkspace.tabs)
+      }
+      
+      // Force save workspace to server
+      await workspaceStore.saveCurrentWorkspace()
+    } catch (error) {
+      console.error('🔥 ERROR CREATING TAB:', error)
     }
   } else {
+    console.log('🔥 NO CURRENT WORKSPACE - using legacy tab store')
     // Fallback to legacy tab store
     const newTab = tabStore.createTab(type)
     console.log('🔥 NEW TAB CREATED (legacy):', newTab)
@@ -205,7 +227,19 @@ const addNewTab = (type: 'terminal' | 'ai-agent') => {
 // MutationObserverでDOM変更を監視
 let observer: MutationObserver | null = null
 
+// Watch for workspace tab changes
+watch(() => workspaceStore.currentWorkspace?.tabs, (newTabs, oldTabs) => {
+  console.log('🔥 TAB BAR: Workspace tabs changed')
+  console.log('🔥 TAB BAR: Old tabs:', oldTabs)
+  console.log('🔥 TAB BAR: New tabs:', newTabs)
+  console.log('🔥 TAB BAR: Current workspace:', workspaceStore.currentWorkspace)
+}, { deep: true, immediate: true })
+
 onMounted(async () => {
+  console.log('🔥 TAB BAR: Mounted')
+  console.log('🔥 TAB BAR: Initial workspace:', workspaceStore.currentWorkspace)
+  console.log('🔥 TAB BAR: Initial tabs:', workspaceStore.currentWorkspace?.tabs)
+  
   // Initialize default tab if none exist
   tabStore.initializeDefaultTab()
   

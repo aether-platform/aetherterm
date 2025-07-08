@@ -22,8 +22,8 @@ async def connect(sid, environ, sio_instance):
 
 # @inject
 async def disconnect(
-    sid, 
-    sio_instance
+    sid,
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Handle client disconnection."""
@@ -36,9 +36,9 @@ async def disconnect(
 
 # @inject
 async def create_terminal(
-    sid, 
-    data, 
-    sio_instance
+    sid,
+    data,
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Create a new terminal session or reconnect to existing one."""
@@ -69,7 +69,7 @@ async def create_terminal(
         #         cols=cols,
         #         rows=rows,
         #     )
-        
+
         # Temporary mock result
         result = {
             "session": session_id,  # Changed from session_id to session to match frontend expectation
@@ -78,7 +78,7 @@ async def create_terminal(
             "cols": cols,
             "rows": rows,
             "reconnected": is_reconnect,
-            "status": "mock_ready"
+            "status": "mock_ready",
         }
 
         await sio_instance.emit("terminal_ready", result, room=sid)
@@ -91,9 +91,9 @@ async def create_terminal(
 
 # @inject
 async def resume_workspace(
-    sid, 
-    data, 
-    sio_instance
+    sid,
+    data,
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Resume a workspace with multiple terminals."""
@@ -105,7 +105,11 @@ async def resume_workspace(
         # result = await workspace_service.resume_workspace(
         #     client_sid=sid, workspace_id=workspace_id, tabs=tabs
         # )
-        result = {"workspace_id": workspace_id, "tabs": tabs, "disabled": "dependency injection temporarily disabled"}
+        result = {
+            "workspace_id": workspace_id,
+            "tabs": tabs,
+            "disabled": "dependency injection temporarily disabled",
+        }
 
         await sio_instance.emit("workspace_resumed", result, room=sid)
 
@@ -116,9 +120,9 @@ async def resume_workspace(
 
 # @inject
 async def terminal_input(
-    sid, 
-    data, 
-    sio_instance
+    sid,
+    data,
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Handle terminal input."""
@@ -139,9 +143,9 @@ async def terminal_input(
 
 # @inject
 async def terminal_resize(
-    sid, 
-    data, 
-    sio_instance
+    sid,
+    data,
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Handle terminal resize."""

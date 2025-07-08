@@ -71,14 +71,17 @@ class PatternLearningResponse(BaseModel):
 
 @router.get("/infer/{terminal_id}", response_model=InferenceResultResponse)
 async def infer_operation_context(
-    terminal_id: str = Path(description="Terminal ID to analyze")
+    terminal_id: str = Path(description="Terminal ID to analyze"),
 ) -> InferenceResultResponse:
     """
     指定ターミナルの現在のオペレーションコンテキストを推定
     """
     # This is a placeholder implementation since context inference is not fully implemented
     # The real functionality is now provided by the local insights API
-    raise HTTPException(status_code=501, detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.")
+    raise HTTPException(
+        status_code=501,
+        detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
+    )
 
 
 @router.get("/status/{terminal_id}", response_model=OperationContextResponse)
@@ -88,7 +91,10 @@ async def get_operation_status(
     """
     指定ターミナルの現在のオペレーション状態を取得
     """
-    raise HTTPException(status_code=501, detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.")
+    raise HTTPException(
+        status_code=501,
+        detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
+    )
 
 
 @router.get("/predict/{terminal_id}/next-commands")
@@ -99,7 +105,10 @@ async def predict_next_commands(
     """
     指定ターミナルの次に実行される可能性の高いコマンドを予測
     """
-    raise HTTPException(status_code=501, detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.")
+    raise HTTPException(
+        status_code=501,
+        detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
+    )
 
 
 @router.get("/active-operations")
@@ -107,7 +116,10 @@ async def get_active_operations() -> Dict[str, List[OperationContextResponse]]:
     """
     現在アクティブな全オペレーションを取得
     """
-    raise HTTPException(status_code=501, detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.")
+    raise HTTPException(
+        status_code=501,
+        detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
+    )
 
 
 @router.post("/learn-patterns", response_model=PatternLearningResponse)
@@ -115,7 +127,10 @@ async def learn_operation_patterns(request: PatternLearningRequest) -> PatternLe
     """
     過去のコマンド履歴からオペレーションパターンを学習
     """
-    raise HTTPException(status_code=501, detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.")
+    raise HTTPException(
+        status_code=501,
+        detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
+    )
 
 
 @router.get("/patterns/summary")
@@ -214,14 +229,16 @@ def _context_to_response(context: OperationContext) -> OperationContextResponse:
 
 # Initialization Functions - DEPRECATED
 
-def initialize_context_inference(
-    vector_storage, sql_storage
-) -> Tuple[None, None]:
+
+def initialize_context_inference(vector_storage, sql_storage) -> Tuple[None, None]:
     """
     コンテキスト推定エンジンを初期化 - DEPRECATED
     """
-    logger.warning("Context inference initialization is deprecated. Use local insights API instead.")
+    logger.warning(
+        "Context inference initialization is deprecated. Use local insights API instead."
+    )
     return None, None
+
 
 async def startup_context_inference():
     """

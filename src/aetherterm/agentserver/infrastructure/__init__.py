@@ -20,7 +20,7 @@ class InfrastructureServices:
         ai_service: AIService = Provide["infrastructure.ai_service"],
         security_service: SecurityService = Provide["infrastructure.security_service"],
         memory_store: MemoryStore = Provide["infrastructure.memory_store"],
-        ssl_config: SSLConfig = Provide["infrastructure.ssl_config"]
+        ssl_config: SSLConfig = Provide["infrastructure.ssl_config"],
     ):
         self.ai_service = ai_service
         self.security_service = security_service
@@ -45,7 +45,7 @@ def initialize_infra_services(container=None):
 
 class InfrastructureServicesFallback:
     """Fallback infrastructure services without DI."""
-    
+
     def __init__(self):
         self.ai_service = AIService()
         self.security_service = SecurityService()

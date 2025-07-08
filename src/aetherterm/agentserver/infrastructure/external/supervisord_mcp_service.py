@@ -4,6 +4,7 @@ Supervisord MCP Service Integration
 This module integrates the existing supervisord-mcp package with AetherTerm
 to provide process management capabilities through MCP protocol.
 """
+
 import asyncio
 import logging
 import os
@@ -40,17 +41,15 @@ class SupervisordMCPService:
         workspace_path = Path(__file__).parents[8] / "app" / "mcp" / "supervisord"
         if workspace_path.exists():
             return str(workspace_path / "src" / "supervisord_mcp" / "main.py")
-        
+
         # Check if installed globally
         try:
-            result = subprocess.run(
-                ["which", "supervisord-mcp"], capture_output=True, text=True
-            )
+            result = subprocess.run(["which", "supervisord-mcp"], capture_output=True, text=True)
             if result.returncode == 0:
                 return result.stdout.strip()
         except Exception:
             pass
-        
+
         # Fallback to python module
         return "supervisord_mcp.main"
 
@@ -62,11 +61,11 @@ class SupervisordMCPService:
             "./supervisord.conf",
             str(Path.home() / "supervisord.conf"),
         ]
-        
+
         for path in possible_paths:
             if os.path.exists(path):
                 return path
-        
+
         # Return default path for creation
         return "./supervisord.conf"
 
@@ -81,21 +80,25 @@ class SupervisordMCPService:
             await self._ensure_supervisord_running()
 
             # Start MCP server
-            cmd = [sys.executable, "-c", f"from {self.mcp_server_path.replace('.py', '').replace('/', '.')} import main; main()"]
-            
-            if self.mcp_server_path.endswith('.py'):
+            cmd = [
+                sys.executable,
+                "-c",
+                f"from {self.mcp_server_path.replace('.py', '').replace('/', '.')} import main; main()",
+            ]
+
+            if self.mcp_server_path.endswith(".py"):
                 cmd = [sys.executable, self.mcp_server_path, "mcp"]
-            
+
             self._mcp_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=dict(os.environ, SUPERVISORD_SERVER_URL=self.supervisord_url),
             )
-            
+
             # Wait a bit to see if it starts successfully
             await asyncio.sleep(1)
-            
+
             if self._mcp_process.poll() is None:
                 self._is_running = True
                 log.info("Supervisord MCP server started successfully")
@@ -116,12 +119,11 @@ class SupervisordMCPService:
 
         try:
             self._mcp_process.terminate()
-            
+
             # Wait for graceful shutdown
             try:
                 await asyncio.wait_for(
-                    asyncio.create_task(self._wait_for_process_end()),
-                    timeout=5.0
+                    asyncio.create_task(self._wait_for_process_end()), timeout=5.0
                 )
             except asyncio.TimeoutError:
                 # Force kill if not responsive
@@ -147,9 +149,9 @@ class SupervisordMCPService:
         """Ensure supervisord daemon is running."""
         try:
             # Check if supervisord is running
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    if 'supervisord' in proc.info['name']:
+                    if "supervisord" in proc.info["name"]:
                         log.info("Supervisord is already running")
                         return True
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -158,14 +160,15 @@ class SupervisordMCPService:
             # Try to start supervisord
             log.info("Starting supervisord daemon")
             result = await asyncio.create_subprocess_exec(
-                "supervisord", 
-                "-c", self.config_path,
+                "supervisord",
+                "-c",
+                self.config_path,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 log.info("Supervisord started successfully")
                 return True
@@ -182,16 +185,20 @@ class SupervisordMCPService:
         try:
             # Use the supervisord-mcp CLI to get process list
             result = await asyncio.create_subprocess_exec(
-                sys.executable, self.mcp_server_path, "list-processes",
-                "--server-url", self.supervisord_url,
+                sys.executable,
+                self.mcp_server_path,
+                "list-processes",
+                "--server-url",
+                self.supervisord_url,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 import json
+
                 return json.loads(stdout.decode())
             else:
                 log.error(f"Error getting process list: {stderr.decode()}")
@@ -205,14 +212,18 @@ class SupervisordMCPService:
         """Start a process via supervisord."""
         try:
             result = await asyncio.create_subprocess_exec(
-                sys.executable, self.mcp_server_path, "start", name,
-                "--server-url", self.supervisord_url,
+                sys.executable,
+                self.mcp_server_path,
+                "start",
+                name,
+                "--server-url",
+                self.supervisord_url,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 return {"status": "ok", "message": f"Process {name} started"}
             else:
@@ -225,14 +236,18 @@ class SupervisordMCPService:
         """Stop a process via supervisord."""
         try:
             result = await asyncio.create_subprocess_exec(
-                sys.executable, self.mcp_server_path, "stop", name,
-                "--server-url", self.supervisord_url,
+                sys.executable,
+                self.mcp_server_path,
+                "stop",
+                name,
+                "--server-url",
+                self.supervisord_url,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 return {"status": "ok", "message": f"Process {name} stopped"}
             else:
@@ -245,14 +260,18 @@ class SupervisordMCPService:
         """Restart a process via supervisord."""
         try:
             result = await asyncio.create_subprocess_exec(
-                sys.executable, self.mcp_server_path, "restart", name,
-                "--server-url", self.supervisord_url,
+                sys.executable,
+                self.mcp_server_path,
+                "restart",
+                name,
+                "--server-url",
+                self.supervisord_url,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 return {"status": "ok", "message": f"Process {name} restarted"}
             else:
@@ -265,15 +284,20 @@ class SupervisordMCPService:
         """Get process logs via supervisord."""
         try:
             result = await asyncio.create_subprocess_exec(
-                sys.executable, self.mcp_server_path, "logs", name,
-                "--server-url", self.supervisord_url,
-                "--lines", str(lines),
+                sys.executable,
+                self.mcp_server_path,
+                "logs",
+                name,
+                "--server-url",
+                self.supervisord_url,
+                "--lines",
+                str(lines),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout, stderr = await result.communicate()
-            
+
             if result.returncode == 0:
                 return {"status": "ok", "logs": stdout.decode()}
             else:

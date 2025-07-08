@@ -9,6 +9,7 @@ export interface WorkspaceState {
   name: string
   lastAccessed: Date
   tabs: TerminalTabWithPanes[]
+  activeTabId?: string
   isActive: boolean
   layout: {
     type: string

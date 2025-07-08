@@ -26,34 +26,32 @@ class S3CredentialService:
         assume_role_arn: Optional[str] = None,
         bucket_prefix: str = "jupyter-user-",
         credential_duration_hours: int = 12,
-        jupyterhub_auth: Optional[JupyterHubAuthService] = None
+        jupyterhub_auth: Optional[JupyterHubAuthService] = None,
     ):
         self.aws_region = aws_region
         self.assume_role_arn = assume_role_arn
         self.bucket_prefix = bucket_prefix
         self.credential_duration = timedelta(hours=credential_duration_hours)
         self.jupyterhub_auth = jupyterhub_auth or JupyterHubAuthService()
-        
+
         # Initialize AWS clients
         try:
-            self.sts_client = boto3.client('sts', region_name=aws_region)
-            self.s3_client = boto3.client('s3', region_name=aws_region)
+            self.sts_client = boto3.client("sts", region_name=aws_region)
+            self.s3_client = boto3.client("s3", region_name=aws_region)
         except Exception as e:
             log.error(f"Failed to initialize AWS clients: {e}")
             raise
 
     async def get_user_s3_credentials(
-        self, 
-        token: str, 
-        bucket_name: Optional[str] = None
+        self, token: str, bucket_name: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate temporary S3 credentials for a user based on their JupyterHub token.
-        
+
         Args:
             token: JupyterHub authentication token
             bucket_name: Optional specific bucket name, otherwise user-scoped bucket
-            
+
         Returns:
             Dictionary with temporary AWS credentials and S3 access information
         """
@@ -84,24 +82,21 @@ class S3CredentialService:
                 username=username,
                 bucket_name=user_bucket,
                 user_path=user_path,
-                is_admin=user_info.get("admin", False)
+                is_admin=user_info.get("admin", False),
             )
 
             # Generate temporary credentials
             session_name = f"s3-browser-{username}-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
-            
+
             if self.assume_role_arn:
                 # Use role assumption for more controlled access
                 credentials = await self._assume_role_with_policy(
-                    role_arn=self.assume_role_arn,
-                    session_name=session_name,
-                    policy=policy
+                    role_arn=self.assume_role_arn, session_name=session_name, policy=policy
                 )
             else:
                 # Use STS federation token
                 credentials = await self._get_federation_token(
-                    session_name=session_name,
-                    policy=policy
+                    session_name=session_name, policy=policy
                 )
 
             if not credentials:
@@ -115,19 +110,19 @@ class S3CredentialService:
                     "access_key_id": credentials["AccessKeyId"],
                     "secret_access_key": credentials["SecretAccessKey"],
                     "session_token": credentials["SessionToken"],
-                    "expiration": credentials["Expiration"].isoformat()
+                    "expiration": credentials["Expiration"].isoformat(),
                 },
                 "s3_config": {
                     "region": self.aws_region,
                     "bucket": user_bucket,
                     "prefix": user_path,
-                    "read_only": not user_info.get("admin", False)
+                    "read_only": not user_info.get("admin", False),
                 },
                 "user_info": {
                     "username": username,
                     "is_admin": user_info.get("admin", False),
-                    "groups": user_info.get("groups", [])
-                }
+                    "groups": user_info.get("groups", []),
+                },
             }
 
         except Exception as e:
@@ -135,14 +130,10 @@ class S3CredentialService:
             return None
 
     def _create_user_s3_policy(
-        self, 
-        username: str, 
-        bucket_name: str, 
-        user_path: str,
-        is_admin: bool = False
+        self, username: str, bucket_name: str, user_path: str, is_admin: bool = False
     ) -> str:
         """Create IAM policy document for user-scoped S3 access."""
-        
+
         if is_admin:
             # Admin users get broader access
             policy = {
@@ -150,20 +141,17 @@ class S3CredentialService:
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": [
-                            "s3:ListAllMyBuckets",
-                            "s3:GetBucketLocation"
-                        ],
-                        "Resource": "*"
+                        "Action": ["s3:ListAllMyBuckets", "s3:GetBucketLocation"],
+                        "Resource": "*",
                     },
                     {
                         "Effect": "Allow",
                         "Action": [
                             "s3:ListBucket",
                             "s3:GetBucketLocation",
-                            "s3:GetBucketVersioning"
+                            "s3:GetBucketVersioning",
                         ],
-                        "Resource": f"arn:aws:s3:::{bucket_name}"
+                        "Resource": f"arn:aws:s3:::{bucket_name}",
                     },
                     {
                         "Effect": "Allow",
@@ -172,13 +160,11 @@ class S3CredentialService:
                             "s3:PutObject",
                             "s3:DeleteObject",
                             "s3:GetObjectVersion",
-                            "s3:DeleteObjectVersion"
+                            "s3:DeleteObjectVersion",
                         ],
-                        "Resource": [
-                            f"arn:aws:s3:::{bucket_name}/*"
-                        ]
-                    }
-                ]
+                        "Resource": [f"arn:aws:s3:::{bucket_name}/*"],
+                    },
+                ],
             }
         else:
             # Regular users get scoped access
@@ -187,37 +173,22 @@ class S3CredentialService:
                 "Statement": [
                     {
                         "Effect": "Allow",
-                        "Action": [
-                            "s3:ListBucket"
-                        ],
+                        "Action": ["s3:ListBucket"],
                         "Resource": f"arn:aws:s3:::{bucket_name}",
-                        "Condition": {
-                            "StringLike": {
-                                "s3:prefix": [f"{user_path}*"]
-                            }
-                        }
+                        "Condition": {"StringLike": {"s3:prefix": [f"{user_path}*"]}},
                     },
                     {
                         "Effect": "Allow",
-                        "Action": [
-                            "s3:GetObject",
-                            "s3:PutObject",
-                            "s3:DeleteObject"
-                        ],
-                        "Resource": [
-                            f"arn:aws:s3:::{bucket_name}/{user_path}*"
-                        ]
-                    }
-                ]
+                        "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+                        "Resource": [f"arn:aws:s3:::{bucket_name}/{user_path}*"],
+                    },
+                ],
             }
 
         return json.dumps(policy)
 
     async def _assume_role_with_policy(
-        self, 
-        role_arn: str, 
-        session_name: str, 
-        policy: str
+        self, role_arn: str, session_name: str, policy: str
     ) -> Optional[Dict[str, Any]]:
         """Assume IAM role with inline policy for scoped access."""
         try:
@@ -225,7 +196,7 @@ class S3CredentialService:
                 RoleArn=role_arn,
                 RoleSessionName=session_name,
                 Policy=policy,
-                DurationSeconds=int(self.credential_duration.total_seconds())
+                DurationSeconds=int(self.credential_duration.total_seconds()),
             )
             return response["Credentials"]
         except ClientError as e:
@@ -233,16 +204,14 @@ class S3CredentialService:
             return None
 
     async def _get_federation_token(
-        self, 
-        session_name: str, 
-        policy: str
+        self, session_name: str, policy: str
     ) -> Optional[Dict[str, Any]]:
         """Get federation token with inline policy."""
         try:
             response = self.sts_client.get_federation_token(
                 Name=session_name,
                 Policy=policy,
-                DurationSeconds=int(self.credential_duration.total_seconds())
+                DurationSeconds=int(self.credential_duration.total_seconds()),
             )
             return response["Credentials"]
         except ClientError as e:
@@ -257,19 +226,19 @@ class S3CredentialService:
             log.info(f"Bucket {bucket_name} exists and is accessible")
             return True
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            
-            if error_code == '404':
+            error_code = e.response["Error"]["Code"]
+
+            if error_code == "404":
                 log.info(f"Bucket {bucket_name} does not exist, creating it...")
                 try:
-                    if self.aws_region == 'us-east-1':
+                    if self.aws_region == "us-east-1":
                         self.s3_client.create_bucket(Bucket=bucket_name)
                     else:
                         self.s3_client.create_bucket(
                             Bucket=bucket_name,
-                            CreateBucketConfiguration={'LocationConstraint': self.aws_region}
+                            CreateBucketConfiguration={"LocationConstraint": self.aws_region},
                         )
-                    
+
                     # Set bucket policy for user access
                     await self._set_bucket_policy(bucket_name, username)
                     log.info(f"Created bucket {bucket_name} for user {username}")
@@ -290,26 +259,25 @@ class S3CredentialService:
                     {
                         "Sid": f"UserAccess{username}",
                         "Effect": "Allow",
-                        "Principal": {"AWS": f"arn:aws:sts::{self._get_account_id()}:federated-user/{username}"},
+                        "Principal": {
+                            "AWS": f"arn:aws:sts::{self._get_account_id()}:federated-user/{username}"
+                        },
                         "Action": [
                             "s3:GetObject",
                             "s3:PutObject",
                             "s3:DeleteObject",
-                            "s3:ListBucket"
+                            "s3:ListBucket",
                         ],
                         "Resource": [
                             f"arn:aws:s3:::{bucket_name}",
-                            f"arn:aws:s3:::{bucket_name}/*"
-                        ]
+                            f"arn:aws:s3:::{bucket_name}/*",
+                        ],
                     }
-                ]
+                ],
             }
-            
-            self.s3_client.put_bucket_policy(
-                Bucket=bucket_name,
-                Policy=json.dumps(bucket_policy)
-            )
-            
+
+            self.s3_client.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(bucket_policy))
+
         except ClientError as e:
             log.warning(f"Could not set bucket policy for {bucket_name}: {e}")
 
@@ -333,16 +301,18 @@ class S3CredentialService:
         try:
             response = self.s3_client.list_buckets()
             buckets = response.get("Buckets", [])
-            
+
             if user_info.get("admin", False):
                 # Admin can see all buckets
-                return [{"name": bucket["Name"], "created": bucket["CreationDate"].isoformat()} 
-                       for bucket in buckets]
+                return [
+                    {"name": bucket["Name"], "created": bucket["CreationDate"].isoformat()}
+                    for bucket in buckets
+                ]
             else:
                 # Regular users see only their buckets
                 user_buckets = [
                     {"name": bucket["Name"], "created": bucket["CreationDate"].isoformat()}
-                    for bucket in buckets 
+                    for bucket in buckets
                     if bucket["Name"].startswith(f"{self.bucket_prefix}{username}")
                 ]
                 return user_buckets

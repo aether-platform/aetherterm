@@ -48,7 +48,7 @@ class AsyncioTerminal(BaseTerminal):
     # Log processing infrastructure
     log_buffer = []  # Global log buffer for all sessions
     log_processing_task = None  # Background task for log processing
-    
+
     # Local short-term memory analyzer
     local_analyzer = None  # Shared across all sessions
 
@@ -114,7 +114,7 @@ class AsyncioTerminal(BaseTerminal):
                 "lines": [],
                 "max_lines": 5000,
                 "created_at": __import__("time").time(),
-                "last_updated": __import__("time").time()
+                "last_updated": __import__("time").time(),
             }
 
         log.info("Terminal opening with session: %s and socket %r" % (self.session, self.socket))
@@ -163,7 +163,7 @@ class AsyncioTerminal(BaseTerminal):
             MAX_CHUNK_SIZE = 65536  # 64KB chunks
             if len(message) > MAX_CHUNK_SIZE:
                 for i in range(0, len(message), MAX_CHUNK_SIZE):
-                    chunk = message[i:i + MAX_CHUNK_SIZE]
+                    chunk = message[i : i + MAX_CHUNK_SIZE]
                     self.broadcast(self.session, chunk)
             else:
                 self.broadcast(self.session, message)
@@ -177,45 +177,50 @@ class AsyncioTerminal(BaseTerminal):
                     "lines": [],
                     "max_lines": 5000,
                     "created_at": __import__("time").time(),
-                    "last_updated": __import__("time").time()
+                    "last_updated": __import__("time").time(),
                 }
-            
+
             buffer_data = self.session_buffers[self.session]
-            
+
             # Add new line to buffer
             buffer_line = {
                 "content": message,
                 "timestamp": __import__("time").time(),
-                "type": "output"
+                "type": "output",
             }
-            
+
             buffer_data["lines"].append(buffer_line)
             buffer_data["last_updated"] = __import__("time").time()
-            
+
             # Log buffer status periodically
             line_count = len(buffer_data["lines"])
             if line_count % 100 == 0:
                 log.debug(f"Session {self.session} buffer now has {line_count} lines")
-            
+
             # Trim buffer if it exceeds max lines
             max_lines = buffer_data.get("max_lines", 5000)
             if len(buffer_data["lines"]) > max_lines:
                 excess = len(buffer_data["lines"]) - max_lines
                 buffer_data["lines"] = buffer_data["lines"][excess:]
                 log.debug(f"Trimmed {excess} lines from session {self.session} buffer")
-                    
+
         except Exception as e:
-            log.error(f"Error updating persistent buffer for session {self.session}: {e}", exc_info=True)
+            log.error(
+                f"Error updating persistent buffer for session {self.session}: {e}", exc_info=True
+            )
 
     @classmethod
     def get_session_buffer(cls, session_id: str) -> dict:
         """Get the persistent buffer for a session."""
-        return cls.session_buffers.get(session_id, {
-            "lines": [],
-            "max_lines": 5000,
-            "created_at": __import__("time").time(),
-            "last_updated": __import__("time").time()
-        })
+        return cls.session_buffers.get(
+            session_id,
+            {
+                "lines": [],
+                "max_lines": 5000,
+                "created_at": __import__("time").time(),
+                "last_updated": __import__("time").time(),
+            },
+        )
 
     @classmethod
     def get_session_buffer_content(cls, session_id: str) -> str:
@@ -236,14 +241,14 @@ class AsyncioTerminal(BaseTerminal):
         """Clean up old buffer data for inactive sessions."""
         current_time = __import__("time").time()
         max_age_seconds = max_age_hours * 3600
-        
+
         sessions_to_remove = []
         for session_id, buffer_data in cls.session_buffers.items():
             if (current_time - buffer_data.get("last_updated", 0)) > max_age_seconds:
                 # Only remove if session is also closed
                 if session_id in cls.closed_sessions or session_id not in cls.sessions:
                     sessions_to_remove.append(session_id)
-        
+
         for session_id in sessions_to_remove:
             del cls.session_buffers[session_id]
             log.info(f"Cleaned up old buffer for session {session_id}")
@@ -410,11 +415,11 @@ class AsyncioTerminal(BaseTerminal):
                         # Decode and send to clients
                         try:
                             text = data.decode("utf-8", "replace")
-                            
+
                             # Record performance metric for data reading
                             data_size = len(data)
                             self.record_performance_metric("pty_data_size", data_size, "bytes")
-                            
+
                             self.send(text)
                         except Exception as e:
                             log.error(f"Error decoding PTY data: {e}")
@@ -446,17 +451,17 @@ class AsyncioTerminal(BaseTerminal):
 
         try:
             log.debug("WRIT<%r" % message)
-            
+
             # Record user interaction for local analysis
             self.record_user_interaction("terminal_input", message[:100])
-            
+
             # Detect potential commands
             message_clean = message.strip()
-            if message_clean and not message_clean.startswith('\x1b') and len(message_clean) > 2:
+            if message_clean and not message_clean.startswith("\x1b") and len(message_clean) > 2:
                 # Record as potential command for analysis
                 start_time = __import__("time").time()
                 self.record_command_execution(message_clean, exit_code=None, execution_time=None)
-            
+
             # Write to PTY
             await asyncio.get_event_loop().run_in_executor(
                 None, os.write, self.fd, message.encode("utf-8")
@@ -476,14 +481,14 @@ class AsyncioTerminal(BaseTerminal):
             start_time = __import__("time").time()
             s = struct.pack("HHHH", rows, cols, 0, 0)
             fcntl.ioctl(self.fd, termios.TIOCSWINSZ, s)
-            
+
             # Record performance metric
             resize_time = (__import__("time").time() - start_time) * 1000  # Convert to ms
             self.record_performance_metric("terminal_resize_time", resize_time, "ms")
-            
+
             # Record user interaction
             self.record_user_interaction("terminal_resize", f"{cols}x{rows}")
-            
+
             log.info("SIZE (%d, %d)" % (cols, rows))
         except Exception as e:
             log.error(f"Error resizing PTY: {e}")
@@ -575,7 +580,9 @@ class AsyncioTerminal(BaseTerminal):
             # Get configuration from DI container
             try:
                 # Try to get injected values, fallback to defaults if not available
-                unsecure = getattr(get_container().application.config(), "unsecure", lambda: False)()
+                unsecure = getattr(
+                    get_container().application.config(), "unsecure", lambda: False
+                )()
                 i_hereby_declare = getattr(
                     get_container().application.config(),
                     "i_hereby_declare_i_dont_want_any_security_whatsoever",
@@ -622,7 +629,9 @@ class AsyncioTerminal(BaseTerminal):
             # Get configuration from DI container
             try:
                 # Try to get injected values, fallback to defaults if not available
-                unsecure = getattr(get_container().application.config(), "unsecure", lambda: False)()
+                unsecure = getattr(
+                    get_container().application.config(), "unsecure", lambda: False
+                )()
                 i_hereby_declare = getattr(
                     get_container().application.config(),
                     "i_hereby_declare_i_dont_want_any_security_whatsoever",
@@ -911,7 +920,7 @@ class AsyncioTerminal(BaseTerminal):
             cls.short_term_memory_manager = ShortTermMemoryManager(agent_id)
             await cls.short_term_memory_manager.start()
             log.info(f"Short-term memory manager initialized for agent {agent_id}")
-        
+
         # ローカル分析器も初期化
         if cls.local_analyzer is None:
             cls.local_analyzer = LocalShortTermAnalyzer(agent_id)
@@ -936,7 +945,7 @@ class AsyncioTerminal(BaseTerminal):
                 exit_code=exit_code,
                 execution_time=execution_time,
             )
-        
+
         # ローカル分析器にも記録
         if self.local_analyzer:
             self.local_analyzer.record_command(
@@ -952,7 +961,7 @@ class AsyncioTerminal(BaseTerminal):
             self.short_term_memory_manager.record_user_interaction(
                 session_id=self.session, interaction_type=interaction_type, details=details
             )
-        
+
         # ローカル分析器にも記録
         if self.local_analyzer:
             self.local_analyzer.record_user_interaction(
@@ -970,7 +979,7 @@ class AsyncioTerminal(BaseTerminal):
                 error_message=error_message,
                 stack_trace=stack_trace,
             )
-        
+
         # ローカル分析器にも記録
         if self.local_analyzer:
             self.local_analyzer.record_error(
@@ -991,7 +1000,7 @@ class AsyncioTerminal(BaseTerminal):
                 unit=unit,
                 threshold_exceeded=threshold_exceeded,
             )
-        
+
         # ローカル分析器にも記録
         if self.local_analyzer:
             self.local_analyzer.record_performance(

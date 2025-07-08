@@ -69,10 +69,18 @@ onMounted(async () => {
   console.log('MainContainer mounted')
   
   // Initialize connection using aetherTerminalStore (simpler WebSocket implementation)
-  await aetherTerminalStore.connect()
+  const connected = await aetherTerminalStore.connect()
   
-  // Then initialize workspace system (will load from localStorage and reconnect sessions)
-  await workspaceStore.initializeWorkspace()
+  if (connected) {
+    // Wait a bit for workspace token to be set
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // Then initialize workspace system
+    console.log('MainContainer: Connection established, initializing workspace')
+    await workspaceStore.initializeWorkspace()
+  } else {
+    console.error('MainContainer: Failed to establish connection')
+  }
 })
 
 // Apply theme changes reactively

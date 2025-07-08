@@ -63,17 +63,17 @@ DEFAULT_CONFIG = {
 def setup_config_paths(config_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
     Setup configuration paths and update the config dictionary.
-    
+
     This function determines the appropriate configuration directory based on
     user privileges and XDG Base Directory Specification, then sets up the
     configuration file and SSL directory paths.
-    
+
     Args:
         config_dict: The configuration dictionary to update
-        
+
     Returns:
         Dict[str, Any]: Updated configuration dictionary with paths set
-        
+
     Side Effects:
         - Creates default configuration file if it doesn't exist
         - Prints installation message if config file is created
@@ -103,7 +103,7 @@ def setup_config_paths(config_dict: Dict[str, Any]) -> Dict[str, Any]:
         try:
             # Ensure the directory exists
             os.makedirs(aetherterm_dir, exist_ok=True)
-            
+
             # Copy default configuration file
             default_conf_path = os.path.join(
                 os.path.abspath(os.path.dirname(__file__)), "..", "butterfly.conf.default"
@@ -122,11 +122,11 @@ def setup_config_paths(config_dict: Dict[str, Any]) -> Dict[str, Any]:
 def parse_environment_config() -> Dict[str, Any]:
     """
     Parse configuration from environment variables.
-    
+
     This function reads various AetherTerm configuration values from environment
     variables and returns them in a dictionary format suitable for merging with
     the default configuration.
-    
+
     Returns:
         Dict[str, Any]: Configuration values parsed from environment variables
     """
@@ -134,28 +134,27 @@ def parse_environment_config() -> Dict[str, Any]:
 
     # Basic server settings
     config["host"] = os.getenv("AETHERTERM_HOST", "localhost")
-    
+
     # Parse port as integer
     try:
         config["port"] = int(os.getenv("AETHERTERM_PORT", "57575"))
     except ValueError:
         config["port"] = 57575
-    
+
     # Boolean flags
     config["debug"] = _parse_bool_env("AETHERTERM_DEBUG", False)
     config["more"] = _parse_bool_env("AETHERTERM_MORE", False)
     config["unsecure"] = _parse_bool_env("AETHERTERM_UNSECURE", False)
     config["login"] = _parse_bool_env("AETHERTERM_LOGIN", False)
-    
+
     # String settings
     config["uri_root_path"] = os.getenv("AETHERTERM_URI_ROOT_PATH", "")
     config["pam_profile"] = os.getenv("AETHERTERM_PAM_PROFILE", "")
-    
+
     # AI-related settings
     config["ai_mode"] = os.getenv("AETHERTERM_AI_MODE", "streaming")
     config["ai_provider"] = os.getenv(
-        "AETHERTERM_AI_PROVIDER", 
-        "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "mock"
+        "AETHERTERM_AI_PROVIDER", "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "mock"
     )
     config["ai_api_key"] = os.getenv("ANTHROPIC_API_KEY")
     config["ai_model"] = os.getenv("AETHERTERM_AI_MODEL", "claude-3-5-sonnet-20241022")
@@ -166,11 +165,11 @@ def parse_environment_config() -> Dict[str, Any]:
 def _parse_bool_env(env_var: str, default: bool = False) -> bool:
     """
     Parse a boolean value from an environment variable.
-    
+
     Args:
         env_var: Environment variable name
         default: Default value if environment variable is not set
-        
+
     Returns:
         bool: Parsed boolean value
     """
@@ -181,46 +180,50 @@ def _parse_bool_env(env_var: str, default: bool = False) -> bool:
 def validate_config(config: Dict[str, Any]) -> Dict[str, str]:
     """
     Validate configuration values and return any validation errors.
-    
+
     Args:
         config: Configuration dictionary to validate
-        
+
     Returns:
         Dict[str, str]: Dictionary of validation errors (empty if valid)
     """
     errors = {}
-    
+
     # Validate port range
     port = config.get("port", 57575)
     if not isinstance(port, int) or port < 1 or port > 65535:
         errors["port"] = f"Port must be an integer between 1 and 65535, got: {port}"
-    
+
     # Validate host
     host = config.get("host", "localhost")
     if not isinstance(host, str) or not host.strip():
         errors["host"] = f"Host must be a non-empty string, got: {host}"
-    
+
     # Validate AI mode
     ai_mode = config.get("ai_mode", "streaming")
     valid_ai_modes = ["streaming", "batch", "interactive"]
     if ai_mode not in valid_ai_modes:
         errors["ai_mode"] = f"AI mode must be one of {valid_ai_modes}, got: {ai_mode}"
-    
+
     # Validate AI provider
     ai_provider = config.get("ai_provider", "mock")
     valid_ai_providers = ["anthropic", "mock", "openai", "lmstudio"]
     if ai_provider not in valid_ai_providers:
-        errors["ai_provider"] = f"AI provider must be one of {valid_ai_providers}, got: {ai_provider}"
-    
+        errors["ai_provider"] = (
+            f"AI provider must be one of {valid_ai_providers}, got: {ai_provider}"
+        )
+
     # Validate AI API key if provider is not mock
     if ai_provider != "mock" and not config.get("ai_api_key"):
         errors["ai_api_key"] = f"AI API key is required when provider is '{ai_provider}'"
-    
+
     # Validate keepalive interval
     keepalive = config.get("keepalive_interval", 30)
     if not isinstance(keepalive, int) or keepalive < 1:
-        errors["keepalive_interval"] = f"Keepalive interval must be a positive integer, got: {keepalive}"
-    
+        errors["keepalive_interval"] = (
+            f"Keepalive interval must be a positive integer, got: {keepalive}"
+        )
+
     return errors
 
 
@@ -228,34 +231,34 @@ def create_server_config(**kwargs) -> Dict[str, Any]:
     """
     Create a complete server configuration by merging defaults, environment variables,
     and provided keyword arguments.
-    
+
     This function follows the precedence order:
     1. Default configuration (lowest priority)
     2. Environment variables
     3. Keyword arguments (highest priority)
-    
+
     Args:
         **kwargs: Configuration values to override defaults and environment
-        
+
     Returns:
         Dict[str, Any]: Complete server configuration
-        
+
     Raises:
         ValueError: If configuration validation fails
     """
     # Start with default configuration
     config = DEFAULT_CONFIG.copy()
-    
+
     # Setup configuration paths
     config = setup_config_paths(config)
-    
+
     # Merge environment variables
     env_config = parse_environment_config()
     config.update(env_config)
-    
+
     # Merge provided keyword arguments (highest priority)
     config.update(kwargs)
-    
+
     # Validate the final configuration
     validation_errors = validate_config(config)
     if validation_errors:
@@ -263,23 +266,23 @@ def create_server_config(**kwargs) -> Dict[str, Any]:
         for field, error in validation_errors.items():
             error_msg += f"  - {field}: {error}\n"
         raise ValueError(error_msg)
-    
+
     return config
 
 
 def get_ssl_paths(config: Dict[str, Any]) -> Dict[str, str]:
     """
     Generate SSL certificate file paths based on configuration.
-    
+
     Args:
         config: Server configuration dictionary
-        
+
     Returns:
         Dict[str, str]: Dictionary containing SSL file paths
     """
     ssl_dir = config["ssl_dir"]
     host = config["host"]
-    
+
     return {
         "ca_cert": os.path.join(ssl_dir, "aetherterm_ca.crt"),
         "ca_key": os.path.join(ssl_dir, "aetherterm_ca.key"),
@@ -292,17 +295,17 @@ def get_ssl_paths(config: Dict[str, Any]) -> Dict[str, str]:
 def is_ssl_configured(config: Dict[str, Any]) -> bool:
     """
     Check if SSL certificates are properly configured for the server.
-    
+
     Args:
         config: Server configuration dictionary
-        
+
     Returns:
         bool: True if SSL is properly configured, False otherwise
     """
     if config.get("unsecure", False):
         return False
-    
+
     ssl_paths = get_ssl_paths(config)
     required_files = [ssl_paths["server_cert"], ssl_paths["server_key"], ssl_paths["ca_cert"]]
-    
+
     return all(os.path.exists(path) for path in required_files)

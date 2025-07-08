@@ -21,7 +21,7 @@ from .server_config import (
 
 __all__ = [
     "DEFAULT_CONFIG",
-    "setup_config_paths", 
+    "setup_config_paths",
     "parse_environment_config",
     "validate_config",
     "create_server_config",

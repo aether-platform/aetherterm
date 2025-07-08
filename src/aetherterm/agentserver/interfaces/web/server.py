@@ -30,7 +30,7 @@ import uvicorn
 # OpenTelemetry imports
 from aetherterm.agentserver.infrastructure.observability.telemetry import (
     initialize_telemetry,
-    get_telemetry
+    get_telemetry,
 )
 
 from aetherterm.agentserver.interfaces.web.config import (
@@ -40,15 +40,15 @@ from aetherterm.agentserver.interfaces.web.config import (
 )
 from aetherterm.agentserver.interfaces.web.config.ssl_manager import (
     SSLCertificateManager,
-    SSLCertificateOperations
+    SSLCertificateOperations,
 )
 from aetherterm.agentserver.interfaces.web.config.app_factory import (
     ApplicationFactoryRegistry,
-    LegacyApplicationFactory
+    LegacyApplicationFactory,
 )
 from aetherterm.agentserver.interfaces.web.config.lifecycle_manager import (
     ServerSetupOrchestrator,
-    UvicornServerManager
+    UvicornServerManager,
 )
 from aetherterm.agentserver.endpoint.routes.routes import router
 from aetherterm.agentserver.endpoint.websocket import socket_handlers
@@ -338,7 +338,7 @@ async def start_server(**kwargs):
     sio.on("terminal_resize", socket_handlers.terminal_resize)
     sio.on("reconnect_session", socket_handlers.reconnect_session)
     sio.on("get_session_info", socket_handlers.get_session_info)
-    
+
     # Workspace management handlers
     sio.on("save_workspace", socket_handlers.save_workspace)
     sio.on("load_workspace", socket_handlers.load_workspace)
@@ -347,7 +347,6 @@ async def start_server(**kwargs):
     # Register Wrapper session sync handlers
     sio.on("wrapper_session_sync", socket_handlers.wrapper_session_sync)
     sio.on("get_wrapper_sessions", socket_handlers.get_wrapper_sessions)
-
 
     # P0 緊急対応: MainAgent-SubAgent通信ハンドラーを登録
     # DEPRECATED: 後方互換性のため一時的に保持（将来削除予定）
@@ -370,9 +369,9 @@ async def start_server(**kwargs):
     sio.on("log_monitor_unsubscribe", socket_handlers.log_monitor_unsubscribe)
     sio.on("log_monitor_search", socket_handlers.log_monitor_search)
 
-    
     # AI チャットとログ検索
     from aetherterm.agentserver.endpoint.handlers import ai_handlers
+
     sio.on("ai_chat_message", ai_handlers.ai_chat_message)  # Fixed: Match frontend event name
     sio.on("ai_log_search", ai_handlers.ai_log_search)
     sio.on("ai_search_suggestions", ai_handlers.ai_search_suggestions)
@@ -381,6 +380,7 @@ async def start_server(**kwargs):
     # Supervisord プロセス管理 - check if module exists
     try:
         from aetherterm.agentserver.endpoint.handlers import supervisord_handlers
+
         sio.on("get_processes_list", supervisord_handlers.get_processes_list)
         sio.on("start_process", supervisord_handlers.start_process)
         sio.on("stop_process", supervisord_handlers.stop_process)
@@ -396,7 +396,9 @@ async def start_server(**kwargs):
     # 短期記憶機能とControlServer接続を初期化
     from aetherterm.agentserver.control_server_client import ControlServerClient
     from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
-    from aetherterm.agentserver.infrastructure.external.supervisord_mcp_service import initialize_supervisord_mcp
+    from aetherterm.agentserver.infrastructure.external.supervisord_mcp_service import (
+        initialize_supervisord_mcp,
+    )
 
     # エージェントIDを生成（ホスト:ポートベース）
     agent_id = f"agentserver_{host}_{port}"
@@ -453,9 +455,9 @@ def create_app(**kwargs):
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
     from fastapi.middleware.cors import CORSMiddleware
-    
+
     from aetherterm.agentserver.infrastructure.config.di_container import setup_di_container
-    
+
     # Initialize DI container
     di_container = setup_di_container()
 
@@ -466,43 +468,51 @@ def create_app(**kwargs):
     # Initialize OpenTelemetry if enabled
     enable_telemetry = config.get("enable_telemetry", True)
     telemetry = None
-    
+
     if enable_telemetry:
         try:
             telemetry = initialize_telemetry(
                 service_name="aetherterm-agentserver",
-                service_version="0.0.1", 
+                service_version="0.0.1",
                 environment=config.get("environment", "development"),
-                enable_console_exporter=config.get("debug", False)
+                enable_console_exporter=config.get("debug", False),
             )
             telemetry.setup_all()
         except Exception as e:
             log.warning(f"Failed to initialize telemetry: {e}")
-    
+
     # Create FastAPI application
     fastapi_app = FastAPI(
         title="AetherTerm AgentServer API",
         description="Web-based terminal with AI agent integration",
-        version="0.0.1"
+        version="0.0.1",
     )
-    
+
     # Apply OpenTelemetry instrumentation to FastAPI
     if telemetry:
         telemetry.instrument_app(fastapi_app)
-    
+
     # Configure CORS
     fastapi_app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],  # Vite dev servers
+        allow_origins=[
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:3000",
+        ],  # Vite dev servers
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
     # Calculate path to static files (go up from web/server.py to agentserver/static)
-    static_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "static")
+    static_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "static"
+    )
     if os.path.exists(static_path):
         fastapi_app.mount("/static", StaticFiles(directory=static_path), name="static")
-        fastapi_app.mount("/assets", StaticFiles(directory=os.path.join(static_path, "assets")), name="assets")
+        fastapi_app.mount(
+            "/assets", StaticFiles(directory=os.path.join(static_path, "assets")), name="assets"
+        )
 
     # Include routers
     fastapi_app.include_router(router)
@@ -557,8 +567,6 @@ def setup_app(**kwargs):
     sio.on("log_monitor_unsubscribe", socket_handlers.log_monitor_unsubscribe)
     sio.on("log_monitor_search", socket_handlers.log_monitor_search)
 
-    
-
     # P0 緊急対応: MainAgent-SubAgent通信ハンドラー
     # DEPRECATED: 後方互換性のため一時的に保持（将来削除予定）
     # sio.on("response_request", socket_handlers.response_request)
@@ -577,6 +585,7 @@ def setup_app(**kwargs):
 
     # AI Chat and Log Search handlers
     from aetherterm.agentserver.endpoint.handlers import ai_handlers
+
     sio.on("ai_chat_message", ai_handlers.ai_chat_message)
     sio.on("ai_log_search", ai_handlers.ai_log_search)
     sio.on("ai_search_suggestions", ai_handlers.ai_search_suggestions)
@@ -585,6 +594,7 @@ def setup_app(**kwargs):
     # Set up auto-blocker integration
     try:
         from aetherterm.agentserver.auto_blocker import set_socket_io_instance
+
         set_socket_io_instance(sio)
     except ImportError as e:
         log.warning(f"Auto-blocker not available: {e}")
@@ -602,7 +612,9 @@ def setup_app(**kwargs):
     # Initialize log processing
     async def startup_log_processing():
         try:
-            from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
+            from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import (
+                AsyncioTerminal,
+            )
 
             await AsyncioTerminal.start_log_processing()
             log.info("Log processing service started successfully")
@@ -636,7 +648,9 @@ def setup_app(**kwargs):
 
     async def shutdown():
         try:
-            from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
+            from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import (
+                AsyncioTerminal,
+            )
 
             await AsyncioTerminal.stop_log_processing()
             log.info("Log processing service stopped")

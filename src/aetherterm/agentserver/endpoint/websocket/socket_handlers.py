@@ -3,18 +3,14 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
-# from dependency_injector.wiring import Provide, inject
-
-# Clean Architecture imports
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
-# DI imports commented out to avoid circular dependencies during testing
-# from aetherterm.agentserver.infrastructure.config.di_container import MainContainer
-# from aetherterm.agentserver.infrastructure.config.legacy_containers import ApplicationContainer
 from aetherterm.agentserver.infrastructure.config import utils
 from aetherterm.agentserver.infrastructure.config.utils import User
 from aetherterm.agentserver.infrastructure import get_ai_service
-from aetherterm.agentserver.infrastructure.logging.log_analyzer import get_log_analyzer, SeverityLevel
-from aetherterm.agentserver.domain.services.workspace_service import WorkspaceService
+from aetherterm.agentserver.infrastructure.logging.log_analyzer import (
+    get_log_analyzer,
+    SeverityLevel,
+)
 
 log = logging.getLogger("aetherterm.socket_handlers")
 
@@ -22,9 +18,22 @@ log = logging.getLogger("aetherterm.socket_handlers")
 sio_instance = None
 log_processing_manager = None
 
-# Global workspace service instance
-workspace_service = WorkspaceService()
 
+# Error handling decorator to reduce duplicate try-catch blocks
+def socket_error_handler(error_event: str = "error"):
+    """Decorator to handle socket operation errors consistently."""
+
+    def decorator(func):
+        async def wrapper(sid, data, *args, **kwargs):
+            try:
+                return await func(sid, data, *args, **kwargs)
+            except Exception as e:
+                log.error(f"Error in {func.__name__}: {e}", exc_info=True)
+                await sio_instance.emit(error_event, {"error": str(e)}, room=sid)
+
+        return wrapper
+
+    return decorator
 
 
 def set_sio_instance(sio):
@@ -39,53 +48,17 @@ def get_user_info_from_environ(environ):
     user_info = {
         "remote_addr": environ.get("REMOTE_ADDR"),
         "remote_user": environ.get("HTTP_X_REMOTE_USER"),
-        "forwarded_for": environ.get("HTTP_X_FORWARDED_FOR"),
         "user_agent": environ.get("HTTP_USER_AGENT"),
+        "roles": [],
     }
-    
-    # Extract JWT roles from headers (common proxy patterns)
-    # Proxies often pass roles in headers like X-Auth-Roles, X-User-Roles, etc.
-    roles = []
-    
-    # Check various common header patterns for roles
-    role_headers = [
-        "HTTP_X_AUTH_ROLES",
-        "HTTP_X_USER_ROLES",
-        "HTTP_X_ROLES",
-        "HTTP_X_JWT_ROLES",
-        "HTTP_X_AUTH_GROUPS",
-        "HTTP_X_USER_GROUPS"
-    ]
-    
-    for header in role_headers:
+
+    # Simple role extraction - check common headers
+    for header in ["HTTP_X_AUTH_ROLES", "HTTP_X_USER_ROLES", "HTTP_X_ROLES"]:
         header_value = environ.get(header)
         if header_value:
-            # Roles might be comma-separated or JSON array
-            if header_value.startswith('['):
-                # JSON array format
-                try:
-                    import json
-                    roles = json.loads(header_value)
-                    break
-                except:
-                    pass
-            else:
-                # Comma-separated format
-                roles = [r.strip() for r in header_value.split(',')]
-                break
-    
-    # Also check for JWT claims header
-    jwt_claims = environ.get("HTTP_X_JWT_CLAIMS")
-    if jwt_claims and not roles:
-        try:
-            import json
-            claims = json.loads(jwt_claims)
-            roles = claims.get("roles", [])
-        except:
-            pass
-    
-    user_info["roles"] = roles
-    
+            user_info["roles"] = [r.strip() for r in header_value.split(",")]
+            break
+
     return user_info
 
 
@@ -122,16 +95,23 @@ async def connect(
 ):
     """Handle client connection."""
     log.info(f"Client connected: {sid}")
-    
-    # Handle workspace token for cross-window session sharing
-    if auth and isinstance(auth, dict):
-        workspace_token = auth.get('workspaceToken')
-        if workspace_token:
-            from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-            token_service = get_workspace_token_service()
-            token_service.register_socket(sid, workspace_token)
-            log.info(f"Socket {sid} registered with workspace token: {workspace_token[:8]}...")
-    
+
+    # Extract user info from environment to determine role
+    user_info = get_user_info_from_environ(environ)
+    user_roles = user_info.get("roles", [])
+    role = "Viewer" if "Viewer" in user_roles else "User"
+
+    # Add user to global workspace
+    from aetherterm.agentserver.domain.services.global_workspace_service import (
+        get_global_workspace_service,
+    )
+
+    global_service = get_global_workspace_service()
+    global_service.add_user(sid, role)
+    log.info(f"Added user {sid} to global workspace with role: {role}")
+
+    # For global workspace, no token handling needed - simplified architecture
+
     await sio_instance.emit("connected", {"data": "Connected to Butterfly"}, room=sid)
 
     try:
@@ -148,13 +128,16 @@ async def connect(
 async def disconnect(sid, environ=None):
     """Handle client disconnection."""
     log.info(f"Client disconnected: {sid}")
-    
-    # Unregister from workspace token service
-    from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-    token_service = get_workspace_token_service()
-    workspace_token = token_service.unregister_socket(sid)
-    if workspace_token:
-        log.info(f"Socket {sid} unregistered from workspace token: {workspace_token[:8]}...")
+
+    # Remove user from global workspace
+    from aetherterm.agentserver.domain.services.global_workspace_service import (
+        get_global_workspace_service,
+    )
+
+    global_service = get_global_workspace_service()
+    global_service.remove_user(sid)
+
+    # For global workspace, no token handling needed - simplified architecture
 
     # Remove client from any terminal sessions and schedule delayed closure if no clients remain
     for session_id, terminal in list(AsyncioTerminal.sessions.items()):
@@ -163,7 +146,9 @@ async def disconnect(sid, environ=None):
             log.info(f"Removed client {sid} from terminal session {session_id}")
             # If no clients remain, schedule delayed terminal closure
             if not terminal.client_sids:
-                log.info(f"No clients remaining for session {session_id}, scheduling delayed closure")
+                log.info(
+                    f"No clients remaining for session {session_id}, scheduling delayed closure"
+                )
                 # Add a grace period of 30 seconds for reconnection
                 await _schedule_terminal_closure(session_id, terminal, grace_period=30)
 
@@ -171,39 +156,43 @@ async def disconnect(sid, environ=None):
 async def _schedule_terminal_closure(session_id: str, terminal, grace_period: int = 30):
     """Schedule terminal closure after a grace period, cancelling if clients reconnect."""
     import asyncio
-    
+
     # Mark terminal as pending closure
-    if not hasattr(terminal, '_closure_task') or terminal._closure_task is None:
-        terminal._closure_task = asyncio.create_task(_delayed_terminal_closure(session_id, terminal, grace_period))
+    if not hasattr(terminal, "_closure_task") or terminal._closure_task is None:
+        terminal._closure_task = asyncio.create_task(
+            _delayed_terminal_closure(session_id, terminal, grace_period)
+        )
 
 
 async def _delayed_terminal_closure(session_id: str, terminal, grace_period: int):
     """Execute delayed terminal closure, checking for client reconnection."""
     import asyncio
-    
+
     try:
-        log.info(f"Grace period started for session {session_id}, waiting {grace_period} seconds for reconnection")
+        log.info(
+            f"Grace period started for session {session_id}, waiting {grace_period} seconds for reconnection"
+        )
         await asyncio.sleep(grace_period)
-        
+
         # Check if clients have reconnected during grace period
         if hasattr(terminal, "client_sids") and terminal.client_sids:
             log.info(f"Clients reconnected to session {session_id}, cancelling closure")
             return
-            
+
         # Check if terminal is still active and not already closed
         if session_id in AsyncioTerminal.sessions and not terminal.closed:
             log.info(f"Grace period expired for session {session_id}, closing terminal")
             await terminal.close()
         else:
             log.info(f"Session {session_id} already closed or removed")
-            
+
     except asyncio.CancelledError:
         log.info(f"Terminal closure cancelled for session {session_id} - client reconnected")
     except Exception as e:
         log.error(f"Error during delayed terminal closure for session {session_id}: {e}")
     finally:
         # Clear the closure task reference
-        if hasattr(terminal, '_closure_task'):
+        if hasattr(terminal, "_closure_task"):
             terminal._closure_task = None
 
 
@@ -217,6 +206,19 @@ async def create_terminal(
 ):
     """Handle the creation of a new terminal session with optional agent configuration."""
     try:
+        # Check if user has permission to create terminals
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
+        )
+
+        global_service = get_global_workspace_service()
+
+        if not global_service.can_user_modify(sid):
+            log.warning(f"User {sid} (Viewer) attempted to create terminal")
+            await sio_instance.emit(
+                "terminal_error", {"error": "Viewers cannot create terminals"}, room=sid
+            )
+            return
         session_id = data.get("session", str(uuid4()))
         user_name = data.get("user", "")
         path = data.get("path", "")
@@ -236,28 +238,8 @@ async def create_terminal(
         # Check if this is a request for a specific session (not a new random one)
         is_specific_session_request = "session" in data and data["session"] != ""
 
-        # Check for existing sessions from the same workspace token
-        from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-        token_service = get_workspace_token_service()
-        workspace_token = token_service.get_token_for_socket(sid)
-        
-        if workspace_token and not pane_id:  # Only for main terminal tabs, not panes
-            # Get other sockets with the same token
-            token_sockets = token_service.get_sockets_for_token(workspace_token)
-            token_sockets.discard(sid)  # Remove current socket
-            
-            # Check if any of those sockets have active terminals
-            for other_sid in token_sockets:
-                for check_session_id, terminal in AsyncioTerminal.sessions.items():
-                    if hasattr(terminal, "client_sids") and other_sid in terminal.client_sids and not terminal.closed:
-                        # Check if it's a main terminal (not a pane) and matches the tab ID
-                        if check_session_id.startswith("aether_tab_") and tab_id and check_session_id.endswith(tab_id):
-                            log.info(f"Found existing session {check_session_id} from same workspace token")
-                            session_id = check_session_id
-                            break
-                else:
-                    continue
-                break
+        # For global workspace, we use the provided session ID directly
+        # No need to search for existing sessions across workspace tokens
 
         log.info(f"Creating terminal session {session_id} for client {sid}")
         log.debug(f"Terminal data: user={user_name}, path={path}")
@@ -267,36 +249,17 @@ async def create_terminal(
             existing_terminal = AsyncioTerminal.sessions[session_id]
             if not existing_terminal.closed:
                 log.info(f"Reusing existing terminal session {session_id}")
-                
+
                 # Cancel any pending closure task since client is reconnecting
-                if hasattr(existing_terminal, '_closure_task') and existing_terminal._closure_task:
+                if hasattr(existing_terminal, "_closure_task") and existing_terminal._closure_task:
                     existing_terminal._closure_task.cancel()
                     existing_terminal._closure_task = None
                     log.info(f"Cancelled pending closure for session {session_id}")
-                
+
                 # Add this client to the existing terminal's client set
                 existing_terminal.client_sids.add(sid)
-                # Send terminal history to new client - use persistent buffer if available
-                buffer_content = AsyncioTerminal.get_session_buffer_content(session_id)
-                log.info(f"Buffer content length for session {session_id}: {len(buffer_content) if buffer_content else 0}")
-                
-                if buffer_content:
-                    log.info(f"Sending persistent buffer content to client {sid} for session {session_id}")
-                    await sio_instance.emit(
-                        "terminal_output",
-                        {"session": session_id, "data": buffer_content},
-                        room=sid,
-                    )
-                elif existing_terminal.history:
-                    # Fallback to in-memory history if persistent buffer is empty
-                    log.info(f"Sending in-memory history to client {sid} for session {session_id}, length: {len(existing_terminal.history)}")
-                    await sio_instance.emit(
-                        "terminal_output",
-                        {"session": session_id, "data": existing_terminal.history},
-                        room=sid,
-                    )
-                else:
-                    log.warning(f"No buffer content or history available for session {session_id}")
+                # Send terminal history to new client
+                await send_terminal_history(sid, session_id, existing_terminal)
                 # Notify client that terminal is ready
                 await sio_instance.emit(
                     "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
@@ -408,20 +371,27 @@ async def create_terminal(
 
         # Associate terminal with client using the new client set
         terminal_instance.client_sids.add(sid)
-        
-        # Store workspace metadata for session restoration
-        if workspace_token:
-            terminal_instance.workspace_token = workspace_token
-            # Find tab and pane indices from the create_terminal call context
-            # This is set during resume_workspace when creating new terminals
-            if hasattr(AsyncioTerminal, '_temp_creation_context') and AsyncioTerminal._temp_creation_context:
-                terminal_instance.tab_index = AsyncioTerminal._temp_creation_context.get('tab_index', 0)
-                terminal_instance.pane_index = AsyncioTerminal._temp_creation_context.get('pane_index', 0)
-            else:
-                # Default to 0 if not in resume context
-                terminal_instance.tab_index = 0
-                terminal_instance.pane_index = 0
-            log.info(f"Terminal {session_id} associated with workspace {workspace_token[:8]}... tab[{terminal_instance.tab_index}] pane[{terminal_instance.pane_index}]")
+
+        # Store metadata for session restoration in global workspace
+        # Find tab and pane indices from the create_terminal call context
+        # This is set during resume_workspace when creating new terminals
+        if (
+            hasattr(AsyncioTerminal, "_temp_creation_context")
+            and AsyncioTerminal._temp_creation_context
+        ):
+            terminal_instance.tab_index = AsyncioTerminal._temp_creation_context.get(
+                "tab_index", 0
+            )
+            terminal_instance.pane_index = AsyncioTerminal._temp_creation_context.get(
+                "pane_index", 0
+            )
+        else:
+            # Default to 0 if not in resume context
+            terminal_instance.tab_index = 0
+            terminal_instance.pane_index = 0
+        log.info(
+            f"Terminal {session_id} created in global workspace tab[{terminal_instance.tab_index}] pane[{terminal_instance.pane_index}]"
+        )
 
         # Start the PTY
         log.debug("Starting PTY")
@@ -557,52 +527,14 @@ async def resume_workspace(sid, data):
 
                 log.info(f"Processing pane {pane_id} with session {session_id}")
 
-                # Get workspace token from the client
-                from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-                token_service = get_workspace_token_service()
-                workspace_token = token_service.get_token_for_socket(sid)
-                
-                if not workspace_token:
-                    log.warning(f"No workspace token for socket {sid}, cannot restore sessions")
-                    workspace_token = "default"
-                
-                # Try to find session by workspace token and tab/pane indices
-                # Since pane IDs change on reload, we need to use indices
+                # For global workspace, we use the session ID directly if available
+                # Simplified session restoration without workspace token dependencies
                 tab_index = tabs.index(tab_data)
                 pane_index = panes.index(pane_data)
-                
-                # Look for any session that matches the pattern for this workspace/tab/pane
+
+                # Look for existing session by session ID
                 session_found = False
-                for existing_session_id, terminal in AsyncioTerminal.sessions.items():
-                    if not terminal.closed and workspace_token in existing_session_id:
-                        # Check if this could be the right session based on pattern
-                        # Sessions are created with pattern: aether_pane_{pane_id}
-                        # We need to match by workspace and position
-                        if hasattr(terminal, 'workspace_token') and terminal.workspace_token == workspace_token:
-                            if hasattr(terminal, 'tab_index') and terminal.tab_index == tab_index:
-                                if hasattr(terminal, 'pane_index') and terminal.pane_index == pane_index:
-                                    log.info(f"Found matching session {existing_session_id} for workspace {workspace_token[:8]}... tab[{tab_index}] pane[{pane_index}]")
-                                    
-                                    # Add this client to the existing terminal's client set
-                                    terminal.client_sids.add(sid)
-                                    
-                                    resumed_panes.append(
-                                        {
-                                            "paneId": pane_id,
-                                            "sessionId": existing_session_id,
-                                            "status": "resumed",
-                                            "type": pane_type,
-                                            "subType": sub_type,
-                                            "title": pane_title,
-                                            "position": position,
-                                        }
-                                    )
-                                    session_found = True
-                                    break
-                
-                if session_found:
-                    continue
-                
+
                 # Check if session exists by the provided session_id
                 if session_id and session_id in AsyncioTerminal.sessions:
                     existing_terminal = AsyncioTerminal.sessions[session_id]
@@ -613,15 +545,16 @@ async def resume_workspace(sid, data):
 
                         # Add this client to the existing terminal's client set
                         existing_terminal.client_sids.add(sid)
-                        
+
                         # Update terminal metadata for future lookups
-                        existing_terminal.workspace_token = workspace_token
                         existing_terminal.tab_index = tab_index
                         existing_terminal.pane_index = pane_index
 
                         # Don't send history here - let the terminal component request it
                         # when it's ready via reconnect_session
-                        log.info(f"Terminal {session_id} exists, client should reconnect when ready")
+                        log.info(
+                            f"Terminal {session_id} exists, client should reconnect when ready"
+                        )
 
                         resumed_panes.append(
                             {
@@ -650,10 +583,10 @@ async def resume_workspace(sid, data):
                 # Store creation context in AsyncioTerminal class temporarily
                 # so create_terminal can access it
                 AsyncioTerminal._temp_creation_context = {
-                    'tab_index': tab_index,
-                    'pane_index': pane_index
+                    "tab_index": tab_index,
+                    "pane_index": pane_index,
                 }
-                
+
                 # Create new terminal session
                 await create_terminal(
                     sid,
@@ -669,7 +602,7 @@ async def resume_workspace(sid, data):
                         "path": "",
                     },
                 )
-                
+
                 # Clean up temporary context
                 AsyncioTerminal._temp_creation_context = None
 
@@ -730,7 +663,6 @@ async def resume_workspace(sid, data):
     except Exception as e:
         log.error(f"Error resuming workspace: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
 
 
 async def resume_terminal(sid, data):
@@ -807,138 +739,23 @@ async def resume_terminal(sid, data):
         await sio_instance.emit("terminal_error", {"error": str(e)}, room=sid)
 
 
-async def save_workspace(sid, data):
-    """Save workspace to server memory"""
-    try:
-        # Get user ID from session (for now, use sid as user ID)
-        user_id = sid  # TODO: Get actual user ID from auth
-        workspace_data = data.get("workspace")
-        
-        if not workspace_data:
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "No workspace data provided"},
-                room=sid
-            )
-            return
-        
-        # Save workspace
-        workspace = workspace_service.save_workspace_from_client(user_id, workspace_data)
-        
-        if workspace:
-            log.info(f"Saved workspace {workspace.id} for user {user_id}")
-            await sio_instance.emit(
-                "workspace_saved",
-                {
-                    "success": True,
-                    "workspaceId": workspace.id,
-                    "message": "Workspace saved successfully"
-                },
-                room=sid
-            )
-        else:
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "Failed to save workspace"},
-                room=sid
-            )
-            
-    except Exception as e:
-        log.error(f"Error saving workspace: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
-
-
-async def load_workspace(sid, data):
-    """Load workspace from server memory"""
-    try:
-        # Get user ID from session
-        user_id = sid  # TODO: Get actual user ID from auth
-        workspace_id = data.get("workspaceId")
-        
-        if workspace_id:
-            # Load specific workspace
-            workspace = workspace_service.get_workspace(user_id, workspace_id)
-        else:
-            # Load active workspace
-            workspace = workspace_service.get_active_workspace(user_id)
-        
-        if not workspace:
-            # Create default workspace if none exists
-            workspace = workspace_service.get_or_create_default_workspace(user_id)
-        
-        log.info(f"Loaded workspace {workspace.id} for user {user_id}")
-        
-        await sio_instance.emit(
-            "workspace_loaded",
-            {
-                "success": True,
-                "workspace": workspace.to_dict()
-            },
-            room=sid
-        )
-        
-    except Exception as e:
-        log.error(f"Error loading workspace: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
-
-
-async def list_workspaces(sid, data):
-    """List all workspaces for a user"""
-    try:
-        # Get user ID from session
-        user_id = sid  # TODO: Get actual user ID from auth
-        
-        workspaces = workspace_service.get_user_workspaces(user_id)
-        active_workspace_id = workspace_service._active_workspaces.get(user_id)
-        
-        await sio_instance.emit(
-            "workspaces_list",
-            {
-                "success": True,
-                "workspaces": [ws.to_dict() for ws in workspaces],
-                "activeWorkspaceId": active_workspace_id
-            },
-            room=sid
-        )
-        
-    except Exception as e:
-        log.error(f"Error listing workspaces: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
-
-
 async def get_session_info(sid, data):
     """Get information about a session for debugging."""
     try:
         session_id = data.get("session")
         if not session_id:
-            await sio_instance.emit(
-                "session_info",
-                {"error": "No session ID provided"},
-                room=sid
-            )
+            await sio_instance.emit("session_info", {"error": "No session ID provided"}, room=sid)
             return
-        
+
         info = {
             "sessionId": session_id,
             "exists": False,
             "active": False,
             "clientCount": 0,
             "history": False,
-            "historyLength": 0
+            "historyLength": 0,
         }
-        
+
         # Check if session exists in AsyncioTerminal sessions
         if session_id in AsyncioTerminal.sessions:
             terminal = AsyncioTerminal.sessions[session_id]
@@ -947,86 +764,65 @@ async def get_session_info(sid, data):
             info["clientCount"] = len(terminal.client_sids)
             info["history"] = bool(terminal.history)
             info["historyLength"] = len(terminal.history) if terminal.history else 0
-            
-            log.info(f"Session info for {session_id}: exists={info['exists']}, active={info['active']}, clients={info['clientCount']}, history_len={info['historyLength']}")
+
+            log.debug(
+                f"Session info for {session_id}: exists={info['exists']}, active={info['active']}, clients={info['clientCount']}, history_len={info['historyLength']}"
+            )
         else:
             log.info(f"Session {session_id} not found in active sessions")
-        
-        await sio_instance.emit(
-            "session_info",
-            info,
-            room=sid
-        )
-        
+
+        await sio_instance.emit("session_info", info, room=sid)
+
     except Exception as e:
         log.error(f"Error getting session info: {e}", exc_info=True)
-        await sio_instance.emit(
-            "session_info",
-            {"error": str(e)},
-            room=sid
-        )
+        await sio_instance.emit("session_info", {"error": str(e)}, room=sid)
 
 
+@socket_error_handler("terminal_error")
 async def terminal_input(sid, data):
     """Handle input from client to terminal."""
-    try:
-        session_id = data.get("session")
-        input_data = data.get("data", "")
+    session_id = data.get("session")
+    input_data = data.get("data", "")
 
-        # Get user info from socket session
-        environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
-        user_info = get_user_info_from_environ(environ)
-        
-        # Extract roles from user info (assuming roles are in JWT claims)
-        user_roles = []
-        if user_info and isinstance(user_info, dict):
-            # Try to get roles from various possible locations
-            user_roles = user_info.get("roles", [])
-            if not user_roles:
-                # Try alternative locations where roles might be stored
-                user_roles = user_info.get("groups", [])
-                if not user_roles and "claims" in user_info:
-                    user_roles = user_info.get("claims", {}).get("roles", [])
-        
-        # Check if user has Viewer role
-        if "Viewer" in user_roles:
-            log.warning(f"Input blocked for Viewer role user in session {session_id}")
-            # Send a message back to the client about the restriction
-            await sio_instance.emit(
-                "terminal_output",
-                {
-                    "session": session_id,
-                    "data": "\r\n\x1b[33m[Input blocked: Read-only access for Viewer role]\x1b[0m\r\n"
-                },
-                room=sid
-            )
-            return
+    # Check if user has permission to send input using global workspace service
+    from aetherterm.agentserver.domain.services.global_workspace_service import (
+        get_global_workspace_service,
+    )
 
-        if session_id in AsyncioTerminal.sessions:
-            terminal = AsyncioTerminal.sessions[session_id]
-            await terminal.write(input_data)
-        else:
-            log.warning(f"Terminal session {session_id} not found")
+    global_service = get_global_workspace_service()
 
-    except Exception as e:
-        log.error(f"Error handling terminal input: {e}")
+    if not global_service.can_user_modify(sid):
+        log.warning(f"Input blocked for Viewer role user {sid} in session {session_id}")
+        # Send a message back to the client about the restriction
+        await sio_instance.emit(
+            "terminal_output",
+            {
+                "session": session_id,
+                "data": "\r\n\x1b[33m[Input blocked: Read-only access for Viewer role]\x1b[0m\r\n",
+            },
+            room=sid,
+        )
+        return
+
+    if session_id in AsyncioTerminal.sessions:
+        terminal = AsyncioTerminal.sessions[session_id]
+        await terminal.write(input_data)
+    else:
+        log.warning(f"Terminal session {session_id} not found")
 
 
+@socket_error_handler("terminal_error")
 async def terminal_resize(sid, data):
     """Handle terminal resize from client."""
-    try:
-        session_id = data.get("session")
-        cols = data.get("cols", 80)
-        rows = data.get("rows", 24)
+    session_id = data.get("session")
+    cols = data.get("cols", 80)
+    rows = data.get("rows", 24)
 
-        if session_id in AsyncioTerminal.sessions:
-            terminal = AsyncioTerminal.sessions[session_id]
-            await terminal.resize(cols, rows)
-        else:
-            log.warning(f"Terminal session {session_id} not found")
-
-    except Exception as e:
-        log.error(f"Error handling terminal resize: {e}")
+    if session_id in AsyncioTerminal.sessions:
+        terminal = AsyncioTerminal.sessions[session_id]
+        await terminal.resize(cols, rows)
+    else:
+        log.warning(f"Terminal session {session_id} not found")
 
 
 def broadcast_to_session(session_id, message):
@@ -1055,18 +851,21 @@ def broadcast_to_session(session_id, message):
             try:
                 log_analyzer = get_log_analyzer()
                 detection_result = log_analyzer.analyze_output(session_id, message)
-                
-                if detection_result and hasattr(detection_result, 'should_block') and detection_result.should_block:
-                    log.warning(f"Potentially dangerous output detected in session {session_id}: {detection_result.message}")
+
+                if (
+                    detection_result
+                    and hasattr(detection_result, "should_block")
+                    and detection_result.should_block
+                ):
+                    log.warning(
+                        f"Potentially dangerous output detected in session {session_id}: {detection_result.message}"
+                    )
                     # TODO: Implement auto-blocking feature
             except Exception as e:
                 log.debug(f"Log analysis failed: {e}")
                 # Continue without blocking on log analysis errors
 
             # Terminal output - broadcast to all clients in this session
-            log.debug(
-                f"Broadcasting terminal output for session {session_id} to {len(client_sids)} clients: {message!r}"
-            )
             for client_sid in client_sids:
                 asyncio.create_task(
                     sio_instance.emit(
@@ -1599,7 +1398,9 @@ async def agent_hello(sid, data):
         agent_hierarchy = "main"
 
         # ターミナルセッションからエージェント設定を検索
-        from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
+        from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import (
+            AsyncioTerminal,
+        )
 
         for session_id, terminal in AsyncioTerminal.sessions.items():
             if hasattr(terminal, "agent_config") and terminal.agent_config:
@@ -1806,38 +1607,60 @@ async def log_monitor_search(sid, data):
         await sio_instance.emit("log_search_error", {"error": str(e)}, room=sid)
 
 
-# Background task to broadcast log statistics
+# Event-driven log statistics broadcasting
+_log_stats_task = None
+_log_stats_interval = 5  # seconds
+
+
 async def broadcast_log_statistics():
-    """Broadcast log statistics to all subscribed clients via Pub/Sub."""
-    while True:
-        try:
-            # Skip log statistics for now to avoid DI issues
-            if sio_instance:
-                # Send empty stats to avoid errors
-                system_stats = {"total_logs": 0, "error_count": 0, "processing_active": False}
+    """Broadcast log statistics to all subscribed clients via event-driven approach."""
+    global _log_stats_task
 
-                # Broadcast to all log monitor subscribers
-                await sio_instance.emit(
-                    "log_system_stats",
-                    {"stats": system_stats, "timestamp": asyncio.get_event_loop().time()},
-                    namespace="/",
-                )
+    try:
+        # Skip log statistics for now to avoid DI issues
+        if sio_instance:
+            # Send empty stats to avoid errors
+            system_stats = {"total_logs": 0, "error_count": 0, "processing_active": False}
 
-                # Skip individual terminal statistics for now
+            # Broadcast to all log monitor subscribers
+            await sio_instance.emit(
+                "log_system_stats",
+                {"stats": system_stats, "timestamp": asyncio.get_event_loop().time()},
+                namespace="/",
+            )
 
-        except Exception as e:
-            log.error(f"Error broadcasting log statistics: {e}")
+    except Exception as e:
+        log.error(f"Error broadcasting log statistics: {e}")
 
-        # Wait 5 seconds before next broadcast
-        await asyncio.sleep(5)
+    # Schedule next broadcast
+    if _log_stats_task and not _log_stats_task.cancelled():
+        _log_stats_task = asyncio.create_task(_schedule_next_broadcast())
+
+
+async def _schedule_next_broadcast():
+    """Schedule the next statistics broadcast."""
+    await asyncio.sleep(_log_stats_interval)
+    await broadcast_log_statistics()
 
 
 def start_log_monitoring_background_task():
     """Start the background task for log monitoring with Pub/Sub."""
+    global _log_stats_task
+
     if sio_instance:
-        asyncio.create_task(broadcast_log_statistics())
+        # Start the initial broadcast
+        _log_stats_task = asyncio.create_task(broadcast_log_statistics())
         # Pub/Subリスナーも開始
         asyncio.create_task(start_redis_pubsub_listener())
+
+
+def stop_log_monitoring_background_task():
+    """Stop the log monitoring background task."""
+    global _log_stats_task
+
+    if _log_stats_task and not _log_stats_task.cancelled():
+        _log_stats_task.cancel()
+        _log_stats_task = None
 
 
 async def start_redis_pubsub_listener():
@@ -1930,8 +1753,6 @@ async def update_and_broadcast_statistics():
         log.error(f"Error updating statistics: {e}")
 
 
-
-
 def get_terminal_context(session_id):
     """Extract terminal context for AI assistance."""
     if session_id and session_id in AsyncioTerminal.sessions:
@@ -1959,8 +1780,35 @@ def get_terminal_context(session_id):
     return None
 
 
+async def send_terminal_history(sid, session_id, terminal):
+    """Send terminal history to a client - centralizes history sending logic."""
+    try:
+        # Use persistent buffer if available
+        buffer_content = AsyncioTerminal.get_session_buffer_content(session_id)
 
-
+        if buffer_content:
+            log.info(
+                f"Sending persistent buffer content to client {sid} for session {session_id}, length: {len(buffer_content)}"
+            )
+            await sio_instance.emit(
+                "terminal_output",
+                {"session": session_id, "data": buffer_content},
+                room=sid,
+            )
+        elif hasattr(terminal, "history") and terminal.history:
+            # Fallback to in-memory history if persistent buffer is empty
+            log.info(
+                f"Sending in-memory history to client {sid} for session {session_id}, length: {len(terminal.history)}"
+            )
+            await sio_instance.emit(
+                "terminal_output",
+                {"session": session_id, "data": terminal.history},
+                room=sid,
+            )
+        else:
+            log.warning(f"No buffer content or history available for session {session_id}")
+    except Exception as e:
+        log.error(f"Error sending terminal history: {e}")
 
 
 # AI Chat and Log Search Handlers
@@ -1970,77 +1818,52 @@ async def reconnect_session(sid, data):
     """Handle session reconnection request."""
     try:
         session_id = data.get("session")
-        
+
         if not session_id:
             log.warning("Reconnect session request without session ID")
             await sio_instance.emit(
-                "session_not_found", 
-                {"session": session_id, "error": "Session ID required"}, 
-                room=sid
+                "session_not_found",
+                {"session": session_id, "error": "Session ID required"},
+                room=sid,
             )
             return
-        
+
         log.info(f"Session reconnection request for {session_id} from client {sid}")
-        
+
         # Check if session exists
         if session_id in AsyncioTerminal.sessions:
             terminal = AsyncioTerminal.sessions[session_id]
-            
+
             if not terminal.closed:
                 # Session is active - send success response
                 log.info(f"Reconnecting to active session {session_id}")
-                
+
                 # Add client to session
                 terminal.client_sids.add(sid)
-                
+
                 # Send reconnection success - client expects terminal_ready
                 await sio_instance.emit(
-                    "terminal_ready",
-                    {
-                        "session": session_id,
-                        "status": "ready"
-                    },
-                    room=sid
+                    "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
                 )
-                
+
                 # Send terminal history/buffer content
-                buffer_content = AsyncioTerminal.get_session_buffer_content(session_id)
-                if buffer_content:
-                    # Send history as terminal output
-                    await sio_instance.emit(
-                        "terminal_output",
-                        {"session": session_id, "data": buffer_content},
-                        room=sid
-                    )
-                    log.info(f"Sent buffer content for session {session_id}")
-                elif terminal.history:
-                    # Fallback to in-memory history
-                    await sio_instance.emit(
-                        "terminal_output",
-                        {"session": session_id, "data": terminal.history},
-                        room=sid
-                    )
-                    log.info(f"Sent in-memory history for session {session_id}")
-                
+                await send_terminal_history(sid, session_id, terminal)
+
                 return
             else:
                 # Session exists but is closed
                 log.info(f"Session {session_id} exists but is closed")
-        
+
         # Session not found or closed
         log.info(f"Session {session_id} not found or closed")
-        await sio_instance.emit(
-            "session_not_found",
-            {"session": session_id},
-            room=sid
-        )
-        
+        await sio_instance.emit("session_not_found", {"session": session_id}, room=sid)
+
     except Exception as e:
         log.error(f"Error handling reconnect session: {e}", exc_info=True)
         await sio_instance.emit(
             "session_not_found",
-            {"session": session_id if 'session_id' in locals() else None, "error": str(e)},
-            room=sid
+            {"session": session_id if "session_id" in locals() else None, "error": str(e)},
+            room=sid,
         )
 
 
@@ -2048,170 +1871,144 @@ async def reconnect_session(sid, data):
 # Workspace Management Event Handlers
 # ========================================
 
-@sio_instance.on("workspace_create")
+
+async def on_workspace_connect(sid, data):
+    """Handle user connection to the global workspace."""
+    try:
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
+        )
+
+        service = get_global_workspace_service()
+
+        # Get user info from environment to extract role
+        environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
+        user_info = get_user_info_from_environ(environ)
+
+        # Extract role from user info
+        user_roles = user_info.get("roles", [])
+
+        # Determine role: if "Viewer" is in roles, use that, otherwise default to "User"
+        role = "Viewer" if "Viewer" in user_roles else "User"
+
+        # Allow override from data if provided
+        if "role" in data:
+            role = data["role"]
+
+        # Add user to global workspace
+        service.add_user(sid, role)
+
+        log.info(f"User {sid} ({role}) connected to global workspace with roles: {user_roles}")
+
+        await sio_instance.emit("workspace_connected", {"success": True, "role": role}, room=sid)
+
+    except Exception as e:
+        log.error(f"Error connecting to workspace: {e}", exc_info=True)
+        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
+
+
 async def on_workspace_create(sid, data):
-    """Create a new workspace."""
+    """Create workspace - returns the global workspace since we can't create new workspaces."""
     try:
-        from aetherterm.agentserver.domain.services.workspace_management_service import get_workspace_management_service
-        from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-        
-        service = get_workspace_management_service()
-        token_service = get_workspace_token_service()
-        
-        # Get workspace token
-        workspace_token = token_service.get_token_for_socket(sid)
-        if not workspace_token:
-            log.error(f"No workspace token for socket {sid}")
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
+        )
+
+        service = get_global_workspace_service()
+
+        # Check if user has permission to modify
+        if not service.can_user_modify(sid):
+            log.warning(f"User {sid} (Viewer) attempted to create workspace")
             await sio_instance.emit(
-                "workspace_error",
-                {"error": "No workspace token"},
-                room=sid
+                "workspace_error", {"error": "Viewers cannot create workspaces"}, room=sid
             )
             return
-        
-        name = data.get("name", "New Workspace")
-        workspace = service.create_workspace(workspace_token, name)
-        
+
+        # We only have one global workspace, so return it
+        workspace = service.get_workspace()
+
+        log.info(f"User {sid} requested workspace creation - returning global workspace")
+
         await sio_instance.emit(
-            "workspace_created",
-            {"success": True, "workspace": workspace},
-            room=sid
+            "workspace_created", {"success": True, "workspace": workspace}, room=sid
         )
-        
+
     except Exception as e:
-        log.error(f"Error creating workspace: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
+        log.error(f"Error in workspace create handler: {e}", exc_info=True)
+        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
 
 
-@sio_instance.on("workspace_get")
-async def on_workspace_get(sid, data):
-    """Get a specific workspace."""
+async def on_workspace_update(sid, data):
+    """Update the global workspace."""
     try:
-        from aetherterm.agentserver.domain.services.workspace_management_service import get_workspace_management_service
-        from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-        
-        service = get_workspace_management_service()
-        token_service = get_workspace_token_service()
-        
-        workspace_token = token_service.get_token_for_socket(sid)
-        if not workspace_token:
-            log.error(f"No workspace token for socket {sid}")
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "No workspace token"},
-                room=sid
-            )
-            return
-        
-        workspace_id = data.get("workspaceId")
-        if not workspace_id:
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "workspaceId required"},
-                room=sid
-            )
-            return
-        
-        workspace = service.get_workspace(workspace_token, workspace_id)
-        
-        await sio_instance.emit(
-            "workspace_data",
-            {"success": workspace is not None, "workspace": workspace},
-            room=sid
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
         )
-        
+
+        service = get_global_workspace_service()
+
+        # Check if user has permission to modify
+        if not service.can_user_modify(sid):
+            log.warning(f"User {sid} (Viewer) attempted to update workspace")
+            await sio_instance.emit(
+                "workspace_error", {"error": "Viewers cannot modify the workspace"}, room=sid
+            )
+            return
+
+        workspace_data = data.get("workspaceData", {})
+
+        # Update the global workspace
+        updated_workspace = service.update_workspace(workspace_data)
+
+        log.info(f"User {sid} updated global workspace")
+
+        await sio_instance.emit(
+            "workspace_updated", {"success": True, "workspace": updated_workspace}, room=sid
+        )
+
+        # Broadcast update to all connected users
+        await sio_instance.emit(
+            "workspace_changed",
+            {"workspace": updated_workspace},
+            skip_sid=sid,  # Don't send to the user who made the change
+        )
+
     except Exception as e:
-        log.error(f"Error getting workspace: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
+        log.error(f"Error updating workspace: {e}", exc_info=True)
+        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
 
 
-@sio_instance.on("workspace_list")
-async def on_workspace_list(sid, data):
-    """List all workspaces for the current token."""
-    try:
-        from aetherterm.agentserver.domain.services.workspace_management_service import get_workspace_management_service
-        from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-        
-        service = get_workspace_management_service()
-        token_service = get_workspace_token_service()
-        
-        workspace_token = token_service.get_token_for_socket(sid)
-        if not workspace_token:
-            log.error(f"No workspace token for socket {sid}")
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "No workspace token"},
-                room=sid
-            )
-            return
-        
-        workspaces = service.list_workspaces(workspace_token)
-        
-        await sio_instance.emit(
-            "workspace_list_data",
-            {"success": True, "workspaces": workspaces},
-            room=sid
-        )
-        
-    except Exception as e:
-        log.error(f"Error listing workspaces: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
-
-
-@sio_instance.on("tab_create")
 async def on_tab_create(sid, data):
-    """Create a new tab in a workspace."""
+    """Create a new tab in the global workspace."""
     try:
-        from aetherterm.agentserver.domain.services.workspace_management_service import get_workspace_management_service
-        from aetherterm.agentserver.domain.services.workspace_token_service import get_workspace_token_service
-        
-        service = get_workspace_management_service()
-        token_service = get_workspace_token_service()
-        
-        workspace_token = token_service.get_token_for_socket(sid)
-        if not workspace_token:
-            log.error(f"No workspace token for socket {sid}")
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
+        )
+
+        service = get_global_workspace_service()
+
+        # Check if user has permission to modify
+        if not service.can_user_modify(sid):
+            log.warning(f"User {sid} (Viewer) attempted to create tab")
             await sio_instance.emit(
-                "workspace_error",
-                {"error": "No workspace token"},
-                room=sid
+                "workspace_error", {"error": "Viewers cannot create tabs"}, room=sid
             )
             return
-        
-        workspace_id = data.get("workspaceId")
+
         title = data.get("title", "New Tab")
         tab_type = data.get("type", "terminal")
         sub_type = data.get("subType")
-        
-        if not workspace_id:
-            await sio_instance.emit(
-                "workspace_error",
-                {"error": "workspaceId required"},
-                room=sid
-            )
-            return
-        
-        tab = service.create_tab(workspace_token, workspace_id, title, tab_type, sub_type)
-        
+
+        # Create tab in the global workspace
+        tab = service.create_tab(title, tab_type, sub_type)
+
         if tab:
             # For terminal tabs, automatically create the terminal session
             if tab_type == "terminal" and tab["panes"]:
                 for pane in tab["panes"]:
                     pane_id = pane["id"]
                     session_id = f"terminal_{pane_id}_{uuid4().hex[:8]}"
-                    
+
                     # Create terminal session
                     await create_terminal(
                         sid,
@@ -2223,35 +2020,30 @@ async def on_tab_create(sid, data):
                             "type": "terminal",
                             "cols": 80,
                             "rows": 24,
-                        }
+                        },
                     )
-                    
+
                     # Update pane with session ID
-                    service.update_pane_session(
-                        workspace_token,
-                        workspace_id,
-                        tab["id"],
-                        pane_id,
-                        session_id
-                    )
+                    service.update_pane_session(tab["id"], pane_id, session_id)
                     pane["sessionId"] = session_id
-            
+
+            log.info(f"User {sid} created tab {tab['id']} in global workspace")
+
+            await sio_instance.emit("tab_created", {"success": True, "tab": tab}, room=sid)
+
+            # Broadcast tab creation to all connected users
             await sio_instance.emit(
-                "tab_created",
-                {"success": True, "tab": tab},
-                room=sid
+                "tab_added",
+                {"tab": tab},
+                skip_sid=sid,  # Don't send to the user who created it
             )
         else:
             await sio_instance.emit(
                 "workspace_error",
-                {"error": "Failed to create tab"},
-                room=sid
+                {"error": "Failed to create tab - maximum tabs reached"},
+                room=sid,
             )
-        
+
     except Exception as e:
         log.error(f"Error creating tab: {e}", exc_info=True)
-        await sio_instance.emit(
-            "workspace_error",
-            {"error": str(e)},
-            room=sid
-        )
+        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)

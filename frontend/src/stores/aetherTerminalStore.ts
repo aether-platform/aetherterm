@@ -57,10 +57,6 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     connectionState.error = undefined
 
     try {
-      // Get workspace token for cross-window session sharing
-      const { WorkspaceTokenManager } = await import('./workspace/workspaceToken')
-      const workspaceToken = WorkspaceTokenManager.getOrCreateToken()
-      
       // Socket.IO接続を作成 - Performance optimized
       socket.value = io('http://localhost:57575', {
         transports: ['websocket'], // Websocket only for better performance
@@ -68,10 +64,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         forceNew: true,
         reconnection: true,
         reconnectionAttempts: 3,
-        reconnectionDelay: 1000,
-        auth: {
-          workspaceToken
-        }
+        reconnectionDelay: 1000
       })
 
       // 接続イベントのセットアップ
@@ -90,7 +83,12 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
           connectionState.isConnected = true
           connectionState.isConnecting = false
           connectionState.lastConnected = new Date()
-          console.log('✅ AETHER_TERMINAL: Connected successfully with token:', workspaceToken)
+          console.log('✅ AETHER_TERMINAL: Connected successfully')
+          
+          // Connect to global workspace
+          socket.value?.emit('workspace_connect', { role: 'User' })
+          console.log('📋 AETHER_TERMINAL: Connected to global workspace')
+          
           resolve(true)
         })
 
@@ -113,6 +111,17 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
   // WebSocketイベントセットアップ（最小限）
   const setupSocketEvents = () => {
     if (!socket.value) return
+
+    // セッション再接続の応答
+    socket.value.on('session_reconnected', (data) => {
+      const { sessionId, historyLines } = data
+      console.log(`✅ AETHER_TERMINAL: Session reconnected: ${sessionId} (${historyLines} history lines)`)
+    })
+    
+    socket.value.on('session_reconnect_error', (data) => {
+      const { error } = data
+      console.error(`❌ AETHER_TERMINAL: Session reconnect error: ${error}`)
+    })
 
     // 切断イベント
     socket.value.on('disconnect', (reason) => {

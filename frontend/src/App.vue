@@ -1,27 +1,38 @@
 <script setup lang="ts">
   import 'normalize.css' // インストールしたライブラリの場合
-  import { onMounted, onUnmounted, ref, watch } from 'vue'
-  import SupervisorControlPanel from './components/SupervisorControlPanel.vue'
-  import ChatComponent from './components/ChatComponent.vue'
-  import SimpleChatComponent from './components/SimpleChatComponent.vue'
+  import { onMounted, onUnmounted, ref, watch, defineAsyncComponent } from 'vue'
   import TerminalComponent from './components/TerminalComponent.vue'
-  import TerminalDebug from './components/TerminalDebug.vue'
-  import DevJWTRegister from './components/DevJWTRegister.vue'
-  import ServerInventoryPanel from './components/ServerInventoryPanel.vue'
-  import ThemeSelector from './components/ThemeSelector.vue'
-  import ThemeToggle from './components/ThemeToggle.vue'
-  import S3BrowserSidebar from './components/S3BrowserSidebar.vue'
-  import AICostSidebar from './components/AICostSidebar.vue'
   import { useChatStore } from './stores/chatStore'
   import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore'
   import { useTheme } from './composables/useTheme'
   import { enableJWTDevRegister } from './config/environment'
-  import { useRouter } from 'vue-router'
+  
+  // Lazy load heavy components
+  const SupervisorControlPanel = defineAsyncComponent(() => 
+    import('./components/SupervisorControlPanel.vue')
+  )
+  const SimpleChatComponent = defineAsyncComponent(() => 
+    import('./components/SimpleChatComponent.vue')
+  )
+  const DevJWTRegister = defineAsyncComponent(() => 
+    import('./components/DevJWTRegister.vue')
+  )
+  const ServerInventoryPanel = defineAsyncComponent(() => 
+    import('./components/ServerInventoryPanel.vue')
+  )
+  const ThemeSelector = defineAsyncComponent(() => 
+    import('./components/ThemeSelector.vue')
+  )
+  const S3BrowserSidebar = defineAsyncComponent(() => 
+    import('./components/S3BrowserSidebar.vue')
+  )
+  const AICostSidebar = defineAsyncComponent(() => 
+    import('./components/AICostSidebar.vue')
+  )
 
   const chatStore = useChatStore()
   const terminalStore = useAetherTerminalServiceStore()
   const { initialize: initializeTheme } = useTheme()
-  const router = useRouter()
   const activeTab = ref('chat') // 'chat', 'inventory', 'supervisor', 'theme', 's3', 'cost', or 'debug'
   const isSupervisorPanelFloating = ref(false)
   const isSupervisorPanelVisible = ref(false)
@@ -386,8 +397,6 @@
       <div>Sidebar Should Show: {{ !isSupervisorPanelVisible }}</div>
     </div>
 
-    <!-- Terminal Debug Panel (temporary for debugging) -->
-    <TerminalDebug v-if="true" />
 
   </div>
 </template>

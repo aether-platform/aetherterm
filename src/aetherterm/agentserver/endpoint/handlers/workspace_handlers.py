@@ -17,9 +17,9 @@ log = logging.getLogger("aetherterm.handlers.workspace")
 
 # @inject
 async def resume_workspace(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Resume a workspace with multiple terminals."""
@@ -31,7 +31,11 @@ async def resume_workspace(
         # result = await workspace_service.resume_workspace(
         #     client_sid=sid, workspace_id=workspace_id, tabs=tabs
         # )
-        result = {"workspace_id": workspace_id, "tabs": tabs, "disabled": "dependency injection temporarily disabled"}
+        result = {
+            "workspace_id": workspace_id,
+            "tabs": tabs,
+            "disabled": "dependency injection temporarily disabled",
+        }
 
         await sio_instance.emit("workspace_resumed", result, room=sid)
 
@@ -42,9 +46,9 @@ async def resume_workspace(
 
 # @inject
 async def resume_terminal(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Resume a specific terminal session."""
@@ -64,7 +68,12 @@ async def resume_terminal(
         #     tab_id=tab_id,
         #     pane_id=pane_id,
         # )
-        result = {"session_id": session_id, "tab_id": tab_id, "pane_id": pane_id, "disabled": "dependency injection temporarily disabled"}
+        result = {
+            "session_id": session_id,
+            "tab_id": tab_id,
+            "pane_id": pane_id,
+            "disabled": "dependency injection temporarily disabled",
+        }
 
         await sio_instance.emit("terminal_resumed", result, room=sid)
 
@@ -75,19 +84,19 @@ async def resume_terminal(
 
 # @inject
 async def wrapper_session_sync(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Synchronize wrapper session state."""
     try:
         sessions = data.get("sessions", {})
-        
+
         # Update session states in workspace service
         # result = await workspace_service.sync_wrapper_sessions(sid, sessions)
         result = {"sessions": sessions, "disabled": "dependency injection temporarily disabled"}
-        
+
         await sio_instance.emit("wrapper_session_synced", result, room=sid)
 
     except Exception as e:
@@ -97,9 +106,9 @@ async def wrapper_session_sync(
 
 # @inject
 async def get_wrapper_sessions(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # workspace_service: WorkspaceService = Provide[MainContainer.application.workspace_service]
 ):
     """Get current wrapper session information."""
@@ -107,7 +116,7 @@ async def get_wrapper_sessions(
         # Get session information from workspace service
         # result = await workspace_service.get_wrapper_sessions(sid)
         result = {"disabled": "dependency injection temporarily disabled"}
-        
+
         await sio_instance.emit("wrapper_sessions_info", result, room=sid)
 
     except Exception as e:
@@ -126,7 +135,7 @@ def get_terminal_context(session_id):
             "shell": "/bin/bash",
             "environment": {},
             "history": [],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         log.error(f"Failed to get terminal context for {session_id}: {e}")

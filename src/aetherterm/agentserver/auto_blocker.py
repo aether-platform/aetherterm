@@ -9,10 +9,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def set_socket_io_instance(sio_instance):
     """
     Set the Socket.IO instance for auto-blocker integration.
-    
+
     Args:
         sio_instance: The Socket.IO server instance
     """

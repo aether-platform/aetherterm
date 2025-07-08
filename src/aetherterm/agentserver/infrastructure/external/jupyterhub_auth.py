@@ -21,9 +21,9 @@ class JupyterHubAuthService:
         self,
         hub_api_url: str = "http://hub:8081/hub/api",
         hub_api_token: Optional[str] = None,
-        cache_duration_minutes: int = 30
+        cache_duration_minutes: int = 30,
     ):
-        self.hub_api_url = hub_api_url.rstrip('/')
+        self.hub_api_url = hub_api_url.rstrip("/")
         self.hub_api_token = hub_api_token
         self.cache_duration = timedelta(minutes=cache_duration_minutes)
         self.user_cache: Dict[str, Dict[str, Any]] = {}
@@ -31,10 +31,10 @@ class JupyterHubAuthService:
     async def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
         Validate JupyterHub token and return user information.
-        
+
         Args:
             token: JupyterHub OAuth token
-            
+
         Returns:
             User information dict or None if invalid
         """
@@ -48,25 +48,21 @@ class JupyterHubAuthService:
 
         try:
             async with aiohttp.ClientSession() as session:
-                headers = {
-                    "Authorization": f"token {token}",
-                    "Content-Type": "application/json"
-                }
+                headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
 
                 # Call JupyterHub API to validate token and get user info
                 async with session.get(
                     f"{self.hub_api_url}/user",
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10)
+                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
-                    
                     if response.status == 200:
                         user_data = await response.json()
-                        
+
                         # Get additional user info if we have service token
                         if self.hub_api_token:
                             user_data = await self._enrich_user_data(user_data, session)
-                        
+
                         user_info = {
                             "username": user_data.get("name"),
                             "groups": user_data.get("groups", []),
@@ -76,19 +72,21 @@ class JupyterHubAuthService:
                             "last_activity": user_data.get("last_activity"),
                             "created": user_data.get("created"),
                             "auth_model": user_data.get("auth_model", {}),
-                            "validated_at": datetime.utcnow().isoformat()
+                            "validated_at": datetime.utcnow().isoformat(),
                         }
-                        
+
                         # Cache the user info
                         self._cache_user(token, user_info)
-                        
-                        log.info(f"Successfully validated JupyterHub token for user: {user_info['username']}")
+
+                        log.info(
+                            f"Successfully validated JupyterHub token for user: {user_info['username']}"
+                        )
                         return user_info
-                    
+
                     elif response.status == 401:
                         log.warning("Invalid JupyterHub token provided")
                         return None
-                    
+
                     else:
                         error_text = await response.text()
                         log.error(f"JupyterHub API error: {response.status} - {error_text}")
@@ -101,14 +99,16 @@ class JupyterHubAuthService:
             log.error(f"Error validating JupyterHub token: {e}")
             return None
 
-    async def _enrich_user_data(self, user_data: Dict[str, Any], session: aiohttp.ClientSession) -> Dict[str, Any]:
+    async def _enrich_user_data(
+        self, user_data: Dict[str, Any], session: aiohttp.ClientSession
+    ) -> Dict[str, Any]:
         """
         Enrich user data with additional information using service token.
-        
+
         Args:
             user_data: Basic user data from token validation
             session: Active aiohttp session
-            
+
         Returns:
             Enriched user data
         """
@@ -119,24 +119,25 @@ class JupyterHubAuthService:
             username = user_data.get("name")
             headers = {
                 "Authorization": f"token {self.hub_api_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
 
             # Get detailed user info
             async with session.get(
                 f"{self.hub_api_url}/users/{username}",
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5)
+                timeout=aiohttp.ClientTimeout(total=5),
             ) as response:
-                
                 if response.status == 200:
                     detailed_data = await response.json()
                     # Merge additional data
-                    user_data.update({
-                        "groups": detailed_data.get("groups", []),
-                        "auth_model": detailed_data.get("auth_model", {}),
-                        "admin": detailed_data.get("admin", False)
-                    })
+                    user_data.update(
+                        {
+                            "groups": detailed_data.get("groups", []),
+                            "auth_model": detailed_data.get("auth_model", {}),
+                            "admin": detailed_data.get("admin", False),
+                        }
+                    )
 
         except Exception as e:
             log.warning(f"Could not enrich user data: {e}")
@@ -148,13 +149,13 @@ class JupyterHubAuthService:
         if token in self.user_cache:
             cached_data = self.user_cache[token]
             validated_at = datetime.fromisoformat(cached_data["validated_at"])
-            
+
             if datetime.utcnow() - validated_at < self.cache_duration:
                 return cached_data
             else:
                 # Remove expired cache entry
                 del self.user_cache[token]
-        
+
         return None
 
     def _cache_user(self, token: str, user_info: Dict[str, Any]) -> None:
@@ -169,10 +170,10 @@ class JupyterHubAuthService:
     async def get_user_groups(self, username: str) -> list:
         """
         Get groups for a specific user.
-        
+
         Args:
             username: Username to get groups for
-            
+
         Returns:
             List of group names
         """
@@ -184,15 +185,14 @@ class JupyterHubAuthService:
             async with aiohttp.ClientSession() as session:
                 headers = {
                     "Authorization": f"token {self.hub_api_token}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 }
 
                 async with session.get(
                     f"{self.hub_api_url}/users/{username}",
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=5)
+                    timeout=aiohttp.ClientTimeout(total=5),
                 ) as response:
-                    
                     if response.status == 200:
                         user_data = await response.json()
                         return user_data.get("groups", [])
@@ -207,10 +207,10 @@ class JupyterHubAuthService:
     def extract_token_from_headers(self, headers: Dict[str, str]) -> Optional[str]:
         """
         Extract JupyterHub token from request headers.
-        
+
         Args:
             headers: Request headers
-            
+
         Returns:
             Token string or None
         """
@@ -230,8 +230,7 @@ class JupyterHubAuthService:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self.hub_api_url}/info",
-                    timeout=aiohttp.ClientTimeout(total=5)
+                    f"{self.hub_api_url}/info", timeout=aiohttp.ClientTimeout(total=5)
                 ) as response:
                     return response.status == 200
         except Exception:

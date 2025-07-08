@@ -18,7 +18,7 @@ class ApplicationServices:
         self,
         workspace_service: WorkspaceService = Provide["application.workspace_service"],
         agent_service: AgentService = Provide["application.agent_service"],
-        report_service: ReportService = Provide["application.report_service"]
+        report_service: ReportService = Provide["application.report_service"],
     ):
         self.workspace = workspace_service
         self.agents = agent_service
@@ -27,6 +27,7 @@ class ApplicationServices:
 
 # Global instance for easy access (with fallback)
 app_services = None
+
 
 def initialize_app_services(container=None):
     """Initialize application services with DI container."""
@@ -38,13 +39,15 @@ def initialize_app_services(container=None):
         # Fallback without DI
         app_services = ApplicationServicesFallback()
 
+
 class ApplicationServicesFallback:
     """Fallback application services without DI."""
-    
+
     def __init__(self):
         self.workspace = WorkspaceService()
         self.agents = AgentService()
         self.reports = ReportService()
+
 
 # Initialize fallback services immediately
 if app_services is None:

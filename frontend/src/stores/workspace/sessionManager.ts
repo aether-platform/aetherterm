@@ -138,10 +138,14 @@ export class WorkspaceSessionManager {
       })
       
       // Register panes with their stored session IDs
-      tab.panes.forEach(pane => {
+      tab.panes.forEach(async (pane) => {
         // Set the session ID in the pane store
         if (pane.sessionId) {
           terminalPaneStore.setPaneSession(pane.id, pane.sessionId)
+          
+          // Attempt to reconnect to existing session for screen buffer restoration
+          console.log(`📋 SESSION_MANAGER: Attempting to reconnect to session ${pane.sessionId}`)
+          socket.emit('reconnect_session', { sessionId: pane.sessionId })
         }
         
         // Register the pane

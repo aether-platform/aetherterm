@@ -22,11 +22,11 @@ def get_user_info_from_environ(environ):
         "forwarded_for": environ.get("HTTP_X_FORWARDED_FOR"),
         "user_agent": environ.get("HTTP_USER_AGENT"),
     }
-    
+
     # Extract JWT roles from headers (common proxy patterns)
     # Proxies often pass roles in headers like X-Auth-Roles, X-User-Roles, etc.
     roles = []
-    
+
     # Check various common header patterns for roles
     role_headers = [
         "HTTP_X_AUTH_ROLES",
@@ -34,45 +34,47 @@ def get_user_info_from_environ(environ):
         "HTTP_X_ROLES",
         "HTTP_X_JWT_ROLES",
         "HTTP_X_AUTH_GROUPS",
-        "HTTP_X_USER_GROUPS"
+        "HTTP_X_USER_GROUPS",
     ]
-    
+
     for header in role_headers:
         header_value = environ.get(header)
         if header_value:
             # Roles might be comma-separated or JSON array
-            if header_value.startswith('['):
+            if header_value.startswith("["):
                 # JSON array format
                 try:
                     import json
+
                     roles = json.loads(header_value)
                     break
                 except:
                     pass
             else:
                 # Comma-separated format
-                roles = [r.strip() for r in header_value.split(',')]
+                roles = [r.strip() for r in header_value.split(",")]
                 break
-    
+
     # Also check for JWT claims header
     jwt_claims = environ.get("HTTP_X_JWT_CLAIMS")
     if jwt_claims and not roles:
         try:
             import json
+
             claims = json.loads(jwt_claims)
             roles = claims.get("roles", [])
         except:
             pass
-    
+
     user_info["roles"] = roles
-    
+
     return user_info
 
 
 # @inject
 def check_session_ownership(
-    session_id, 
-    current_user_info
+    session_id,
+    current_user_info,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Check if the current user owns the session."""
@@ -80,7 +82,7 @@ def check_session_ownership(
         # Use security service for session ownership validation
         # return security_service.validate_session_ownership(session_id, current_user_info)
         return True  # Temporarily allow all sessions
-        
+
     except Exception as e:
         log.error(f"Failed to check session ownership: {e}")
         return False
@@ -88,30 +90,34 @@ def check_session_ownership(
 
 # @inject
 async def connect(
-    sid, 
-    environ, 
-    sio_instance
+    sid,
+    environ,
+    sio_instance,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Handle client connection with authentication."""
     try:
         user_info = get_user_info_from_environ(environ)
-        
+
         # Validate connection through security service
         # is_authorized = await security_service.validate_connection(sid, user_info)
         is_authorized = True  # Temporarily allow all connections
-        
+
         if not is_authorized:
             log.warning(f"Unauthorized connection attempt from {user_info}")
             await sio_instance.disconnect(sid)
             return
-        
+
         log.info(f"Client connected: {sid} from {user_info.get('remote_addr')}")
-        await sio_instance.emit("connected", {
-            "data": "Connected to AetherTerm",
-            "session_id": sid,
-            "timestamp": datetime.utcnow().isoformat()
-        }, room=sid)
+        await sio_instance.emit(
+            "connected",
+            {
+                "data": "Connected to AetherTerm",
+                "session_id": sid,
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+            room=sid,
+        )
 
     except Exception as e:
         log.error(f"Failed to handle connection: {e}")
@@ -120,14 +126,14 @@ async def connect(
 
 # @inject
 async def disconnect(
-    sid, 
-    environ=None
+    sid,
+    environ=None,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Handle client disconnection with cleanup."""
     try:
         log.info(f"Client disconnected: {sid}")
-        
+
         # Clean up through security service
         # await security_service.cleanup_session(sid)
         pass  # Temporarily disabled cleanup
@@ -138,27 +144,28 @@ async def disconnect(
 
 # @inject
 async def validate_request(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Validate incoming request for security."""
     try:
         request_type = data.get("type")
         payload = data.get("payload", {})
-        
+
         # Use security service for request validation
         # is_valid = await security_service.validate_request(sid, request_type, payload)
         is_valid = True  # Temporarily allow all requests
-        
+
         if not is_valid:
-            await sio_instance.emit("error", {
-                "message": "Request validation failed",
-                "type": "security_error"
-            }, room=sid)
+            await sio_instance.emit(
+                "error",
+                {"message": "Request validation failed", "type": "security_error"},
+                room=sid,
+            )
             return False
-            
+
         return True
 
     except Exception as e:
@@ -168,9 +175,9 @@ async def validate_request(
 
 # @inject
 async def session_heartbeat(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Handle session heartbeat for keepalive."""
@@ -178,10 +185,10 @@ async def session_heartbeat(
         # Update session activity through security service
         # await security_service.update_session_activity(sid)
         pass  # Temporarily disabled session activity updates
-        
-        await sio_instance.emit("heartbeat_ack", {
-            "timestamp": datetime.utcnow().isoformat()
-        }, room=sid)
+
+        await sio_instance.emit(
+            "heartbeat_ack", {"timestamp": datetime.utcnow().isoformat()}, room=sid
+        )
 
     except Exception as e:
         log.error(f"Failed to handle heartbeat: {e}")
@@ -189,26 +196,30 @@ async def session_heartbeat(
 
 # @inject
 async def request_permissions(
-    sid, 
+    sid,
     data,
-    sio_instance
+    sio_instance,
     # security_service: SecurityService = Provide[MainContainer.infrastructure.security_service]
 ):
     """Handle permission requests for sensitive operations."""
     try:
         operation = data.get("operation")
         resource = data.get("resource")
-        
+
         # Check permissions through security service
         # has_permission = await security_service.check_permission(sid, operation, resource)
         has_permission = True  # Temporarily allow all permissions
-        
-        await sio_instance.emit("permission_response", {
-            "operation": operation,
-            "resource": resource,
-            "granted": has_permission,
-            "timestamp": datetime.utcnow().isoformat()
-        }, room=sid)
+
+        await sio_instance.emit(
+            "permission_response",
+            {
+                "operation": operation,
+                "resource": resource,
+                "granted": has_permission,
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+            room=sid,
+        )
 
     except Exception as e:
         log.error(f"Failed to check permissions: {e}")

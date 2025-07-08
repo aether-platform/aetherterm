@@ -49,7 +49,10 @@ async def initialize_log_processing():
 
     try:
         if log_processing_manager is not None:
-            return {"status": "already_initialized", "message": "Log processing already initialized"}
+            return {
+                "status": "already_initialized",
+                "message": "Log processing already initialized",
+            }
 
         # ストレージ設定を初期化
         storage_config = StorageConfig()

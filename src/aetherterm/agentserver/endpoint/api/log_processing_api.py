@@ -20,10 +20,10 @@ from .logs.websocket_logs_api import router as websocket_logs_router
 
 __all__ = [
     "router",
-    "basic_logs_router", 
+    "basic_logs_router",
     "processing_control_router",
     "advanced_logs_router",
-    "websocket_logs_router"
+    "websocket_logs_router",
 ]
 
 # Legacy note: This file was split into modular components:

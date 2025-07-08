@@ -51,7 +51,7 @@ async def get_log_categories() -> JSONResponse:
     try:
         categories = {
             "error": "Error messages and exceptions",
-            "warning": "Warning messages and deprecation notices", 
+            "warning": "Warning messages and deprecation notices",
             "info": "Informational messages and status updates",
             "success": "Success messages and completion notices",
             "command": "Shell commands and prompts",
