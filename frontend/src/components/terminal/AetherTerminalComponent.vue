@@ -14,6 +14,26 @@
       ref="terminalRef"
       :style="{ visibility: isConnecting ? 'hidden' : 'visible' }"
     ></div>
+    
+    <!-- Terminal Closed Overlay -->
+    <div v-if="isTerminalClosed" class="terminal-closed-overlay">
+      <div class="terminal-closed-content">
+        <div class="terminal-closed-icon">⚠️</div>
+        <div class="terminal-closed-title">Terminal Closed</div>
+        <div class="terminal-closed-message">
+          The terminal session has ended. You can:
+        </div>
+        <div class="terminal-closed-actions">
+          <button @click="downloadLogs" class="action-button download-button">
+            📥 Download Logs
+          </button>
+          <button @click="restartTerminal" class="action-button restart-button">
+            🔄 Restart Terminal
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <div v-if="searchVisible" class="terminal-search">
       <input
         v-model="searchTerm"
@@ -87,10 +107,21 @@ const screenBufferStore = useScreenBufferStore()
 const sessionId = ref<string | null>(null)
 const isInitialized = ref(false)
 const isConnecting = ref(false)
+const isTerminalClosed = ref(false)
 const searchTerm = ref('')
 const searchVisible = ref(false)
 let fitTimeout: number | null = null
 let themeUpdateTimeout: number | null = null
+
+// Handle terminal closed event
+const handleTerminalClosed = () => {
+  console.log('🔴 AETHER_TERMINAL: Terminal closed detected')
+  isTerminalClosed.value = true
+  // Optionally disable terminal interactions
+  if (terminal.value) {
+    terminal.value.write('\r\n\x1b[31m[Terminal session has ended]\x1b[0m\r\n')
+  }
+}
 
 // Computed
 const terminalElementId = computed(() => `aether-${props.mode}-${props.id}`)
@@ -270,6 +301,9 @@ const initializeTerminal = async () => {
 
   // セッション要求
   await requestSession()
+
+  // Listen for terminal closed events
+  aetherStore.onTerminalClosed(handleTerminalClosed)
 
   isInitialized.value = true
   emit('terminal-initialized')
@@ -496,7 +530,7 @@ const setupOutput = () => {
         } catch (error) {
           console.error('❌ AETHER_TERMINAL: Error writing to terminal:', error)
           // Simplified error handling for performance
-          const filteredBuffer = outputBuffer.replace(/[\x7F\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+          const filteredBuffer = outputBuffer.replace(/[\x7F\x00-\x08\x0E-\x1F]/g, '')
           if (filteredBuffer) {
             try {
               terminal.value.write(filteredBuffer)
@@ -511,8 +545,8 @@ const setupOutput = () => {
       flushTimeout = null
     }, 8) // Faster flush for better responsiveness
   }
-
   aetherStore.registerOutputCallback(sessionId.value, outputCallback)
+  
   console.log(`📺 AETHER_TERMINAL: Output setup for ${props.mode}:`, props.id)
 }
 
@@ -669,6 +703,9 @@ onBeforeUnmount(() => {
   if (sessionId.value) {
     aetherStore.unregisterOutputCallback(sessionId.value)
   }
+  
+  // Clean up terminal closed callback
+  aetherStore.offTerminalClosed(handleTerminalClosed)
   
   // Safely dispose terminal and addons
   if (terminal.value) {
@@ -831,6 +868,56 @@ const clearSelection = () => {
 }
 
 
+// Log download functionality
+const downloadLogs = async () => {
+  if (!sessionId.value) return
+  
+  try {
+    // Get terminal output from screen buffer
+    const logs = screenBufferStore.exportBuffer(sessionId.value, 'text')
+    
+    // Create downloadable file
+    const blob = new Blob([logs], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    
+    // Create download link
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `terminal-${sessionId.value}-${new Date().toISOString().replace(/[:.]/g, '-')}.log`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    
+    // Clean up
+    URL.revokeObjectURL(url)
+    
+    console.log('📥 TERMINAL: Logs downloaded successfully')
+  } catch (error) {
+    console.error('❌ TERMINAL: Failed to download logs:', error)
+  }
+}
+
+// Restart terminal functionality
+const restartTerminal = async () => {
+  try {
+    // Reset terminal closed state
+    isTerminalClosed.value = false
+    
+    // Clear current terminal
+    terminal.value?.clear()
+    
+    // Clear session
+    sessionId.value = null
+    
+    // Request new session
+    await requestSession()
+    
+    console.log('🔄 TERMINAL: Terminal restarted successfully')
+  } catch (error) {
+    console.error('❌ TERMINAL: Failed to restart terminal:', error)
+  }
+}
+
 // 外部API
 defineExpose({
   terminal,
@@ -853,7 +940,12 @@ defineExpose({
   copySelection,
   pasteFromClipboard,
   selectAll,
-  clearSelection
+  clearSelection,
+  // Terminal state
+  isTerminalClosed,
+  // Actions
+  downloadLogs,
+  restartTerminal
 })
 </script>
 
@@ -1019,5 +1111,97 @@ defineExpose({
 
 :deep(.xterm-search-bar__results.xterm-search-bar__results--current) {
   background: var(--terminal-red, #cd3131) !important;
+}
+
+// Terminal Closed Overlay Styles
+.terminal-closed-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-closed-content {
+  background: var(--terminal-background, #1e1e1e);
+  border: 2px solid var(--terminal-red, #cd3131);
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.terminal-closed-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.terminal-closed-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--terminal-red, #cd3131);
+  margin-bottom: 16px;
+  font-family: var(--terminal-font-family);
+}
+
+.terminal-closed-message {
+  color: var(--terminal-foreground, #d4d4d4);
+  margin-bottom: 24px;
+  line-height: 1.5;
+  font-family: var(--terminal-font-family);
+}
+
+.terminal-closed-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.action-button {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--terminal-font-family);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.download-button {
+  background: var(--terminal-cyan, #11a8cd);
+  color: var(--terminal-background, #1e1e1e);
+  
+  &:hover {
+    background: var(--terminal-bright-cyan, #29b8db);
+  }
+}
+
+.restart-button {
+  background: var(--terminal-green, #0dbc79);
+  color: var(--terminal-background, #1e1e1e);
+  
+  &:hover {
+    background: var(--terminal-bright-green, #23d18b);
+  }
 }
 </style>

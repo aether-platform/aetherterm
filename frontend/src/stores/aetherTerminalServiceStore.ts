@@ -206,11 +206,7 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
       addToOutput(`[ERROR] ${data.error || 'Unknown terminal error'}`)
     })
 
-    socketInstance.on('terminal_closed', (data: any) => {
-      console.log('Terminal closed:', data)
-      session.value.isActive = false
-      addToOutput(`[SYSTEM] Terminal session closed`)
-    })
+    // terminal_closed event is now handled by aetherTerminalStore.ts
 
     // Legacy events for compatibility
     socketInstance.on('shell_output', (data: string) => {

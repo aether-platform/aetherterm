@@ -35,8 +35,14 @@ git pull origin main
 ### Service Dependencies
 - **Upstream**: JupyterHub proxy for authentication and container lifecycle
 - **Database**: PostgreSQL for session metadata, Redis for real-time state
-- **External**: AI providers (Anthropic, LMStudio), vector database (Qdrant)
+- **External**: AI providers (Anthropic, LMStudio), tenant-specific Qdrant instances
 - **Storage**: Persistent volumes for session history and workspace data
+
+### Tenant Vector Database Integration
+- **Dynamic Qdrant Connection**: Connects to tenant-specific Qdrant instance based on user context
+- **Tenant Context Injection**: Automatically configures MCP server with tenant vector database
+- **Vector Search Isolation**: All semantic searches scoped to tenant-specific collections
+- **Session-Scoped Configuration**: Vector database context maintained per terminal session
 
 ## Vector-Enhanced Development Strategy
 

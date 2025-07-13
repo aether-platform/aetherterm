@@ -47,6 +47,9 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
 
   // 出力コールバック管理（シンプルな1対1マッピング）
   const outputCallbacks = ref<Map<string, (data: string) => void>>(new Map())
+  
+  // Terminal closed callbacks
+  const terminalClosedCallbacks = ref<Array<() => void>>([])
 
   // 接続管理
   const connect = async (): Promise<boolean> => {
@@ -195,6 +198,42 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         if (pane) {
           pane.status = 'active'
           console.log('✅ AETHER_TERMINAL: Updated pane status to active for session:', data.session)
+        }
+      }
+    })
+    
+    // Terminal closed event
+    socket.value.on('terminal_closed', (data: { session?: string }) => {
+      if (data?.session) {
+        console.log('🔴 AETHER_TERMINAL: Terminal closed:', data.session)
+        
+        // Mark session as inactive
+        const session = sessions.value.get(data.session)
+        if (session) {
+          session.isActive = false
+        }
+        
+        // Notify all terminal closed callbacks
+        terminalClosedCallbacks.value.forEach(callback => {
+          try {
+            callback()
+          } catch (error) {
+            console.error('❌ AETHER_TERMINAL: Error in terminal closed callback:', error)
+          }
+        })
+        
+        // Update tab status if applicable
+        const terminalTabStore = useTerminalTabStore()
+        const tab = terminalTabStore.tabs.find(t => t.sessionId === data.session)
+        if (tab) {
+          terminalTabStore.updateTabStatus(tab.id, 'closed')
+        }
+        
+        // Update pane status if applicable
+        const terminalPaneStore = useTerminalPaneStore()
+        const pane = terminalPaneStore.panes.find(p => p.sessionId === data.session)
+        if (pane) {
+          pane.status = 'closed'
         }
       }
     })
@@ -369,6 +408,18 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     outputCallbacks.value.delete(sessionId)
     console.log('🗑️ AETHER_TERMINAL: Unregistered output callback for session:', sessionId)
   }
+  
+  // Terminal closed callback management
+  const onTerminalClosed = (callback: () => void) => {
+    terminalClosedCallbacks.value.push(callback)
+  }
+  
+  const offTerminalClosed = (callback: () => void) => {
+    const index = terminalClosedCallbacks.value.indexOf(callback)
+    if (index !== -1) {
+      terminalClosedCallbacks.value.splice(index, 1)
+    }
+  }
 
   // セッション終了
   const closeSession = (sessionId: string) => {
@@ -496,6 +547,10 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     sendInput,
     registerOutputCallback,
     unregisterOutputCallback,
+    
+    // Terminal closed events
+    onTerminalClosed,
+    offTerminalClosed,
 
     // Helper
     getSocket,
