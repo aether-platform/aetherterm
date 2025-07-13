@@ -4,7 +4,7 @@ import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
 import AetherTermService from './services/AetherTermService'
-import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from './stores/aetherTerminalStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useThemeStore } from './stores/themeStore'
 import { initializeTelemetry } from './utils/telemetry'
@@ -31,8 +31,8 @@ const aetherTermService = AetherTermService.getInstance()
 const socket = aetherTermService.connect()
 
 // Initialize the store with the socket connection
-const terminalStore = useAetherTerminalServiceStore()
-terminalStore.setSocket(socket)
+const terminalStore = useAetherTerminalStore()
+// Note: New store handles socket creation internally, no setSocket needed
 
 // Initialize workspace system
 const workspaceStore = useWorkspaceStore()

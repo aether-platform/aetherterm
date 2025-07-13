@@ -117,7 +117,7 @@
 
 <script setup lang="ts">
   import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue'
-  import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+  import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
 
   interface ChatMessage {
     id: string
@@ -129,7 +129,7 @@
     messageId?: string
   }
 
-  const terminalStore = useAetherTerminalServiceStore()
+  const terminalStore = useAetherTerminalStore()
   const messages = ref<ChatMessage[]>([])
   const newMessage = ref('')
   const messagesContainer = ref<HTMLElement | null>(null)
@@ -265,7 +265,8 @@
     terminalStore.socket.emit('ai_chat_message', {
       message: userMessage,
       message_id: messageId,
-      terminal_session: terminalStore.session.id,
+      session_id: terminalStore.session.id,
+      stream: true
     })
   }
 

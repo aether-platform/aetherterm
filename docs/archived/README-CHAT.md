@@ -16,10 +16,10 @@ npm install vue-advanced-chat pinia
 
 The application uses Pinia stores for centralized state management:
 
-- **AetherTerminalServiceStore**: Manages terminal connections, command processing, and AI monitoring
+- **AetherTerminalStore**: Unified store managing terminal connections, command processing, and AI monitoring
 - **ChatStore**: Manages chat rooms, messages, and user interactions
 
-### 2. AetherTerminalServiceStore Features
+### 2. AetherTerminalStore Features
 
 ```typescript
 // Connection Management
@@ -59,13 +59,13 @@ In `src/main.ts`, Pinia and the stores are initialized:
 
 ```typescript
 import { createPinia } from 'pinia';
-import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore';
+import { useAetherTerminalStore } from './stores/aetherTerminalStore';
 
 const pinia = createPinia();
 app.use(pinia);
 
 // Initialize stores with Socket.IO connection
-const terminalStore = useAetherTerminalServiceStore();
+const terminalStore = useAetherTerminalStore();
 terminalStore.setSocket(socket);
 terminalStore.initializeSession(`session_${Date.now()}`);
 ```

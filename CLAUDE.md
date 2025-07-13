@@ -51,13 +51,51 @@ git pull origin main
 ### Mandatory Vector-First Workflow
 ```bash
 # For conceptual understanding (PRIMARY)
-mcp__qdrant-local__qdrant-find → semantic discovery
+mcp__code-search__qdrant-find → semantic discovery
 ↓
 Read/Glob/Grep → detailed verification
 
 # For specific known files (SECONDARY)  
 Read/Glob/Grep → direct access
 ```
+
+### **Vector Database Registration Requirements**
+**ALL Qdrant uploads for this project MUST use this exact metadata structure**:
+
+```javascript
+// ✅ TERMINAL PROJECT - Required Metadata Format
+{
+  "information": "Human-readable description of the file/content",
+  "metadata": {
+    "file_path": "/full/path/from/project/root/file.ext",
+    "content_type": "typescript|javascript|python|vue|markdown|json|configuration",
+    "category": "backend|frontend|config|docs|tests",
+    "last_modified": "2025-07-13T10:30:00Z",
+    "project_context": "AetherTerm terminal application",
+    "code": "actual file content here",
+    
+    // TERMINAL PROJECT METADATA (REQUIRED)
+    "project_name": "terminal",
+    "project_type": "coding",
+    "repository_path": "app/terminal/",
+    "tech_stack": ["python", "fastapi", "socketio", "vue3", "typescript", "langchain"],
+    "tenant_scope": "multi-tenant"
+  }
+}
+```
+
+**Terminal-Specific Tech Stack**:
+- **Backend**: `["python", "fastapi", "socketio", "uvicorn", "asyncio", "langchain"]`
+- **Frontend**: `["vue3", "typescript", "vuetify", "vite", "pinia", "xterm"]`
+- **AI**: `["langchain", "anthropic", "qdrant", "mcp"]`
+- **Infrastructure**: `["supervisord", "postgresql", "redis"]`
+
+**Content Type Mapping for Terminal**:
+- **Python files**: `python` - FastAPI, agents, terminal logic
+- **Vue files**: `vue` - Terminal UI components
+- **TypeScript**: `typescript` - Frontend logic, stores, composables
+- **Configuration**: `configuration` - supervisord.conf, pyproject.toml
+- **Documentation**: `markdown` - README, docs, architecture
 
 ### Semantic Search Patterns
 Before using traditional file tools, query Qdrant for these contexts:

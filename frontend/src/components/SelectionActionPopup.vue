@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
 
 interface Props {
   show: boolean
@@ -54,7 +54,7 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 const textPreview = computed(() => {
   const text = props.selectedText.trim()

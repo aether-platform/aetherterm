@@ -17,13 +17,17 @@ log = logging.getLogger("aetherterm.handlers.ai")
 
 async def ai_chat_message(sid, data):
     """Handle AI chat message requests."""
+    print(f"DEBUG: ai_chat_message called from sid: {sid}, data: {data}")
+    log.info(f"ai_chat_message called from sid: {sid}, data: {data}")
     from aetherterm.agentserver.presentation.websocket.socket_handlers import sio_instance
 
     container = get_container()
     ai_service = container.infrastructure.ai_service()
+    print(f"DEBUG: AI service provider: {ai_service.provider}")
     try:
         message = data.get("message", "")
         session_id = data.get("session_id")
+        message_id = data.get("message_id")
         stream = data.get("stream", False)
 
         if not message:
@@ -57,6 +61,7 @@ async def ai_chat_message(sid, data):
                     "ai_chat_chunk",
                     {
                         "chunk": chunk,
+                        "message_id": message_id,
                         "session_id": session_id,
                         "timestamp": datetime.utcnow().isoformat(),
                     },
@@ -67,7 +72,8 @@ async def ai_chat_message(sid, data):
             await sio_instance.emit(
                 "ai_chat_complete",
                 {
-                    "response": full_response,
+                    "full_response": full_response,
+                    "message_id": message_id,
                     "session_id": session_id,
                     "timestamp": datetime.utcnow().isoformat(),
                 },
@@ -91,7 +97,15 @@ async def ai_chat_message(sid, data):
 
     except Exception as e:
         log.error(f"Failed to process AI chat message: {e}")
-        await sio_instance.emit("error", {"message": str(e)}, room=sid)
+        await sio_instance.emit(
+            "ai_chat_error",
+            {
+                "error": str(e),
+                "message_id": data.get("message_id"),
+                "session_id": data.get("session_id"),
+            },
+            room=sid,
+        )
 
 
 async def ai_log_search(sid, data):
@@ -207,15 +221,15 @@ async def ai_reset_retry(sid, data):
 
     container = get_container()
     ai_service = container.infrastructure.ai_service()
-    
+
     try:
         # Reset retry state
         ai_service.reset_retry_state()
-        
+
         # Get updated status
         retry_status = ai_service.get_retry_status()
         is_connected = await ai_service.check_connection()
-        
+
         response_data = {
             "success": True,
             "message": "AI service retry state has been reset",
@@ -223,13 +237,13 @@ async def ai_reset_retry(sid, data):
             "available": is_connected,
             "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         log.info(f"Sending ai_reset_retry_response: {response_data}")
         await sio_instance.emit("ai_reset_retry_response", response_data, room=sid)
-        
+
         # Also send updated info
         await ai_get_info(sid, {})
-        
+
     except Exception as e:
         log.error(f"Failed to reset AI retry state: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)

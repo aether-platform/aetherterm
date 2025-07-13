@@ -40,7 +40,7 @@ class UsageCost:
 @dataclass
 class RetryState:
     """State for retry logic with exponential backoff."""
-    
+
     attempt: int = 0
     next_delay: float = 1.0  # Start with 1 second
     max_attempts: int = 5
@@ -50,36 +50,37 @@ class RetryState:
     jitter: bool = True
     last_error: Optional[str] = None
     last_attempt_time: Optional[float] = None
-    
+
     def get_next_delay(self) -> float:
         """Calculate next delay with exponential backoff and optional jitter."""
-        delay = min(self.base_delay * (self.exponential_base ** self.attempt), self.max_delay)
-        
+        delay = min(self.base_delay * (self.exponential_base**self.attempt), self.max_delay)
+
         if self.jitter:
             # Add jitter to prevent thundering herd
             import random
+
             delay = delay * (0.5 + random.random() * 0.5)
-        
+
         return delay
-    
+
     def should_retry(self) -> bool:
         """Check if we should retry based on attempts."""
         return self.attempt < self.max_attempts
-    
+
     def increment(self, error: Optional[str] = None):
         """Increment retry attempt and update state."""
         self.attempt += 1
         self.last_error = error
         self.last_attempt_time = time.time()
         self.next_delay = self.get_next_delay()
-    
+
     def reset(self):
         """Reset retry state after successful request."""
         self.attempt = 0
         self.next_delay = self.base_delay
         self.last_error = None
         self.last_attempt_time = None
-    
+
     def get_status(self) -> Dict[str, Any]:
         """Get current retry status for monitoring."""
         return {
@@ -88,7 +89,7 @@ class RetryState:
             "next_delay": round(self.next_delay, 2),
             "last_error": self.last_error,
             "last_attempt_time": self.last_attempt_time,
-            "can_retry": self.should_retry()
+            "can_retry": self.should_retry(),
         }
 
 
@@ -304,7 +305,7 @@ class AIService:
             "requests": 0,
             "estimated_cost": 0.0,
         }
-        
+
         # Initialize retry state for LLM connections
         self.retry_state = RetryState()
 
@@ -483,27 +484,33 @@ class AIService:
         while True:
             try:
                 # Try to make the request
-                async for chunk in self._lmstudio_completion_internal(messages, terminal_context, stream):
+                async for chunk in self._lmstudio_completion_internal(
+                    messages, terminal_context, stream
+                ):
                     yield chunk
-                
+
                 # Success! Reset retry state
                 self.retry_state.reset()
                 return
-                
+
             except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
                 error_msg = str(e)
-                log.warning(f"LMStudio API error (attempt {self.retry_state.attempt + 1}): {error_msg}")
-                
+                log.warning(
+                    f"LMStudio API error (attempt {self.retry_state.attempt + 1}): {error_msg}"
+                )
+
                 # Update retry state
                 self.retry_state.increment(error_msg)
-                
+
                 # Check if we should retry
                 if not self.retry_state.should_retry():
                     # Max retries exceeded
-                    log.error(f"Max retries ({self.retry_state.max_attempts}) exceeded for LMStudio API")
+                    log.error(
+                        f"Max retries ({self.retry_state.max_attempts}) exceeded for LMStudio API"
+                    )
                     yield f"Failed to connect to AI service after {self.retry_state.max_attempts} attempts. Please check if LMStudio is running."
                     return
-                
+
                 # Wait before retrying
                 delay = self.retry_state.next_delay
                 log.info(f"Retrying LMStudio API in {delay:.1f} seconds...")
@@ -524,9 +531,7 @@ class AIService:
         if terminal_context:
             context_info = []
             if "current_directory" in terminal_context:
-                context_info.append(
-                    f"Current directory: {terminal_context['current_directory']}"
-                )
+                context_info.append(f"Current directory: {terminal_context['current_directory']}")
             if "recent_commands" in terminal_context:
                 context_info.append(
                     f"Recent commands: {', '.join(terminal_context['recent_commands'][-3:])}"
@@ -568,7 +573,7 @@ class AIService:
                         request_info=response.request_info,
                         history=response.history,
                         status=response.status,
-                        message=f"LMStudio API returned {response.status}: {error_text}"
+                        message=f"LMStudio API returned {response.status}: {error_text}",
                     )
 
                 if stream:
@@ -595,9 +600,7 @@ class AIService:
                 else:
                     # Handle non-streaming response
                     result = await response.json()
-                    content = (
-                        result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    )
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
                     if content:
                         output_text = content
                         self._track_usage(input_text.strip(), output_text)
@@ -732,11 +735,11 @@ class AIService:
             self.session_usage["input_tokens"] += input_tokens
             self.session_usage["output_tokens"] += output_tokens
             self.session_usage["requests"] += 1
-    
+
     def get_retry_status(self) -> Dict[str, Any]:
         """Get current retry status for monitoring."""
         return self.retry_state.get_status()
-    
+
     def reset_retry_state(self):
         """Reset retry state manually."""
         self.retry_state.reset()

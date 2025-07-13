@@ -341,6 +341,7 @@ async def start_server(**kwargs):
     sio.on("ai_log_search", ai_handlers.ai_log_search)
     sio.on("ai_search_suggestions", ai_handlers.ai_search_suggestions)
     sio.on("ai_get_info", ai_handlers.ai_get_info)  # Added: Missing handler for AI info
+    sio.on("ai_reset_retry", ai_handlers.ai_reset_retry)  # Added: Reset retry handler
 
     # Supervisord プロセス管理 - check if module exists
     try:
@@ -540,7 +541,6 @@ def setup_app(**kwargs):
     sio.on("log_monitor_subscribe", socket_handlers.log_monitor_subscribe)
     sio.on("log_monitor_unsubscribe", socket_handlers.log_monitor_unsubscribe)
     sio.on("log_monitor_search", socket_handlers.log_monitor_search)
-
 
     # 現在使用中のハンドラー
     sio.on("agent_start_request", socket_handlers.agent_start_request)

@@ -47,8 +47,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore';
-import { hasRole } from '@/utils/jwtUtils';
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore';
+import { hasRole } from '@/utils/auth';
 import { useTerminalPermissionsStore } from '../../stores/terminalPermissionsStore';
 
 interface Props {
@@ -63,7 +63,7 @@ interface Emits {
 const props = defineProps<Props>()
 defineEmits<Emits>()
 
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 const permissionsStore = useTerminalPermissionsStore()
 
 // Connection status computed properties

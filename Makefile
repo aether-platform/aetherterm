@@ -78,11 +78,14 @@ build-frontend:
 	rm -rf src/aetherterm/agentserver/static/*
 	cp -r frontend/dist/* src/aetherterm/agentserver/static/
 
-release: build-frontend
+package: build-frontend
+	uv build
+
+release: package
 	git pull
 	$(eval VERSION := $(shell PROJECT_NAME=$(PROJECT_NAME) $(VENV)/bin/devcore bump $(LEVEL)))
 	git commit -am "Bump $(VERSION)"
 	git tag $(VERSION)
-	$(PYTHON) setup.py sdist bdist_wheel upload
+	uv publish
 	git push
 	git push --tags

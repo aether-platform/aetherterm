@@ -26,7 +26,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watchEffect } from 'vue'
 import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
 import { useThemeStore } from '../../stores/themeStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import ConnectionStatusBanner from './ConnectionStatusBanner.vue'
@@ -35,8 +34,7 @@ import MainContentView from '../MainContentView.vue'
 
 const emit = defineEmits(['open-s3-browser'])
 
-const aetherTerminalStore = useAetherTerminalStore()
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 const themeStore = useThemeStore()
 const workspaceStore = useWorkspaceStore()
 
@@ -69,7 +67,7 @@ onMounted(async () => {
   // MainContainer mounted
   
   // Initialize connection using aetherTerminalStore (simpler WebSocket implementation)
-  const connected = await aetherTerminalStore.connect()
+  const connected = await terminalStore.connect()
   
   if (connected) {
     // Initialize workspace system immediately

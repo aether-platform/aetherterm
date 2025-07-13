@@ -15,8 +15,13 @@ import { useTerminalPaneStore } from './terminalPaneStore'
 interface ConnectionState {
   isConnected: boolean
   isConnecting: boolean
+  isReconnecting: boolean
+  reconnectAttempts: number
+  maxReconnectAttempts: number
   error?: string
   lastConnected?: Date
+  lastDisconnected?: Date
+  latency: number
 }
 
 interface TerminalSession {
@@ -36,7 +41,11 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
   // 接続状態
   const connectionState = reactive<ConnectionState>({
     isConnected: false,
-    isConnecting: false
+    isConnecting: false,
+    isReconnecting: false,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5,
+    latency: 0
   })
 
   // WebSocket
@@ -50,6 +59,80 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
   
   // Terminal closed callbacks
   const terminalClosedCallbacks = ref<Array<() => void>>([])
+  
+  // AI event callbacks (for Phase 1 migration)
+  const askAICallbacks = ref<Array<(text: string) => void>>([])
+  const chatMessageCallbacks = ref<Array<(data: any) => void>>([])
+  
+  // Supervisor state (for Phase 1 migration)
+  const isSupervisorLocked = ref(false)
+  
+  // Current session for legacy compatibility
+  const currentSession = ref({
+    id: '',
+    isActive: false,
+    isPaused: false,
+    isReconnecting: false,
+    lastActivity: new Date(),
+    supervisorControlled: false,
+    aiMonitoring: true
+  })
+  
+  // AI Monitoring state (for Phase 2 migration)
+  const aiMonitoring = ref({
+    isActive: true,
+    monitoringRules: [
+      'System file modification detection',
+      'Privilege escalation monitoring', 
+      'Network configuration changes',
+      'Service management operations',
+      'Data destruction prevention'
+    ],
+    currentProcedure: 'System maintenance checklist',
+    procedureStep: 1,
+    totalSteps: 5,
+    lastAnalysis: new Date(),
+    riskAssessment: 'low' as 'low' | 'medium' | 'high' | 'critical',
+    suggestedActions: [] as string[]
+  })
+  
+  // Command management (for Phase 2 migration)
+  const pendingCommands = ref<Array<{
+    id: string
+    command: string
+    timestamp: Date
+    status: 'pending' | 'approved' | 'rejected' | 'executed'
+    riskLevel: 'low' | 'medium' | 'high' | 'critical'
+    aiSuggestion?: string
+    rejectionReason?: string
+    source: 'user' | 'admin' | 'ai'
+  }>>([])
+  
+  const commandHistory = ref<Array<{
+    id: string
+    command: string
+    timestamp: Date
+    status: 'pending' | 'approved' | 'rejected' | 'executed'
+    riskLevel: 'low' | 'medium' | 'high' | 'critical'
+    aiSuggestion?: string
+    rejectionReason?: string
+    source: 'user' | 'admin' | 'ai'
+  }>>([])
+  
+  // Output buffer (for Phase 2 migration)
+  const outputBuffer = ref<string[]>([])
+  
+  // Dangerous commands (for Phase 2 migration)
+  const dangerousCommands = ref<string[]>([
+    'rm -rf /',
+    'sudo rm -rf',
+    'mkfs',
+    'dd if=/dev/zero',
+    'chmod 777 /',
+    'shutdown',
+    'reboot',
+    'halt'
+  ])
 
   // 接続管理
   const connect = async (): Promise<boolean> => {
@@ -130,8 +213,37 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     // 切断イベント
     socket.value.on('disconnect', (reason) => {
       connectionState.isConnected = false
+      connectionState.lastDisconnected = new Date()
       connectionState.error = reason
       console.log('🔌 AETHER_TERMINAL: Disconnected:', reason)
+      
+      // Start reconnection if not intentional
+      if (reason !== 'io client disconnect') {
+        startReconnection()
+      }
+    })
+    
+    // Reconnection events
+    socket.value.on('reconnect', (attemptNumber: number) => {
+      connectionState.isReconnecting = false
+      connectionState.reconnectAttempts = attemptNumber
+      console.log(`✅ AETHER_TERMINAL: Reconnected after ${attemptNumber} attempts`)
+    })
+    
+    socket.value.on('reconnect_attempt', (attemptNumber: number) => {
+      connectionState.reconnectAttempts = attemptNumber
+      console.log(`🔄 AETHER_TERMINAL: Reconnection attempt ${attemptNumber}`)
+    })
+    
+    socket.value.on('reconnect_failed', () => {
+      connectionState.isReconnecting = false
+      connectionState.error = 'Max reconnection attempts reached'
+      console.log('❌ AETHER_TERMINAL: Failed to reconnect after maximum attempts')
+    })
+    
+    socket.value.on('connect_error', (error: Error) => {
+      connectionState.error = error.message
+      console.log(`❌ AETHER_TERMINAL: Connection error: ${error.message}`)
     })
 
     // ターミナル出力イベント（統一）- Performance optimized
@@ -237,6 +349,54 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         }
       }
     })
+    
+    // Chat message events (for Phase 1 migration)
+    socket.value.on('chat_message', (data: any) => {
+      chatMessageCallbacks.value.forEach(callback => {
+        try {
+          callback(data)
+        } catch (error) {
+          console.error('❌ AETHER_TERMINAL: Error in chat message callback:', error)
+        }
+      })
+    })
+    
+    // AI chat events (for SimpleChatComponent)
+    socket.value.on('ai_chat_typing', (data: any) => {
+      // Re-emit for components listening directly
+      socket.value?.emit('ai_chat_typing_internal', data)
+    })
+    
+    socket.value.on('ai_chat_chunk', (data: any) => {
+      socket.value?.emit('ai_chat_chunk_internal', data)
+    })
+    
+    socket.value.on('ai_chat_complete', (data: any) => {
+      socket.value?.emit('ai_chat_complete_internal', data)
+    })
+    
+    socket.value.on('ai_chat_error', (data: any) => {
+      socket.value?.emit('ai_chat_error_internal', data)
+    })
+    
+    socket.value.on('ai_info_response', (data: any) => {
+      socket.value?.emit('ai_info_response_internal', data)
+    })
+    
+    socket.value.on('ai_reset_retry_response', (data: any) => {
+      socket.value?.emit('ai_reset_retry_response_internal', data)
+    })
+  }
+  
+  // Start reconnection process (for Phase 1 migration)
+  const startReconnection = () => {
+    if (connectionState.reconnectAttempts >= connectionState.maxReconnectAttempts) {
+      return
+    }
+    
+    connectionState.isReconnecting = true
+    currentSession.value.isReconnecting = true
+    console.log('🔄 AETHER_TERMINAL: Starting reconnection process...')
   }
 
   // Session reconnection attempt - 最適化された再接続
@@ -420,6 +580,159 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       terminalClosedCallbacks.value.splice(index, 1)
     }
   }
+  
+  // AI event management (for Phase 1 migration)
+  const onAskAI = (callback: (text: string) => void) => {
+    askAICallbacks.value.push(callback)
+  }
+  
+  const offAskAI = (callback?: (text: string) => void) => {
+    if (callback) {
+      const index = askAICallbacks.value.indexOf(callback)
+      if (index !== -1) {
+        askAICallbacks.value.splice(index, 1)
+      }
+    } else {
+      askAICallbacks.value = []
+    }
+  }
+  
+  const triggerAskAI = (selectedText: string) => {
+    askAICallbacks.value.forEach(callback => {
+      try {
+        callback(selectedText)
+      } catch (error) {
+        console.error('❌ AETHER_TERMINAL: Error in askAI callback:', error)
+      }
+    })
+  }
+  
+  // Chat event management (for Phase 1 migration)
+  const onChatMessage = (callback: (data: any) => void) => {
+    chatMessageCallbacks.value.push(callback)
+  }
+  
+  const offChatMessage = (callback?: (data: any) => void) => {
+    if (callback) {
+      const index = chatMessageCallbacks.value.indexOf(callback)
+      if (index !== -1) {
+        chatMessageCallbacks.value.splice(index, 1)
+      }
+    } else {
+      chatMessageCallbacks.value = []
+    }
+  }
+  
+  const sendChatMessage = (message: any) => {
+    if (!socket.value?.connected) {
+      console.warn('⚠️ AETHER_TERMINAL: Cannot send chat message - no connection')
+      return
+    }
+    
+    socket.value.emit('chat_message', message)
+  }
+  
+  // Terminal control functions (for Phase 2 migration)
+  const pauseTerminal = (reason: string) => {
+    currentSession.value.isPaused = true
+    isSupervisorLocked.value = true
+    addToOutput(`[SYSTEM] Terminal paused: ${reason}`)
+  }
+  
+  const resumeTerminal = () => {
+    currentSession.value.isPaused = false
+    isSupervisorLocked.value = false
+    addToOutput('[SYSTEM] Terminal resumed')
+  }
+  
+  // Command analysis and management (for Phase 2 migration)
+  const analyzeCommand = (command: string) => {
+    const commandId = Date.now().toString()
+    let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low'
+    let aiSuggestion = ''
+    
+    // Check for dangerous commands
+    const isDangerous = dangerousCommands.value.some((dangerous) =>
+      command.toLowerCase().includes(dangerous.toLowerCase())
+    )
+    
+    if (isDangerous) {
+      riskLevel = 'critical'
+      aiSuggestion = 'This command may cause system damage or data loss. Consider using safer alternatives.'
+    } else if (command.includes('sudo')) {
+      riskLevel = 'high'
+      aiSuggestion = 'This command requires elevated privileges. Ensure you understand its implications.'
+    } else if (command.includes('chmod') || command.includes('chown')) {
+      riskLevel = 'medium'
+      aiSuggestion = 'This command modifies file permissions. Verify the target files and permissions.'
+    }
+    
+    return {
+      id: commandId,
+      command,
+      timestamp: new Date(),
+      status: riskLevel === 'critical' ? 'pending' : 'approved' as 'pending' | 'approved',
+      riskLevel,
+      aiSuggestion,
+      source: 'user' as 'user'
+    }
+  }
+  
+  const approveCommand = (commandId: string) => {
+    const commandIndex = pendingCommands.value.findIndex((cmd) => cmd.id === commandId)
+    if (commandIndex !== -1) {
+      const command = pendingCommands.value[commandIndex]
+      command.status = 'approved'
+      commandHistory.value.push(command)
+      pendingCommands.value.splice(commandIndex, 1)
+      addToOutput(`[ADMIN] Command approved: ${command.command}`)
+      
+      // Execute the approved command
+      if (socket.value) {
+        socket.value.emit('terminal_command', {
+          command: command.command,
+          commandId: command.id
+        })
+      }
+      
+      return command
+    }
+    return null
+  }
+  
+  const rejectCommand = (commandId: string, reason: string) => {
+    const commandIndex = pendingCommands.value.findIndex((cmd) => cmd.id === commandId)
+    if (commandIndex !== -1) {
+      const command = pendingCommands.value[commandIndex]
+      command.status = 'rejected'
+      command.rejectionReason = reason
+      commandHistory.value.push(command)
+      pendingCommands.value.splice(commandIndex, 1)
+      addToOutput(`[ADMIN] Command rejected: ${command.command}`)
+      addToOutput(`[ADMIN] Reason: ${reason}`)
+    }
+  }
+  
+  // Output buffer management (for Phase 2 migration)
+  const addToOutput = (text: string) => {
+    outputBuffer.value.push(`[${new Date().toLocaleTimeString()}] ${text}`)
+    // Keep only last 1000 lines
+    if (outputBuffer.value.length > 1000) {
+      outputBuffer.value = outputBuffer.value.slice(-1000)
+    }
+  }
+  
+  // Terminal resize handling (for Phase 2 migration)
+  const sendResize = (cols: number, rows: number) => {
+    if (socket.value && currentSession.value.id) {
+      console.log(`Sending terminal resize: ${cols}x${rows} for session ${currentSession.value.id}`)
+      socket.value.emit('terminal_resize', {
+        session: currentSession.value.id,
+        cols: cols,
+        rows: rows
+      })
+    }
+  }
 
   // セッション終了
   const closeSession = (sessionId: string) => {
@@ -527,30 +840,100 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
 
   // Getter for socket
   const getSocket = () => socket.value
+  
+  // Computed properties for legacy compatibility
+  const connectionStatus = computed(() => {
+    if (connectionState.isConnected) return 'connected'
+    if (connectionState.isConnecting) return 'connecting'
+    if (connectionState.isReconnecting) return 'reconnecting'
+    return 'disconnected'
+  })
+  
+  const isTerminalBlocked = computed(() => {
+    return (
+      currentSession.value.isPaused ||
+      currentSession.value.isReconnecting ||
+      !connectionState.isConnected
+    )
+  })
+  
+  // Session initialization for legacy compatibility
+  const initializeSession = (sessionId: string) => {
+    currentSession.value.id = sessionId
+    currentSession.value.isActive = true
+    currentSession.value.lastActivity = new Date()
+    addToOutput(`[SYSTEM] Terminal session initialized: ${sessionId}`)
+    console.log(`✅ AETHER_TERMINAL: Session initialized: ${sessionId}`)
+  }
+  
+  // Additional computed properties for Phase 2 migration
+  const hasPendingCommands = computed(() => pendingCommands.value.length > 0)
+  
+  const criticalCommandsPending = computed(() =>
+    pendingCommands.value.filter((cmd) => cmd.riskLevel === 'critical')
+  )
 
   return {
     // 状態
     connectionState,
     socket: computed(() => socket.value),
     sessions,
+    session: currentSession, // Legacy compatibility
+    isSupervisorLocked,
+    
+    // Phase 2 state additions
+    aiMonitoring,
+    pendingCommands,
+    commandHistory,
+    outputBuffer,
+    dangerousCommands,
 
     // 接続管理
     connect,
     disconnect,
+    startReconnection,
 
     // セッション管理
     requestSession,
     closeSession,
     reconnectSession,
+    initializeSession,
 
     // 通信
     sendInput,
     registerOutputCallback,
     unregisterOutputCallback,
+    sendChatMessage,
+    sendResize,
     
     // Terminal closed events
     onTerminalClosed,
     offTerminalClosed,
+    
+    // AI events (Phase 1 migration)
+    onAskAI,
+    offAskAI,
+    triggerAskAI,
+    
+    // Chat events (Phase 1 migration)
+    onChatMessage,
+    offChatMessage,
+    
+    // Terminal control (Phase 2 migration)
+    pauseTerminal,
+    resumeTerminal,
+    
+    // Command management (Phase 2 migration)
+    analyzeCommand,
+    approveCommand,
+    rejectCommand,
+    addToOutput,
+    
+    // Computed properties
+    connectionStatus,
+    isTerminalBlocked,
+    hasPendingCommands,
+    criticalCommandsPending,
 
     // Helper
     getSocket,

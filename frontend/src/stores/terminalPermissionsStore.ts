@@ -7,7 +7,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getUserFromToken } from '@/utils/jwtUtils'
+import { getCurrentUser } from '@/utils/auth'
 
 export interface TerminalPermission {
   sessionId: string
@@ -23,7 +23,7 @@ export const useTerminalPermissionsStore = defineStore('terminalPermissions', ()
   const permissions = ref<Map<string, TerminalPermission>>(new Map())
   
   // Get current user info
-  const currentUser = computed(() => getUserFromToken())
+  const currentUser = computed(() => getCurrentUser())
   
   // Check if current user is the owner of a session
   const isOwner = (sessionId: string): boolean => {

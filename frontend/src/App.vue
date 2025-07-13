@@ -3,7 +3,7 @@
   import { onMounted, onUnmounted, ref, watch, defineAsyncComponent } from 'vue'
   import TerminalComponent from './components/TerminalComponent.vue'
   import { useChatStore } from './stores/chatStore'
-  import { useAetherTerminalServiceStore } from './stores/aetherTerminalServiceStore'
+  import { useAetherTerminalStore } from './stores/aetherTerminalStore'
   import { useTheme } from './composables/useTheme'
   import { enableJWTDevRegister } from './config/environment'
   
@@ -31,7 +31,7 @@
   )
 
   const chatStore = useChatStore()
-  const terminalStore = useAetherTerminalServiceStore()
+  const terminalStore = useAetherTerminalStore()
   const { initialize: initializeTheme } = useTheme()
   const activeTab = ref('chat') // 'chat', 'inventory', 'supervisor', 'theme', 's3', 'cost', or 'debug'
   const isSupervisorPanelFloating = ref(false)

@@ -27,7 +27,7 @@ class GlobalWorkspaceService:
 
     # Default workspace ID
     GLOBAL_WORKSPACE_ID = "global_workspace"
-    
+
     # Persistence file path
     WORKSPACE_FILE = Path.home() / ".aetherterm" / "global_workspace.json"
 
@@ -67,22 +67,24 @@ class GlobalWorkspaceService:
             # Group sessions by their tab/pane structure
             # Session IDs are in format: aether_pane_<pane_id> or similar
             tab_groups = {}
-            
+
             for session_id in existing_sessions:
                 # Extract tab information from session ID
                 # Expected formats: aether_pane_XXX, aether_tab_XXX, terminal_pane_XXX
-                parts = session_id.split('_')
+                parts = session_id.split("_")
                 if len(parts) >= 3:
                     # Try to extract tab ID from session metadata
                     terminal = AsyncioTerminal.sessions.get(session_id)
-                    if terminal and hasattr(terminal, 'tab_index'):
+                    if terminal and hasattr(terminal, "tab_index"):
                         tab_index = terminal.tab_index
                         if tab_index not in tab_groups:
                             tab_groups[tab_index] = []
-                        tab_groups[tab_index].append({
-                            'session_id': session_id,
-                            'pane_index': getattr(terminal, 'pane_index', 0)
-                        })
+                        tab_groups[tab_index].append(
+                            {
+                                "session_id": session_id,
+                                "pane_index": getattr(terminal, "pane_index", 0),
+                            }
+                        )
 
             # Create tabs from grouped sessions
             for tab_index, sessions in sorted(tab_groups.items()):
@@ -99,14 +101,14 @@ class GlobalWorkspaceService:
                 }
 
                 # Create panes for each session
-                for session_info in sorted(sessions, key=lambda x: x['pane_index']):
+                for session_info in sorted(sessions, key=lambda x: x["pane_index"]):
                     pane_id = f"pane_{session_info['pane_index'] + 1:03d}"
                     pane = {
                         "id": pane_id,
                         "type": "terminal",
                         "title": "Terminal",
-                        "isActive": session_info['pane_index'] == 0,
-                        "sessionId": session_info['session_id'],
+                        "isActive": session_info["pane_index"] == 0,
+                        "sessionId": session_info["session_id"],
                     }
                     tab["panes"].append(pane)
 
@@ -273,15 +275,15 @@ class GlobalWorkspaceService:
                 if tab["id"] == tab_id:
                     tab_index = i
                     break
-            
+
             if tab_index is None:
                 log.warning(f"Tab {tab_id} not found for closure")
                 return False
-            
+
             # Remove the tab
             removed_tab = self._workspace["tabs"].pop(tab_index)
             log.info(f"Removed tab {tab_id} from workspace")
-            
+
             # If this was the active tab, set a new active tab
             if self._workspace.get("activeTabId") == tab_id:
                 if self._workspace["tabs"]:
@@ -292,12 +294,12 @@ class GlobalWorkspaceService:
                     # No tabs left
                     self._workspace["activeTabId"] = None
                     log.info("No tabs remaining, cleared activeTabId")
-            
+
             # Update timestamp
             self._workspace["lastAccessed"] = datetime.now().isoformat()
-            
+
             return True
-            
+
         except Exception as e:
             log.error(f"Error closing tab {tab_id}: {e}", exc_info=True)
             return False

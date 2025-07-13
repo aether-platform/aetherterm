@@ -23,20 +23,24 @@ log = logging.getLogger("aetherterm.routes.theme")
 _theme_cache: Dict[str, Tuple[str, float]] = {}
 _THEME_CACHE_TTL = 3600  # 1 hour
 
+
 @memoize(maxsize=10)
 def _get_themes_directory() -> str:
     """Get themes directory path with caching."""
     return os.path.join(os.path.expanduser("~"), ".config", "aetherterm", "themes")
+
 
 @memoize(maxsize=10)
 def _get_builtin_themes_directory() -> str:
     """Get built-in themes directory with caching."""
     return os.path.join(os.path.dirname(__file__), "..", "themes")
 
+
 @memoize(maxsize=10)
 def _get_sass_path() -> str:
     """Get sass path with caching."""
     return os.path.join(os.path.dirname(__file__), "..", "sass")
+
 
 def _get_theme_cache_key(style_path: str, base_dir: str) -> str:
     """Generate cache key for theme."""
@@ -44,6 +48,7 @@ def _get_theme_cache_key(style_path: str, base_dir: str) -> str:
     mtime = os.path.getmtime(style_path) if os.path.exists(style_path) else 0
     key_string = f"{style_path}:{base_dir}:{mtime}"
     return hashlib.md5(key_string.encode()).hexdigest()
+
 
 def _get_cached_theme(cache_key: str) -> Optional[str]:
     """Get theme from cache if not expired."""
@@ -55,6 +60,7 @@ def _get_cached_theme(cache_key: str) -> Optional[str]:
             del _theme_cache[cache_key]
     return None
 
+
 def _cache_theme(cache_key: str, css: str) -> None:
     """Cache compiled theme CSS."""
     _theme_cache[cache_key] = (css, time.time())
@@ -65,12 +71,12 @@ def _cache_theme(cache_key: str, css: str) -> None:
         for key, _ in sorted_items[:10]:
             del _theme_cache[key]
 
+
 @memoize(maxsize=100)
 def _has_style_file(theme_path: str) -> bool:
     """Check if theme has style file with caching."""
     return any(
-        os.path.exists(os.path.join(theme_path, f"style.{ext}"))
-        for ext in ["css", "scss", "sass"]
+        os.path.exists(os.path.join(theme_path, f"style.{ext}")) for ext in ["css", "scss", "sass"]
     )
 
 
@@ -114,7 +120,7 @@ async def theme_style(theme: str):
     if cached_css:
         log.debug(f"Serving cached theme: {theme}")
         return Response(content=cached_css, media_type="text/css")
-    
+
     # Compile sass if not cached
     sass_path = _get_sass_path()
 

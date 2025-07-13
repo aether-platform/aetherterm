@@ -341,13 +341,11 @@
 
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
-  import type { TerminalCommand } from '../stores/aetherTerminalServiceStore'
-  import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+  // Type definition moved inline since it's available in the new store
   import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
   import { getCurrentUser, getJWTToken, decodeJWT, isSupervisor } from '../utils/auth'
 
-  const terminalStore = useAetherTerminalServiceStore()
-  const aetherStore = useAetherTerminalStore()
+  const terminalStore = useAetherTerminalStore()
 
   // User authentication state
   const userInfo = ref<{ email?: string; roles?: string[]; isSupervisor: boolean } | null>(null)
@@ -453,9 +451,9 @@
   // Supervisord MCP methods
   const refreshSupervisordStatus = async () => {
     try {
-      if (!aetherStore.socket) return
+      if (!terminalStore.socket) return
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('get_supervisord_status', {}, resolve)
+        terminalStore.socket!.emit('get_supervisord_status', {}, resolve)
       })
       if (response?.status === 'ok') {
         supervisordStatus.value = response.supervisord
@@ -468,9 +466,9 @@
   const refreshProcesses = async () => {
     loading.value = true
     try {
-      if (!aetherStore.socket) return
+      if (!terminalStore.socket) return
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('get_processes_list', {}, resolve)
+        terminalStore.socket!.emit('get_processes_list', {}, resolve)
       })
       if (response?.status === 'ok') {
         processes.value = response.processes || []
@@ -484,9 +482,9 @@
 
   const startProcess = async (name: string) => {
     try {
-      if (!aetherStore.socket) return
+      if (!terminalStore.socket) return
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('start_process', { name }, resolve)
+        terminalStore.socket!.emit('start_process', { name }, resolve)
       })
       if (response?.status === 'ok') {
         await refreshProcesses()
@@ -498,9 +496,9 @@
 
   const stopProcess = async (name: string) => {
     try {
-      if (!aetherStore.socket) return
+      if (!terminalStore.socket) return
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('stop_process', { name }, resolve)
+        terminalStore.socket!.emit('stop_process', { name }, resolve)
       })
       if (response?.status === 'ok') {
         await refreshProcesses()
@@ -512,9 +510,9 @@
 
   const restartProcess = async (name: string) => {
     try {
-      if (!aetherStore.socket) return
+      if (!terminalStore.socket) return
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('restart_process', { name }, resolve)
+        terminalStore.socket!.emit('restart_process', { name }, resolve)
       })
       if (response?.status === 'ok') {
         await refreshProcesses()
@@ -545,12 +543,12 @@
   }
 
   const refreshProcessLogs = async () => {
-    if (!selectedProcessForLogs.value || !aetherStore.socket) return
+    if (!selectedProcessForLogs.value || !terminalStore.socket) return
     
     loadingLogs.value = true
     try {
       const response: any = await new Promise((resolve) => {
-        aetherStore.socket!.emit('get_process_logs', {
+        terminalStore.socket!.emit('get_process_logs', {
           name: selectedProcessForLogs.value.name,
           lines: 200
         }, resolve)

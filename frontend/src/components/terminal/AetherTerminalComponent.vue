@@ -66,7 +66,7 @@ import { useScreenBufferStore } from '../../stores/screenBufferStore'
 import { useTerminalPaneStore } from '../../stores/terminalPaneStore'
 import { useTerminalTabStore } from '../../stores/terminalTabStore'
 import { useThemeStore } from '../../stores/themeStore'
-import { hasRole } from '@/utils/jwtUtils'
+import { hasRole } from '@/utils/auth'
 import { useTerminalPermissionsStore } from '../../stores/terminalPermissionsStore'
 
 interface Props {

@@ -6,7 +6,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
 import { useTerminalTabStore } from '../../stores/terminalTabStore'
 
 // Selection popup state
@@ -16,7 +16,7 @@ const selectedText = ref('')
 
 // Store references
 const terminalTabStore = useTerminalTabStore()
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 // Selection popup event handlers
 const hideSelectionPopup = () => {

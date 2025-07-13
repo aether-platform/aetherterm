@@ -41,9 +41,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
 
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 const status = computed(() => terminalStore.connectionStatus)
 const isReconnecting = computed(() => terminalStore.connectionState.isReconnecting)

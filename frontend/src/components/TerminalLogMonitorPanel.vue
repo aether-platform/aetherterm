@@ -697,9 +697,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
 
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 // Reactive data
 const isLoading = ref(false)

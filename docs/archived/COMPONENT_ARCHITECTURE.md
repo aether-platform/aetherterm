@@ -184,7 +184,7 @@ this.$emit('terminal-ready', { sessionId, terminal })
 ```typescript
 // Component uses store
 const tabStore = useTerminalTabStore()
-const serviceStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 // Reactive updates
 watch(() => tabStore.activeTabId, (newTabId) => {
@@ -466,11 +466,13 @@ class SessionManager:
    - Server context management
    - Pre-execution commands
 
-2. **aetherTerminalServiceStore.ts**:
+2. **aetherTerminalStore.ts** (unified store):
    - Connection status
    - Session management  
    - WebSocket state
    - Service configuration
+   - Terminal I/O handling
+   - AI events processing
 
 3. **chatStore.ts**:
    - AI conversation history

@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useAetherTerminalServiceStore } from '../../stores/aetherTerminalServiceStore'
+import { useAetherTerminalStore } from '../../stores/aetherTerminalStore'
 import { useTerminalTabStore } from '../../stores/terminalTabStore'
 
 interface QueuedCommand {
@@ -28,7 +28,7 @@ const terminalReady = ref(false)
 
 // Store references
 const terminalTabStore = useTerminalTabStore()
-const terminalStore = useAetherTerminalServiceStore()
+const terminalStore = useAetherTerminalStore()
 
 // Watch for terminal readiness to execute queued commands
 watch(terminalReady, (isReady) => {

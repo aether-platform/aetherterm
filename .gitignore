@@ -20,3 +20,4 @@ butterfly/themes/
 logs/*.log
 *.log
 qdrant_storage/
+run/

@@ -34,7 +34,10 @@ from typing import Dict, List, Optional
 from aetherterm.agentserver.infrastructure.config import utils
 from aetherterm.agentserver.short_term_memory_local import LocalShortTermAnalyzer
 from aetherterm.agentserver.infrastructure.common.memoization import (
-    memoize, memoize_method, regex_cache, cached_property
+    memoize,
+    memoize_method,
+    regex_cache,
+    cached_property,
 )
 
 from .base_terminal import BaseTerminal
@@ -57,10 +60,10 @@ class AsyncioTerminal(BaseTerminal):
 
     # Short-term memory management
     short_term_memory_manager = None  # Shared across all sessions
-    
+
     # Pre-compile regex patterns for better performance
     _compiled_patterns = None
-    
+
     @classmethod
     def _get_compiled_patterns(cls):
         """Get pre-compiled regex patterns with memoization."""
@@ -92,6 +95,7 @@ class AsyncioTerminal(BaseTerminal):
                 ],
             }
         return cls._compiled_patterns
+
     processed_logs = []  # Processed and categorized logs
     log_subscribers = set()  # WebSocket clients subscribed to log updates
 
@@ -200,7 +204,7 @@ class AsyncioTerminal(BaseTerminal):
                 "timestamp": __import__("time").time(),
                 "type": "output",
             }
-            
+
             # Debug logging
             log.debug(f"Adding to buffer for session {self.session}: {len(message)} chars")
 
@@ -804,7 +808,7 @@ class AsyncioTerminal(BaseTerminal):
                     return category
 
         # Check for command patterns
-        if text.strip() and text.strip()[0] in ('$', '#'):
+        if text.strip() and text.strip()[0] in ("$", "#"):
             return "command"
 
         # Check for system messages
@@ -823,7 +827,7 @@ class AsyncioTerminal(BaseTerminal):
         "system": 3,
         "general": 1,
     }
-    
+
     @classmethod
     def _get_severity(cls, category: str) -> int:
         """Get numeric severity for a category."""

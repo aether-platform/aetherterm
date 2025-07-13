@@ -44,7 +44,7 @@ def set_sio_instance(sio):
 
 def get_user_info_from_environ(environ):
     """Extract user information from environment/headers."""
-    
+
     user_info = {
         "remote_addr": environ.get("REMOTE_ADDR"),
         "remote_user": environ.get("HTTP_X_REMOTE_USER"),
@@ -64,7 +64,7 @@ def get_user_info_from_environ(environ):
 
 def check_session_ownership(session_id, current_user_info):
     """Check if the current user is the owner of the session."""
-    
+
     if session_id not in AsyncioTerminal.session_owners:
         return False
 
@@ -1776,7 +1776,9 @@ async def send_terminal_history(sid, session_id, terminal):
     try:
         # Use persistent buffer if available
         buffer_content = AsyncioTerminal.get_session_buffer_content(session_id)
-        log.info(f"Checking buffer for session {session_id}: buffer exists = {bool(buffer_content)}, buffer length = {len(buffer_content) if buffer_content else 0}")
+        log.info(
+            f"Checking buffer for session {session_id}: buffer exists = {bool(buffer_content)}, buffer length = {len(buffer_content) if buffer_content else 0}"
+        )
 
         if buffer_content:
             log.info(
@@ -1784,9 +1786,12 @@ async def send_terminal_history(sid, session_id, terminal):
             )
             # Log first 200 chars for debugging
             log.info(f"Buffer preview: {repr(buffer_content[:200])}")
+            
+            # Clear screen first to ensure clean restoration
+            clear_sequence = "\033[2J\033[H"
             await sio_instance.emit(
                 "terminal_output",
-                {"session": session_id, "data": buffer_content},
+                {"session": session_id, "data": clear_sequence + buffer_content},
                 room=sid,
             )
         elif hasattr(terminal, "history") and terminal.history:
@@ -1796,9 +1801,12 @@ async def send_terminal_history(sid, session_id, terminal):
             )
             # Log first 200 chars for debugging
             log.info(f"History preview: {repr(terminal.history[:200])}")
+            
+            # Clear screen first to ensure clean restoration
+            clear_sequence = "\033[2J\033[H"
             await sio_instance.emit(
                 "terminal_output",
-                {"session": session_id, "data": terminal.history},
+                {"session": session_id, "data": clear_sequence + terminal.history},
                 room=sid,
             )
         else:
@@ -1826,9 +1834,11 @@ async def reconnect_session(sid, data):
             return
 
         log.info(f"Session reconnection request for {session_id} from client {sid}")
-        
+
         # Debug: Log all available sessions
-        log.info(f"🔍 RECONNECT_SESSION: Available sessions: {list(AsyncioTerminal.sessions.keys())}")
+        log.info(
+            f"🔍 RECONNECT_SESSION: Available sessions: {list(AsyncioTerminal.sessions.keys())}"
+        )
 
         # Check if session exists
         if session_id in AsyncioTerminal.sessions:
@@ -1840,11 +1850,13 @@ async def reconnect_session(sid, data):
 
                 # Add client to session
                 terminal.client_sids.add(sid)
-                log.info(f"Added client {sid} to session {session_id}, now has {len(terminal.client_sids)} clients")
-                
+                log.info(
+                    f"Added client {sid} to session {session_id}, now has {len(terminal.client_sids)} clients"
+                )
+
                 # Send terminal history/buffer content first
                 await send_terminal_history(sid, session_id, terminal)
-                
+
                 # Then send reconnection success - client expects terminal_ready
                 log.info(f"Sending terminal_ready event for session {session_id} to client {sid}")
                 await sio_instance.emit(
@@ -1858,27 +1870,35 @@ async def reconnect_session(sid, data):
 
         # Session not found or closed, but check if we have buffer data
         log.info(f"Session {session_id} not found in active sessions, checking buffer...")
-        
+
         # Check if we have buffer data for this session
         buffer_data = AsyncioTerminal.get_session_buffer(session_id)
         if buffer_data and buffer_data.get("lines"):
-            log.info(f"Found buffer data for session {session_id}, sending {len(buffer_data['lines'])} lines")
-            
-            # Send buffer content to restore screen
-            for line in buffer_data["lines"]:
-                await sio_instance.emit("terminal_output", {
-                    "session": session_id,
-                    "data": line["content"]
-                }, room=sid)
-            
+            log.info(
+                f"Found buffer data for session {session_id}, sending {len(buffer_data['lines'])} lines"
+            )
+
+            # Send buffer content as continuous stream to properly restore screen state
+            # Combine all buffer lines into one continuous output to preserve ANSI sequences
+            buffer_content = "".join(line["content"] for line in buffer_data["lines"])
+            if buffer_content:
+                log.info(f"Sending combined buffer content ({len(buffer_content)} chars) for session {session_id}")
+                
+                # Clear screen first to ensure clean restoration
+                clear_sequence = "\033[2J\033[H"
+                await sio_instance.emit(
+                    "terminal_output", {"session": session_id, "data": clear_sequence + buffer_content}, room=sid
+                )
+
             # Send ready signal
             log.info(f"Sending terminal_ready after buffer restoration for session {session_id}")
-            await sio_instance.emit("terminal_ready", {
-                "session": session_id,
-                "status": "restored_from_buffer"
-            }, room=sid)
+            await sio_instance.emit(
+                "terminal_ready",
+                {"session": session_id, "status": "restored_from_buffer"},
+                room=sid,
+            )
             return
-        
+
         # No session and no buffer data found
         log.info(f"No buffer data found for session {session_id}")
         await sio_instance.emit("session_not_found", {"session": session_id}, room=sid)
@@ -1942,17 +1962,17 @@ async def workspace_get(sid, data):
 
         service = get_global_workspace_service()
         workspace = service.get_workspace()
-        
+
         log.info(f"User {sid} requested workspace data")
-        log.info(f"Returning workspace: {workspace.get('id')} with {len(workspace.get('tabs', []))} tabs")
-        
+        log.info(
+            f"Returning workspace: {workspace.get('id')} with {len(workspace.get('tabs', []))} tabs"
+        )
+
         response = {"success": True, "workspace": workspace}
         log.info(f"📤 Emitting workspace_data to {sid}: {response}")
-        
-        await sio_instance.emit(
-            "workspace_data", response, room=sid
-        )
-        
+
+        await sio_instance.emit("workspace_data", response, room=sid)
+
     except Exception as e:
         log.error(f"Error getting workspace: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
@@ -2080,10 +2100,10 @@ async def tab_create(sid, data):
                     pane["sessionId"] = session_id
 
             log.info(f"User {sid} created tab {tab['id']} in global workspace")
-            
+
             response = {"success": True, "tab": tab}
             log.info(f"📤 Emitting tab_created to {sid}: {response}")
-            
+
             await sio_instance.emit("tab_created", response, room=sid)
 
             # Broadcast tab creation to all connected users
@@ -2108,7 +2128,7 @@ async def tab_close(sid, data):
     """Handle tab closure and cleanup associated sessions."""
     try:
         tab_id = data.get("tabId")
-        
+
         if not tab_id:
             log.warning("Tab close request without tabId")
             await sio_instance.emit(
@@ -2135,12 +2155,12 @@ async def tab_close(sid, data):
         # Get tab data before closing to find associated sessions
         workspace = service.get_workspace()
         tab_to_close = None
-        
+
         for tab in workspace.get("tabs", []):
             if tab.get("id") == tab_id:
                 tab_to_close = tab
                 break
-        
+
         if not tab_to_close:
             log.warning(f"Tab {tab_id} not found for closure")
             await sio_instance.emit(
@@ -2154,7 +2174,7 @@ async def tab_close(sid, data):
             session_id = pane.get("sessionId")
             if session_id:
                 log.info(f"Closing terminal session {session_id} for tab {tab_id}")
-                
+
                 # Close active terminal session
                 if session_id in AsyncioTerminal.sessions:
                     terminal = AsyncioTerminal.sessions[session_id]
@@ -2163,12 +2183,12 @@ async def tab_close(sid, data):
                         log.info(f"Closed active terminal session {session_id}")
                     except Exception as e:
                         log.error(f"Error closing terminal session {session_id}: {e}")
-                
+
                 # Clean up session buffers
                 if session_id in AsyncioTerminal.session_buffers:
                     del AsyncioTerminal.session_buffers[session_id]
                     log.info(f"Cleaned up buffer for session {session_id}")
-                
+
                 # Clean up session ownership
                 if session_id in AsyncioTerminal.session_owners:
                     del AsyncioTerminal.session_owners[session_id]
@@ -2176,13 +2196,11 @@ async def tab_close(sid, data):
 
         # Remove tab from workspace
         success = service.close_tab(tab_id)
-        
+
         if success:
             log.info(f"Successfully closed tab {tab_id}")
-            
-            await sio_instance.emit(
-                "tab_closed", {"success": True, "tabId": tab_id}, room=sid
-            )
+
+            await sio_instance.emit("tab_closed", {"success": True, "tabId": tab_id}, room=sid)
 
             # Broadcast tab closure to all connected users
             await sio_instance.emit(
@@ -2206,7 +2224,7 @@ async def session_cleanup(sid, data):
     """Handle explicit session cleanup request."""
     try:
         session_id = data.get("sessionId")
-        
+
         if not session_id:
             log.warning("Session cleanup request without sessionId")
             await sio_instance.emit(
@@ -2224,12 +2242,12 @@ async def session_cleanup(sid, data):
                 log.info(f"Closed active terminal session {session_id}")
             except Exception as e:
                 log.error(f"Error closing terminal session {session_id}: {e}")
-        
+
         # Clean up session buffers
         if session_id in AsyncioTerminal.session_buffers:
             del AsyncioTerminal.session_buffers[session_id]
             log.info(f"Cleaned up buffer for session {session_id}")
-        
+
         # Clean up session ownership
         if session_id in AsyncioTerminal.session_owners:
             del AsyncioTerminal.session_owners[session_id]
@@ -2242,5 +2260,3 @@ async def session_cleanup(sid, data):
     except Exception as e:
         log.error(f"Error cleaning up session: {e}", exc_info=True)
         await sio_instance.emit("cleanup_error", {"error": str(e)}, room=sid)
-
-
