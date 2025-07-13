@@ -344,6 +344,7 @@
   // Type definition moved inline since it's available in the new store
   import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
   import { getCurrentUser, getJWTToken, decodeJWT, isSupervisor } from '../utils/auth'
+  import type { SupervisorCommandResponse, TerminalListResponse, TerminalContentResponse, ProcessLogResponse, SupervisorProcess } from '@/types/supervisor'
 
   const terminalStore = useAetherTerminalStore()
 

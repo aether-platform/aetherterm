@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
+from .terminal_creation_service import create_terminal_with_service
 from aetherterm.agentserver.infrastructure.config import utils
 from aetherterm.agentserver.infrastructure.config.utils import User
 from aetherterm.agentserver.infrastructure.logging.log_analyzer import (
@@ -220,43 +221,15 @@ async def create_terminal(
     config_uri_root_path: str = "",  # Provide[ApplicationContainer.config.uri_root_path],
 ):
     """Handle the creation of a new terminal session with optional agent configuration."""
-    try:
-        # Check if user has permission to create terminals
-        from aetherterm.agentserver.domain.services.global_workspace_service import (
-            get_global_workspace_service,
-        )
-
-        global_service = get_global_workspace_service()
-
-        if not global_service.can_user_modify(sid):
-            log.warning(f"User {sid} (Viewer) attempted to create terminal")
-            await sio_instance.emit(
-                "terminal_error", {"error": "Viewers cannot create terminals"}, room=sid
-            )
-            return
-        session_id = data.get("session", str(uuid4()))
-        user_name = data.get("user", "")
-        path = data.get("path", "")
-
-        # P0 緊急対応: エージェント起動設定
-        launch_mode = data.get("launch_mode", "default")  # default, agent
-        agent_config = data.get("agent_config", {})
-        agent_type = agent_config.get(
-            "agent_type"
-        )  # developer, reviewer, tester, architect, researcher
-        requester_agent_id = data.get("requester_agent_id")  # MainAgentからの要請の場合
-
-        # Get pane_id and tab_id from data
-        pane_id = data.get("paneId")
-        tab_id = data.get("tabId")
-
-        # Check if this is a request for a specific session (not a new random one)
-        is_specific_session_request = "session" in data and data["session"] != ""
-
-        # For global workspace, we use the provided session ID directly
-        # No need to search for existing sessions across workspace tokens
-
-        log.info(f"Creating terminal session {session_id} for client {sid}")
+    # Use the refactored service for terminal creation
+    await create_terminal_with_service(
+        sid=sid,
+        data=data,
+        sio_instance=sio_instance,
+        config_login=config_login,
+        config_pam_profile=config_pam_profile,
+        config_uri_root_path=config_uri_root_path,
+    )
         log.debug(f"Terminal data: user={user_name}, path={path}")
 
         # Check if session already exists and is still active

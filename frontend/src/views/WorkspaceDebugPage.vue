@@ -115,6 +115,36 @@
 
         <v-divider class="my-4"></v-divider>
 
+        <div class="text-h6 mb-2">Development Auth Settings</div>
+        <v-card outlined class="pa-3 mb-4">
+          <div class="text-subtitle-2 mb-2">Simulate User Roles (Development Only)</div>
+          <v-row align="center">
+            <v-col cols="auto">
+              <v-chip-group v-model="selectedRole" mandatory>
+                <v-chip value="Anonymous" small color="grey">Anonymous</v-chip>
+                <v-chip value="Viewer" small color="info">Viewer</v-chip>
+                <v-chip value="Owner" small color="primary">Owner</v-chip>
+                <v-chip value="Supervisor" small color="warning">Supervisor</v-chip>
+              </v-chip-group>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn color="primary" small @click="applyRole">
+                Apply Role
+              </v-btn>
+            </v-col>
+            <v-col cols="auto">
+              <v-btn color="secondary" small @click="clearRole">
+                Clear Auth
+              </v-btn>
+            </v-col>
+          </v-row>
+          <v-alert type="info" class="mt-2" dense outlined>
+            Current: {{ getCurrentAuthStatus() }}
+          </v-alert>
+        </v-card>
+
+        <v-divider class="my-4"></v-divider>
+
         <div class="text-h6 mb-2">Actions</div>
         <v-row>
           <v-col cols="auto">
@@ -163,6 +193,8 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
 import { WorkspacePersistenceManager } from '../stores/workspace/persistenceManager'
+import { setJWTToken, removeJWTToken, getCurrentUser } from '@/utils/auth'
+import { formatDate, formatTimestamp } from '@/types/common'
 
 // Generate a unique window ID for this instance
 const windowId = ref(`window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`)
@@ -179,6 +211,9 @@ const localStorageData = ref({
   workspaceDetails: [] as any[]
 })
 const syncMessages = ref<any[]>([])
+
+// Development role simulation state
+const selectedRole = ref('Anonymous')
 
 // Computed
 const currentWorkspace = computed(() => workspaceStore.currentWorkspace)
@@ -255,35 +290,95 @@ const clearLocalStorage = () => {
   }
 }
 
-const formatDate = (date: any) => {
-  if (!date) return 'N/A'
-  const d = date instanceof Date ? date : new Date(date)
-  return d.toLocaleString()
+
+// Development role simulation functions
+const getCurrentAuthStatus = () => {
+  const user = getCurrentUser()
+  if (!user) {
+    return 'No authentication (development mode)'
+  }
+  return `User: ${user.username || user.sub}, Roles: ${user.roles?.join(', ') || 'none'}`
 }
 
-const formatTimestamp = (timestamp: number) => {
-  return new Date(timestamp).toLocaleTimeString()
+const createMockJWT = (role: string) => {
+  // Create a mock JWT token for development
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+  
+  const permissions = (() => {
+    switch (role) {
+      case 'Supervisor': return ['terminal:supervise', 'terminal:control']
+      case 'Owner': return ['terminal:control', 'terminal:manage']
+      case 'Viewer': return ['terminal:view']
+      case 'Anonymous': return []
+      default: return []
+    }
+  })()
+  
+  const payload = btoa(JSON.stringify({
+    sub: `dev-user-${Date.now()}`,
+    username: `dev-${role.toLowerCase()}`,
+    email: `dev-${role.toLowerCase()}@example.com`,
+    roles: role === 'none' ? [] : [role],
+    permissions,
+    isSupervisor: role === 'Supervisor',
+    exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours
+    iat: Math.floor(Date.now() / 1000)
+  }))
+  const signature = btoa('mock-signature-for-development')
+  
+  return `${header}.${payload}.${signature}`
+}
+
+const applyRole = () => {
+  if (selectedRole.value === 'Anonymous') {
+    removeJWTToken()
+    console.log('🔧 DEBUG: Applied Anonymous role (no authentication)')
+  } else {
+    const token = createMockJWT(selectedRole.value)
+    setJWTToken(token)
+    console.log(`🔧 DEBUG: Applied role: ${selectedRole.value}`)
+  }
+  
+  // Force page reload to refresh all auth states
+  window.location.reload()
+}
+
+const clearRole = () => {
+  selectedRole.value = 'none'
+  removeJWTToken()
+  console.log('🔧 DEBUG: Cleared all authentication')
+  
+  // Force page reload to refresh all auth states
+  window.location.reload()
 }
 
 // Cross-tab sync removed - this function is no longer needed
-// const handleCrossTabMessage = (message: any) => {
-//   syncMessages.value.unshift({
-//     ...message,
-//     fromThisWindow: false
-//   })
-//   if (syncMessages.value.length > 20) {
-//     syncMessages.value = syncMessages.value.slice(0, 20)
-//   }
-// }
+// Initialize current role selection
+const initializeCurrentRole = () => {
+  const user = getCurrentUser()
+  if (!user || !user.roles || user.roles.length === 0) {
+    selectedRole.value = 'none'
+  } else {
+    const role = user.roles[0]
+    if (['Anonymous', 'Viewer', 'Owner', 'Supervisor'].includes(role)) {
+      selectedRole.value = role
+    } else {
+      selectedRole.value = 'none'
+    }
+  }
+}
 
 // Lifecycle
 onMounted(async () => {
-  console.log('WorkspaceDebugPage mounted with window ID:', windowId.value)
+  // WorkspaceDebugPage mounted
   
   // Cross-tab sync removed - using server-driven sync
   
   // Initial data load
   await refreshData()
+  
+  // Initialize role selection
+  initializeCurrentRole()
   
   // Initialize workspace if needed
   if (!workspaceStore.hasCurrentWorkspace) {

@@ -3,11 +3,11 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
-import AetherTermService from './services/AetherTermService'
 import { useAetherTerminalStore } from './stores/aetherTerminalStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useThemeStore } from './stores/themeStore'
 import { initializeTelemetry } from './utils/telemetry'
+import { logger } from './utils/logger'
 
 // Initialize telemetry (currently disabled)
 const telemetryConfig = {
@@ -26,13 +26,8 @@ app.use(pinia)
 app.use(router)
 app.use(vuetify)
 
-// Initialize AetherTermService and connect it to the store
-const aetherTermService = AetherTermService.getInstance()
-const socket = aetherTermService.connect()
-
-// Initialize the store with the socket connection
+// Initialize the store (handles socket creation internally)
 const terminalStore = useAetherTerminalStore()
-// Note: New store handles socket creation internally, no setSocket needed
 
 // Initialize workspace system
 const workspaceStore = useWorkspaceStore()
@@ -43,26 +38,26 @@ const themeStore = useThemeStore()
 // Setup application initialization
 const initializeApp = async () => {
   try {
-    console.log('🚀 APP: Initializing application...')
+    logger.info('Initializing application...')
     
     // Initialize theme system first (before any UI rendering)
-    console.log('🎨 THEME: Loading theme configuration...')
+    logger.info('Loading theme configuration...')
     await themeStore.loadThemeConfig()
-    console.log('🎨 THEME: Theme system initialized successfully')
+    logger.info('Theme system initialized successfully')
     
     // Connect to service
     const connected = await terminalStore.connect()
     if (!connected) {
-      console.error('🚀 APP: Failed to connect to terminal service')
+      logger.error('Failed to connect to terminal service')
       throw new Error('Failed to connect to terminal service')
     }
     
     // Initialize workspace system (this will resume last workspace or create default)
     await workspaceStore.initializeWorkspace()
     
-    console.log('🚀 APP: Application initialized successfully')
+    logger.info('Application initialized successfully')
   } catch (error) {
-    console.error('🚀 APP: Failed to initialize application:', error)
+    logger.error('Failed to initialize application:', error)
     // Don't create default workspace - let the server handle it
   }
 }

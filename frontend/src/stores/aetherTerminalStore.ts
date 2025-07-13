@@ -10,6 +10,19 @@ import { ref, reactive, computed } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 import { useTerminalTabStore } from './terminalTabStore'
 import { useTerminalPaneStore } from './terminalPaneStore'
+import type { 
+  ChatMessageData, 
+  TerminalOutputData, 
+  TerminalClosedData,
+  AIChatTypingData,
+  AIChatChunkData,
+  AIChatCompleteData,
+  AIChatErrorData,
+  AIInfoResponseData,
+  AIResetRetryResponseData,
+  TerminalReadyData,
+  ErrorData
+} from '@/types/common'
 
 // 型定義
 interface ConnectionState {
@@ -62,7 +75,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
   
   // AI event callbacks (for Phase 1 migration)
   const askAICallbacks = ref<Array<(text: string) => void>>([])
-  const chatMessageCallbacks = ref<Array<(data: any) => void>>([])
+  const chatMessageCallbacks = ref<Array<(data: ChatMessageData) => void>>([])
   
   // Supervisor state (for Phase 1 migration)
   const isSupervisorLocked = ref(false)
@@ -145,13 +158,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
 
     try {
       // Socket.IO接続を作成 - Connection optimized
-      socket.value = io('http://localhost:57575', {
+      const { getAgentServerUrl, SOCKET_TIMEOUT, SOCKET_RECONNECT_ATTEMPTS, SOCKET_RECONNECT_DELAY } = await import('@/config/constants')
+      socket.value = io(getAgentServerUrl(), {
         transports: ['polling', 'websocket'], // Allow both transports for reliability
-        timeout: 10000, // Increased timeout for better compatibility
+        timeout: SOCKET_TIMEOUT, // Configurable timeout
         forceNew: true,
         reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionAttempts: SOCKET_RECONNECT_ATTEMPTS,
+        reconnectionDelay: SOCKET_RECONNECT_DELAY
       })
 
       // 接続イベントのセットアップ
@@ -351,7 +365,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     })
     
     // Chat message events (for Phase 1 migration)
-    socket.value.on('chat_message', (data: any) => {
+    socket.value.on('chat_message', (data: ChatMessageData) => {
       chatMessageCallbacks.value.forEach(callback => {
         try {
           callback(data)
@@ -362,28 +376,28 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     })
     
     // AI chat events (for SimpleChatComponent)
-    socket.value.on('ai_chat_typing', (data: any) => {
+    socket.value.on('ai_chat_typing', (data: AIChatTypingData) => {
       // Re-emit for components listening directly
       socket.value?.emit('ai_chat_typing_internal', data)
     })
     
-    socket.value.on('ai_chat_chunk', (data: any) => {
+    socket.value.on('ai_chat_chunk', (data: AIChatChunkData) => {
       socket.value?.emit('ai_chat_chunk_internal', data)
     })
     
-    socket.value.on('ai_chat_complete', (data: any) => {
+    socket.value.on('ai_chat_complete', (data: AIChatCompleteData) => {
       socket.value?.emit('ai_chat_complete_internal', data)
     })
     
-    socket.value.on('ai_chat_error', (data: any) => {
+    socket.value.on('ai_chat_error', (data: AIChatErrorData) => {
       socket.value?.emit('ai_chat_error_internal', data)
     })
     
-    socket.value.on('ai_info_response', (data: any) => {
+    socket.value.on('ai_info_response', (data: AIInfoResponseData) => {
       socket.value?.emit('ai_info_response_internal', data)
     })
     
-    socket.value.on('ai_reset_retry_response', (data: any) => {
+    socket.value.on('ai_reset_retry_response', (data: AIResetRetryResponseData) => {
       socket.value?.emit('ai_reset_retry_response_internal', data)
     })
   }
@@ -406,7 +420,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     }
 
     return new Promise((resolve) => {
-      const handleTerminalReady = (data: any) => {
+      const handleTerminalReady = (data: TerminalReadyData) => {
         if (data.session === sessionId) {
           socket.value?.off('terminal_ready', handleTerminalReady)
           socket.value?.off('terminal_error', handleError)
@@ -431,7 +445,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         }
       }
 
-      const handleError = (data: any) => {
+      const handleError = (data: ErrorData) => {
         if (data.session === sessionId) {
           socket.value?.off('terminal_ready', handleTerminalReady)
           socket.value?.off('terminal_error', handleError)
@@ -501,7 +515,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     console.log('🔄 AETHER_TERMINAL: Requesting new session:', sessionId)
 
     return new Promise((resolve) => {
-      const handleTerminalReady = (data: any) => {
+      const handleTerminalReady = (data: TerminalReadyData) => {
         if (data.session && data.session === sessionId) {
           // セッション登録
           sessions.value.set(data.session, {
@@ -608,11 +622,11 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
   }
   
   // Chat event management (for Phase 1 migration)
-  const onChatMessage = (callback: (data: any) => void) => {
+  const onChatMessage = (callback: (data: ChatMessageData) => void) => {
     chatMessageCallbacks.value.push(callback)
   }
   
-  const offChatMessage = (callback?: (data: any) => void) => {
+  const offChatMessage = (callback?: (data: ChatMessageData) => void) => {
     if (callback) {
       const index = chatMessageCallbacks.value.indexOf(callback)
       if (index !== -1) {
@@ -623,7 +637,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     }
   }
   
-  const sendChatMessage = (message: any) => {
+  const sendChatMessage = (message: ChatMessageData) => {
     if (!socket.value?.connected) {
       console.warn('⚠️ AETHER_TERMINAL: Cannot send chat message - no connection')
       return
@@ -766,7 +780,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       console.log('📍 AETHER_TERMINAL: Socket connected:', socket.value?.connected)
       console.log('📍 AETHER_TERMINAL: Socket ID:', socket.value?.id)
       
-      const handleReady = (data: any) => {
+      const handleReady = (data: TerminalReadyData) => {
         if (data.session === sessionId) {
           socket.value?.off('terminal_ready', handleReady)
           socket.value?.off('terminal_error', handleError)
@@ -783,7 +797,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         }
       }
 
-      const handleError = (data: any) => {
+      const handleError = (data: ErrorData) => {
         socket.value?.off('terminal_ready', handleReady)
         socket.value?.off('terminal_error', handleError)
         console.error('❌ AETHER_TERMINAL: Failed to reconnect:', data.error)
@@ -823,7 +837,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         return
       }
 
-      const handleInfo = (data: any) => {
+      const handleInfo = (data: AIInfoResponseData) => {
         socket.value?.off('session_info', handleInfo)
         resolve(data)
       }

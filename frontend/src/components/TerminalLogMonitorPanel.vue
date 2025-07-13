@@ -925,9 +925,11 @@ const getMockSystemStats = () => ({
   }
 })
 
+import { RANDOM_ID_MIN, RANDOM_ID_MAX } from '@/config/constants'
+
 const getMockTerminalStats = (terminalId) => ({
   total_entries: Math.floor(Math.random() * 1000) + 100,
-  total_bytes: Math.floor(Math.random() * 1000000) + 50000,
+  total_bytes: Math.floor(Math.random() * (RANDOM_ID_MAX - RANDOM_ID_MIN)) + RANDOM_ID_MIN,
   last_update: new Date().toISOString()
 })
 
@@ -1165,12 +1167,12 @@ const formatTime = (timestamp) => {
 
 // WebSocket management
 const setupWebSocketConnection = () => {
-  if (!terminalStore.service || !terminalStore.service.socket) {
+  if (!terminalStore.socket) {
     console.warn('Socket.IO not available for log monitoring')
     return
   }
 
-  const socket = terminalStore.service.socket
+  const socket = terminalStore.socket
 
   // Subscribe to log monitoring events
   socket.on('log_system_stats', (data) => {
@@ -1206,11 +1208,11 @@ const setupWebSocketConnection = () => {
 }
 
 const cleanupWebSocketConnection = () => {
-  if (!terminalStore.service || !terminalStore.service.socket) {
+  if (!terminalStore.socket) {
     return
   }
 
-  const socket = terminalStore.service.socket
+  const socket = terminalStore.socket
 
   // Unsubscribe from log monitoring
   socket.emit('log_monitor_unsubscribe', { terminal_id: 'all' })

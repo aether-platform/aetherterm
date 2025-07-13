@@ -118,6 +118,7 @@
 <script setup lang="ts">
   import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue'
   import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
+  import type { ChatMessageData, AIChatTypingData, AIChatChunkData, AIChatCompleteData, AIChatErrorData } from '@/types/common'
 
   interface ChatMessage {
     id: string
@@ -296,7 +297,7 @@
     )
 
     // Listen for chat messages from socket
-    terminalStore.onChatMessage((data: any) => {
+    terminalStore.onChatMessage((data: ChatMessageData) => {
       console.log('Received chat message:', data)
       addMessage(data.username || 'Unknown User', data.message || data.content, 'user')
     })
@@ -321,12 +322,12 @@
       terminalStore.socket.off('ai_reset_retry_response')
 
       // AI typing indicator
-      terminalStore.socket.on('ai_chat_typing', (data: any) => {
+      terminalStore.socket.on('ai_chat_typing', (data: AIChatTypingData) => {
         isAITyping.value = data.typing
       })
 
       // AI response chunks
-      terminalStore.socket.on('ai_chat_chunk', (data: any) => {
+      terminalStore.socket.on('ai_chat_chunk', (data: AIChatChunkData) => {
         const messageId = data.message_id
         const chunk = data.chunk
 
@@ -345,7 +346,7 @@
       })
 
       // AI response complete
-      terminalStore.socket.on('ai_chat_complete', (data: any) => {
+      terminalStore.socket.on('ai_chat_complete', (data: AIChatCompleteData) => {
         const messageId = data.message_id
         const fullResponse = data.full_response
 
@@ -361,7 +362,7 @@
       })
 
       // AI error handling
-      terminalStore.socket.on('ai_chat_error', (data: any) => {
+      terminalStore.socket.on('ai_chat_error', (data: AIChatErrorData) => {
         const messageId = data.message_id
         const error = data.error
 

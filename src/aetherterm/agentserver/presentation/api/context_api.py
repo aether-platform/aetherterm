@@ -225,24 +225,6 @@ def _context_to_response(context: OperationContext) -> OperationContextResponse:
     )
 
 
-# Initialization Functions - DEPRECATED
-
-
-def initialize_context_inference(vector_storage, sql_storage) -> Tuple[None, None]:
-    """
-    コンテキスト推定エンジンを初期化 - DEPRECATED
-    """
-    logger.warning(
-        "Context inference initialization is deprecated. Use local insights API instead."
-    )
-    return None, None
-
-
-async def startup_context_inference():
-    """
-    起動時のコンテキスト推定システム初期化 - DEPRECATED
-    """
-    logger.warning("Context inference startup is deprecated. Use local insights API instead.")
 
 
 # Health Check

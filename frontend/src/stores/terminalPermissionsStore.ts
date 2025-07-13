@@ -33,38 +33,90 @@ export const useTerminalPermissionsStore = defineStore('terminalPermissions', ()
     return permission.ownerId === currentUser.value?.sub
   }
   
+  // Check if we're in debug mode (URL contains debug or workspace-debug)
+  const isDebugMode = (): boolean => {
+    const path = window.location.pathname
+    return path.includes('/debug') || path.includes('/workspace-debug')
+  }
+  
   // Check if current user has permission to control the terminal
   const hasControlPermission = (sessionId: string): boolean => {
     const permission = permissions.value.get(sessionId)
     const user = currentUser.value
     
-    if (!permission || !user) return true // Default to allow if no permissions set
+    // In development mode (no auth), always allow
+    if (!user || !user.sub) {
+      console.log('📋 PERMISSIONS: No user context - allowing in development mode')
+      return true
+    }
+    
+    // Anonymous users can only access debug mode
+    if (user.roles?.includes('Anonymous') && !isDebugMode()) {
+      console.log('📋 PERMISSIONS: Anonymous user outside debug mode - blocking')
+      return false
+    }
+    
+    if (!permission) {
+      console.log('📋 PERMISSIONS: No permission settings - allowing')
+      return true
+    }
     
     // Owner always has permission
-    if (permission.ownerId === user.sub) return true
+    if (permission.ownerId === user.sub) {
+      console.log('📋 PERMISSIONS: User is owner - allowing')
+      return true
+    }
     
-    // Check if user has Viewer role (read-only)
-    if (user.roles?.includes('Viewer')) return false
+    // Check role-based permissions
+    if (user.roles?.includes('Supervisor')) {
+      console.log('📋 PERMISSIONS: User has Supervisor role - allowing')
+      return true
+    }
+    
+    if (user.roles?.includes('Owner')) {
+      console.log('📋 PERMISSIONS: User has Owner role - allowing')
+      return true
+    }
+    
+    if (user.roles?.includes('Viewer')) {
+      console.log('📋 PERMISSIONS: User has Viewer role - blocking')
+      return false
+    }
+    
+    if (user.roles?.includes('Anonymous')) {
+      console.log('📋 PERMISSIONS: User has Anonymous role - blocking')
+      return false
+    }
     
     // Check if generic users are allowed
-    if (permission.allowGenericUsers) return true
+    if (permission.allowGenericUsers) {
+      console.log('📋 PERMISSIONS: Generic users allowed - allowing')
+      return true
+    }
     
     // Check if user is in the allowed list
-    return permission.allowedUsers.includes(user.sub)
+    const allowed = permission.allowedUsers.includes(user.sub)
+    console.log(`📋 PERMISSIONS: User in allowed list: ${allowed}`)
+    return allowed
   }
   
   // Initialize permissions for a new session
   const initializePermissions = (sessionId: string, ownerId?: string) => {
-    const owner = ownerId || currentUser.value?.sub || 'unknown'
+    const owner = ownerId || currentUser.value?.sub || 'dev-user'
+    
+    // In development mode (no auth), be permissive
+    const isDevelopmentMode = !currentUser.value || !currentUser.value.sub
     
     permissions.value.set(sessionId, {
       sessionId,
       ownerId: owner,
       allowedUsers: [],
-      allowGenericUsers: false, // Default to restrictive
+      allowGenericUsers: isDevelopmentMode, // Allow in development mode
       createdAt: new Date(),
       updatedAt: new Date()
     })
+    
+    console.log(`📋 PERMISSIONS: Initialized session ${sessionId}, owner: ${owner}, dev mode: ${isDevelopmentMode}`)
   }
   
   // Toggle generic user access
@@ -147,6 +199,7 @@ export const useTerminalPermissionsStore = defineStore('terminalPermissions', ()
     isOwner,
     hasControlPermission,
     getPermissions,
+    isDebugMode,
     
     // Actions
     initializePermissions,

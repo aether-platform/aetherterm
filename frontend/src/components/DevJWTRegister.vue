@@ -10,19 +10,35 @@
     <div class="user-options">
       <div class="user-type-buttons">
         <button
-          @click="registerUser('general')"
-          class="register-btn general-user"
+          @click="registerUser('Anonymous')"
+          class="register-btn anonymous-user"
           :disabled="isRegistering"
         >
-          👤 Register as General User
+          🔓 Anonymous
         </button>
 
         <button
-          @click="registerUser('supervisor')"
+          @click="registerUser('Viewer')"
+          class="register-btn viewer-user"
+          :disabled="isRegistering"
+        >
+          👁️ Viewer
+        </button>
+
+        <button
+          @click="registerUser('Owner')"
+          class="register-btn owner-user"
+          :disabled="isRegistering"
+        >
+          👤 Owner
+        </button>
+
+        <button
+          @click="registerUser('Supervisor')"
           class="register-btn supervisor-user"
           :disabled="isRegistering"
         >
-          👑 Register as Supervisor
+          👑 Supervisor
         </button>
       </div>
 
@@ -33,7 +49,7 @@
     </div>
 
     <!-- Current Authentication Status -->
-    <div v-if="currentAuth" class="current-auth">
+    <div v-if="currentAuth || showAnonymousStatus" class="current-auth">
       <h4>Current Authentication</h4>
       <div class="auth-info">
         <div class="auth-field">
@@ -42,8 +58,13 @@
         </div>
         <div class="auth-field">
           <span class="label">User Type:</span>
-          <span class="value" :class="{ supervisor: currentAuth.isSupervisor }">
-            {{ currentAuth.isSupervisor ? 'Supervisor' : 'General User' }}
+          <span class="value" :class="{ 
+            supervisor: currentAuth.isSupervisor,
+            viewer: currentAuth.roles?.includes('Viewer'),
+            owner: currentAuth.roles?.includes('Owner'),
+            anonymous: currentAuth.roles?.includes('Anonymous')
+          }">
+            {{ currentAuth.roles?.[0] || (currentAuth.isSupervisor ? 'Supervisor' : 'Unknown') }}
           </span>
         </div>
         <div class="auth-field">
@@ -91,9 +112,10 @@
   const messageType = ref<'success' | 'error'>('success')
   const generatedJWT = ref('')
   const currentAuth = ref<any>(null)
+  const showAnonymousStatus = ref(false)
 
   // Development JWT creation function
-  const createDevelopmentJWT = (userType: 'general' | 'supervisor') => {
+  const createDevelopmentJWT = (userType: 'Anonymous' | 'Viewer' | 'Owner' | 'Supervisor') => {
     const header = {
       alg: 'HS256',
       typ: 'JWT',
@@ -102,30 +124,62 @@
     const now = Math.floor(Date.now() / 1000)
     const expiry = now + 24 * 60 * 60 // 24 hours
 
-    const payload =
-      userType === 'supervisor'
-        ? {
+    const getPayloadForRole = () => {
+      switch (userType) {
+        case 'Anonymous':
+          return {
+            sub: 'dev-anonymous-001',
+            email: 'anonymous@aetherterm.dev',
+            name: 'Anonymous User',
+            isSupervisor: false,
+            roles: ['Anonymous'],
+            permissions: [],
+            iat: now,
+            exp: expiry,
+            iss: 'aetherterm-dev',
+          }
+        case 'Viewer':
+          return {
+            sub: 'dev-viewer-001',
+            email: 'viewer@aetherterm.dev',
+            name: 'Viewer User',
+            isSupervisor: false,
+            roles: ['Viewer'],
+            permissions: ['terminal:view'],
+            iat: now,
+            exp: expiry,
+            iss: 'aetherterm-dev',
+          }
+        case 'Owner':
+          return {
+            sub: 'dev-owner-001',
+            email: 'owner@aetherterm.dev',
+            name: 'Owner User',
+            isSupervisor: false,
+            roles: ['Owner'],
+            permissions: ['terminal:control', 'terminal:manage'],
+            iat: now,
+            exp: expiry,
+            iss: 'aetherterm-dev',
+          }
+        case 'Supervisor':
+          return {
             sub: 'dev-supervisor-001',
             email: 'supervisor@aetherterm.dev',
-            name: 'Development Supervisor',
+            name: 'Supervisor User',
             isSupervisor: true,
-            roles: ['supervisor', 'admin'],
-            permissions: ['terminal:supervise', 'admin:all'],
+            roles: ['Supervisor'],
+            permissions: ['terminal:supervise', 'terminal:control'],
             iat: now,
             exp: expiry,
             iss: 'aetherterm-dev',
           }
-        : {
-            sub: 'dev-user-001',
-            email: 'user@aetherterm.dev',
-            name: 'Development User',
-            isSupervisor: false,
-            roles: ['user'],
-            permissions: ['terminal:access'],
-            iat: now,
-            exp: expiry,
-            iss: 'aetherterm-dev',
-          }
+        default:
+          throw new Error(`Unknown user type: ${userType}`)
+      }
+    }
+
+    const payload = getPayloadForRole()
 
     // Simple base64url encoding (for development only)
     const base64UrlEncode = (data: any) => {
@@ -141,30 +195,45 @@
     return `${encodedHeader}.${encodedPayload}.${signature}`
   }
 
-  const registerUser = async (userType: 'general' | 'supervisor') => {
+  const registerUser = async (userType: 'Anonymous' | 'Viewer' | 'Owner' | 'Supervisor') => {
     isRegistering.value = true
     registrationMessage.value = ''
 
     try {
-      // Generate JWT token
-      const jwt = createDevelopmentJWT(userType)
+      if (userType === 'Anonymous') {
+        // Anonymous user has no JWT token
+        clearAuth()
+        registrationMessage.value = 'Anonymous mode activated! No authentication token.'
+        messageType.value = 'success'
+        
+        // Don't reload immediately for Anonymous, just clear and update display
+        currentAuth.value = null
+        generatedJWT.value = ''
+        
+        setTimeout(() => {
+          window.location.reload()
+        }, 2000)
+      } else {
+        // Generate JWT token for authenticated roles
+        const jwt = createDevelopmentJWT(userType)
 
-      // Store in localStorage
-      localStorage.setItem('jwt_token', jwt)
+        // Store in localStorage
+        localStorage.setItem('jwt_token', jwt)
 
-      // Store generated JWT for display
-      generatedJWT.value = jwt
+        // Store generated JWT for display
+        generatedJWT.value = jwt
 
-      // Update current auth display
-      loadCurrentAuth()
+        // Update current auth display
+        loadCurrentAuth()
 
-      registrationMessage.value = `Successfully registered as ${userType === 'supervisor' ? 'Supervisor' : 'General User'}! Token stored in localStorage.`
-      messageType.value = 'success'
+        registrationMessage.value = `Successfully registered as ${userType}! Token stored in localStorage.`
+        messageType.value = 'success'
 
-      // Refresh the page to update authentication state
-      setTimeout(() => {
-        window.location.reload()
-      }, 2000)
+        // Refresh the page to update authentication state
+        setTimeout(() => {
+          window.location.reload()
+        }, 2000)
+      }
     } catch (error) {
       console.error('Registration failed:', error)
       registrationMessage.value = 'Registration failed. Please try again.'
@@ -204,9 +273,24 @@
       const payload = decodeJWT(token)
       if (payload) {
         currentAuth.value = payload
+        showAnonymousStatus.value = false
+      } else {
+        currentAuth.value = null
+        showAnonymousStatus.value = true
       }
     } else {
-      currentAuth.value = null
+      currentAuth.value = {
+        sub: 'anonymous',
+        email: 'No authentication',
+        name: 'Anonymous User',
+        isSupervisor: false,
+        roles: ['Anonymous'],
+        permissions: [],
+        iat: null,
+        exp: null,
+        iss: 'no-auth'
+      }
+      showAnonymousStatus.value = true
     }
   }
 
@@ -300,13 +384,33 @@
     min-width: 200px;
   }
 
-  .general-user {
+  .anonymous-user {
+    background-color: #666;
+    color: white;
+  }
+
+  .anonymous-user:hover:not(:disabled) {
+    background-color: #555;
+    transform: translateY(-1px);
+  }
+
+  .viewer-user {
     background-color: #2196f3;
     color: white;
   }
 
-  .general-user:hover:not(:disabled) {
+  .viewer-user:hover:not(:disabled) {
     background-color: #1976d2;
+    transform: translateY(-1px);
+  }
+
+  .owner-user {
+    background-color: #ff9800;
+    color: white;
+  }
+
+  .owner-user:hover:not(:disabled) {
+    background-color: #f57f17;
     transform: translateY(-1px);
   }
 
@@ -396,6 +500,21 @@
 
   .auth-field .value.supervisor {
     color: #4caf50;
+    font-weight: bold;
+  }
+
+  .auth-field .value.viewer {
+    color: #2196f3;
+    font-weight: bold;
+  }
+
+  .auth-field .value.owner {
+    color: #ff9800;
+    font-weight: bold;
+  }
+
+  .auth-field .value.anonymous {
+    color: #999;
     font-weight: bold;
   }
 

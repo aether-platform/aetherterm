@@ -34,6 +34,24 @@
       </div>
     </div>
     
+    <!-- Access Denied Overlay for Anonymous Users -->
+    <div v-if="isAccessDenied" class="terminal-access-denied-overlay">
+      <div class="terminal-access-denied-content">
+        <div class="terminal-access-denied-icon">🔒</div>
+        <div class="terminal-access-denied-title">Access Denied</div>
+        <div class="terminal-access-denied-message">
+          Anonymous users can only access debug mode.
+          <br>
+          Please go to the debug page to access terminal functionality.
+        </div>
+        <div class="terminal-access-denied-actions">
+          <button @click="goToDebugPage" class="action-button debug-button">
+            🔧 Go to Debug Page
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <div v-if="searchVisible" class="terminal-search">
       <input
         v-model="searchTerm"
@@ -66,7 +84,7 @@ import { useScreenBufferStore } from '../../stores/screenBufferStore'
 import { useTerminalPaneStore } from '../../stores/terminalPaneStore'
 import { useTerminalTabStore } from '../../stores/terminalTabStore'
 import { useThemeStore } from '../../stores/themeStore'
-import { hasRole } from '@/utils/auth'
+import { hasRole, isAnonymousUser, canAnonymousAccess } from '@/utils/auth'
 import { useTerminalPermissionsStore } from '../../stores/terminalPermissionsStore'
 
 interface Props {
@@ -108,6 +126,7 @@ const sessionId = ref<string | null>(null)
 const isInitialized = ref(false)
 const isConnecting = ref(false)
 const isTerminalClosed = ref(false)
+const isAccessDenied = ref(false)
 const searchTerm = ref('')
 const searchVisible = ref(false)
 let fitTimeout: number | null = null
@@ -234,6 +253,14 @@ const getExistingSession = () => {
 
 // ターミナル初期化（シンプル化）
 const initializeTerminal = async () => {
+  // Check if Anonymous user can access terminal functionality
+  if (!canAnonymousAccess()) {
+    console.warn(`⚠️ AETHER_TERMINAL: Terminal initialization blocked for Anonymous user outside debug mode`)
+    isConnecting.value = false
+    isAccessDenied.value = true
+    return
+  }
+  
   // Reduced logging for performance
   
   await nextTick()
@@ -318,9 +345,20 @@ const setupInput = () => {
   const permissionsStore = useTerminalPermissionsStore()
   
   terminal.value.onData((data) => {
+    console.log(`⌨️ AETHER_TERMINAL: Key input received, sessionId: ${sessionId.value}, data length: ${data.length}`)
+    
     if (sessionId.value) {
+      // Check if Anonymous user can access
+      if (!canAnonymousAccess()) {
+        console.warn(`⚠️ AETHER_TERMINAL: Input blocked for Anonymous user outside debug mode`)
+        terminal.value?.write('\r\n\x1b[31m[Access denied: Anonymous users can only access debug mode]\x1b[0m\r\n')
+        return
+      }
+      
       // Check if user has Viewer role
       const isViewer = hasRole('Viewer')
+      console.log(`⌨️ AETHER_TERMINAL: Viewer check - isViewer: ${isViewer}`)
+      
       if (isViewer) {
         console.warn(`⚠️ AETHER_TERMINAL: Input blocked for Viewer role`)
         terminal.value?.write('\r\n\x1b[33m[Read-only mode: Input disabled for Viewer role]\x1b[0m\r\n')
@@ -328,11 +366,16 @@ const setupInput = () => {
       }
       
       // Check if user has control permission
-      if (!permissionsStore.hasControlPermission(sessionId.value)) {
+      const hasPermission = permissionsStore.hasControlPermission(sessionId.value)
+      console.log(`⌨️ AETHER_TERMINAL: Permission check - hasPermission: ${hasPermission}`)
+      
+      if (!hasPermission) {
         console.warn(`⚠️ AETHER_TERMINAL: Input blocked - no permission`)
         terminal.value?.write('\r\n\x1b[33m[Read-only mode: You do not have permission to control this terminal]\x1b[0m\r\n')
         return
       }
+      
+      console.log(`✅ AETHER_TERMINAL: Input approved, sending to server`)
       
       // Add input to screen buffer (only for meaningful input)
       if (data.length > 0 && !data.match(/^\x1b/)) { // Skip escape sequences
@@ -349,34 +392,39 @@ const setupInput = () => {
     const permissionsStore = useTerminalPermissionsStore()
     const isViewer = hasRole('Viewer')
     const hasPermission = sessionId.value ? permissionsStore.hasControlPermission(sessionId.value) : true
+    const canAccess = canAnonymousAccess()
     
-    // Ctrl+Shift+F for search (allowed for all roles)
+    // Ctrl+Shift+F for search (allowed for all roles, but only if Anonymous can access)
     if (event.ctrlKey && event.shiftKey && event.key === 'F') {
       event.preventDefault()
-      openSearch()
+      if (canAccess) {
+        openSearch()
+      }
       return false
     }
     
-    // Ctrl+Shift+C for copy (allowed for all roles)
+    // Ctrl+Shift+C for copy (allowed for all roles, but only if Anonymous can access)
     if (event.ctrlKey && event.shiftKey && event.key === 'C') {
       event.preventDefault()
-      copySelection()
+      if (canAccess) {
+        copySelection()
+      }
       return false
     }
     
-    // Ctrl+Shift+V for paste (blocked for Viewer role or no permission)
+    // Ctrl+Shift+V for paste (blocked for Viewer role, no permission, or Anonymous outside debug)
     if (event.ctrlKey && event.shiftKey && event.key === 'V') {
       event.preventDefault()
-      if (isViewer || !hasPermission) {
-        console.warn('Paste disabled: no permission')
+      if (!canAccess || isViewer || !hasPermission) {
+        console.warn('Paste disabled: no permission or access denied')
         return false
       }
       pasteFromClipboard()
       return false
     }
     
-    // Block all other keyboard input for Viewer role or no permission
-    if (isViewer || !hasPermission) {
+    // Block all other keyboard input for Viewer role, no permission, or Anonymous outside debug
+    if (!canAccess || isViewer || !hasPermission) {
       return false
     }
     
@@ -386,6 +434,15 @@ const setupInput = () => {
 
 // セッション要求（統一）- 安定したセッション管理
 const requestSession = async () => {
+  // Check if Anonymous user can access terminal functionality
+  if (!canAnonymousAccess()) {
+    console.warn(`⚠️ AETHER_TERMINAL: Session request blocked for Anonymous user outside debug mode`)
+    if (terminal.value) {
+      terminal.value.write('\r\n\x1b[31m[Access denied: Anonymous users can only access debug mode]\x1b[0m\r\n')
+    }
+    return
+  }
+  
   // Debug: Log current pane store state
   console.log(`📺 AETHER_TERMINAL: Current pane store panes:`, paneStore.panes.map(p => ({ id: p.id, sessionId: p.sessionId })))
   console.log(`📺 AETHER_TERMINAL: Looking for ${props.mode} ID: ${props.id}`)
@@ -918,6 +975,11 @@ const restartTerminal = async () => {
   }
 }
 
+// Navigate to debug page (for Anonymous users)
+const goToDebugPage = () => {
+  window.location.href = '/workspace-debug'
+}
+
 // 外部API
 defineExpose({
   terminal,
@@ -1202,6 +1264,68 @@ defineExpose({
   
   &:hover {
     background: var(--terminal-bright-green, #23d18b);
+  }
+}
+
+// Access Denied Overlay Styles
+.terminal-access-denied-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-access-denied-content {
+  background: var(--terminal-background, #1e1e1e);
+  border: 2px solid var(--terminal-yellow, #e5e510);
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.terminal-access-denied-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.terminal-access-denied-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--terminal-yellow, #e5e510);
+  margin-bottom: 16px;
+  font-family: var(--terminal-font-family);
+}
+
+.terminal-access-denied-message {
+  color: var(--terminal-foreground, #d4d4d4);
+  margin-bottom: 24px;
+  line-height: 1.5;
+  font-family: var(--terminal-font-family);
+}
+
+.terminal-access-denied-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.debug-button {
+  background: var(--terminal-magenta, #bc3fbc);
+  color: var(--terminal-background, #1e1e1e);
+  
+  &:hover {
+    background: var(--terminal-bright-magenta, #d670d6);
   }
 }
 </style>

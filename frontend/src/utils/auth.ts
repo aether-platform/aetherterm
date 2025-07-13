@@ -235,6 +235,34 @@ export function hasRole(requiredRole: string): boolean {
 }
 
 /**
+ * Check if current user is Anonymous
+ */
+export function isAnonymousUser(): boolean {
+  const user = getCurrentUser()
+  return user?.roles?.includes('Anonymous') || false
+}
+
+/**
+ * Check if we're in debug mode (URL contains debug or workspace-debug)
+ */
+export function isDebugMode(): boolean {
+  const path = window.location.pathname
+  return path.includes('/debug') || path.includes('/workspace-debug')
+}
+
+/**
+ * Check if Anonymous user can access current page/feature
+ * Anonymous users can only access debug mode pages
+ */
+export function canAnonymousAccess(): boolean {
+  if (!isAnonymousUser()) {
+    return true // Not anonymous, no restriction
+  }
+  
+  return isDebugMode() // Anonymous can only access debug mode
+}
+
+/**
  * Get comprehensive user information from JWT
  */
 export function getCurrentUser(): UserInfo | null {

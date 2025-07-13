@@ -260,6 +260,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import TerminalLogMonitorPanel from '../components/TerminalLogMonitorPanel.vue'
+import { DEFAULT_TEST_LOG_SIZE } from '@/config/constants'
 
 // Reactive data
 const isInitializing = ref(false)
@@ -630,7 +631,7 @@ const stressTestStorage = async () => {
     const response = await fetch('/api/log-processing/stress-test-storage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ test_size: 5000 })
+      body: JSON.stringify({ test_size: DEFAULT_TEST_LOG_SIZE })
     })
     
     if (response.ok) {
