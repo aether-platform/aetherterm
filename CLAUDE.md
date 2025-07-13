@@ -4,6 +4,25 @@
 **Tech**: Python FastAPI + SocketIO, Vue 3 + TypeScript frontend, LangChain AI integration  
 **Features**: MainAgent-controlled agent startup, hierarchical memory, multi-agent coordination, comprehensive security
 
+## Repository Management
+
+**Multi-Repository Setup**: This project is part of the AetherPlatform workspace managed by [tsrc](https://github.com/tanker-io/tsrc).
+
+### Key tsrc Commands
+```bash
+# From workspace root - sync all repositories
+tsrc sync
+
+# Check status across all repositories  
+tsrc status
+
+# Update only this repository
+git pull origin main
+```
+
+**Location**: `app/terminal/` within the unified AetherPlatform workspace  
+**Repository**: Independent Git repository as part of tsrc-managed multi-repo setup
+
 ## Vector-Enhanced Development Strategy
 
 **CRITICAL**: Use semantic search FIRST for all conceptual development tasks. Traditional tools are secondary.
