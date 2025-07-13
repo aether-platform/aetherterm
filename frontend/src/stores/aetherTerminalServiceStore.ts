@@ -129,119 +129,7 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
   // Connection Actions
   const setSocket = (socketInstance: Socket) => {
     socket.value = socketInstance
-    console.log('Setting socket value:', socketInstance)
   }
-
-  // const setupSocketListeners = () => {
-  //   if (!socket.value) return
-
-  //   socket.value.on('connect', () => {
-  //     console.log('Socket connected, setting up listeners');
-  //     connectionState.value.isConnected = true
-  //     connectionState.value.isConnecting = false
-  //     connectionState.value.isReconnecting = false
-  //     connectionState.value.reconnectAttempts = 0
-  //     connectionState.value.lastConnected = new Date()
-  //     connectionState.value.connectionError = undefined
-
-  //     addToOutput('[SYSTEM] Connected to AetherTerm service')
-  //     eventCallbacks.value.onConnect.forEach(callback => callback())
-  //   })
-
-  //   socket.value.on('disconnect', (reason: string) => {
-  //     connectionState.value.isConnected = false
-  //     connectionState.value.lastDisconnected = new Date()
-  //     connectionState.value.connectionError = reason
-
-  //     addToOutput(`[SYSTEM] Disconnected from AetherTerm service: ${reason}`)
-  //     eventCallbacks.value.onDisconnect.forEach(callback => callback())
-
-  //     // Start reconnection if not intentional
-  //     if (reason !== 'io client disconnect') {
-  //       startReconnection()
-  //     }
-  //   })
-
-  //   socket.value.on('reconnect', (attemptNumber: number) => {
-  //     connectionState.value.isReconnecting = false
-  //     connectionState.value.reconnectAttempts = attemptNumber
-  //     addToOutput(`[SYSTEM] Reconnected after ${attemptNumber} attempts`)
-  //     eventCallbacks.value.onReconnect.forEach(callback => callback())
-  //   })
-
-  //   socket.value.on('reconnect_attempt', (attemptNumber: number) => {
-  //     connectionState.value.reconnectAttempts = attemptNumber
-  //     addToOutput(`[SYSTEM] Reconnection attempt ${attemptNumber}`)
-  //   })
-
-  //   socket.value.on('reconnect_failed', () => {
-  //     connectionState.value.isReconnecting = false
-  //     connectionState.value.connectionError = 'Max reconnection attempts reached'
-  //     addToOutput('[SYSTEM] Failed to reconnect after maximum attempts')
-  //   })
-
-  //   socket.value.on('connect_error', (error: Error) => {
-  //     connectionState.value.connectionError = error.message
-  //     addToOutput(`[SYSTEM] Connection error: ${error.message}`)
-  //     eventCallbacks.value.onError.forEach(callback => callback(error))
-  //   })
-
-  //   socket.value.on('message', (message: { type: string; data: any }) => {
-  //     console.log('Socket is connected:', connectionState.value.isConnected);
-  //     console.log('Received message:', message); // Debug log
-  //     console.log('Message type:', message.type);
-  //     switch (message.type) {
-  //       case 'shell_output':
-  //         console.log('Received shell_output message:', message.data);
-  //         if (!isOutputSuppressed.value) {
-  //           addToOutput(message.data)
-  //         }
-  //         // eventCallbacks.value.onShellOutput.forEach(callback => callback(message.data))
-  //         console.log('eventCallbacks.value.onShellOutput.length:', eventCallbacks.value.onShellOutput.length);
-  //         eventCallbacks.value.onShellOutput.forEach(callback => {
-  //           console.log('onShellOutput callback called with:', message.data);
-  //         });
-  //         break
-  //       case 'ctl_output':
-  //         if (!isOutputSuppressed.value) {
-  //           addToOutput(`[CTL] ${message.data}`)
-  //         }
-  //         eventCallbacks.value.onControlOutput.forEach(callback => callback(message.data))
-  //         break
-  //       case 'chat_message':
-  //         eventCallbacks.value.onChatMessage.forEach(callback => callback(message.data))
-  //         break
-  //       case 'admin_pause_terminal':
-  //         console.log('Received admin_pause_terminal event', message.data);
-  //         pauseTerminal(message.data.reason);
-  //       break
-  //       case 'admin_resume_terminal':
-  //         console.log('Received admin_resume_terminal event');
-  //         resumeTerminal();
-  //         break
-  //       case 'admin_suppress_output':
-  //         suppressOutput(message.data.suppress, message.data.reason)
-  //         break
-  //       case 'command_approval':
-  //         if (message.data.approved) {
-  //           approveCommand(message.data.commandId)
-  //         } else {
-  //           rejectCommand(message.data.commandId, message.data.reason || 'Rejected by admin')
-  //         }
-  //         break
-  //       default:
-  //         console.warn('Unknown message type:', message.type)
-  //     }
-  //   })
-
-  //   socket.value.on('shell_output', (data: string) => {
-  //     console.log('Received shell_output:', data);
-  //     if (!isOutputSuppressed.value) {
-  //       addToOutput(data)
-  //     }
-  //     eventCallbacks.value.onShellOutput.forEach(callback => callback(data))
-  //   });
-  // }
 
   const setupSocketListeners = () => {
     if (!socket.value) return
@@ -250,8 +138,7 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
 
     // Connection events
     socketInstance.on('connect', () => {
-      console.log('🟢 STORE: Socket connected successfully!')
-      console.log('🟢 STORE: Socket ID:', socketInstance.id)
+      console.log('🟢 STORE: Socket connected with ID:', socketInstance.id)
       connectionState.value.isConnected = true
       connectionState.value.isConnecting = false
       connectionState.value.isReconnecting = false
@@ -261,14 +148,8 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
 
       addToOutput('[SYSTEM] Connected to AetherTerm service')
 
-      // Create terminal session after connection
-      console.log('🔧 STORE: Emitting create_terminal event...')
-      socketInstance.emit('create_terminal', {
-        session: session.value.id || '',
-        user: '',
-        path: '',
-      })
-      console.log('✅ STORE: create_terminal event sent')
+      // Terminal creation is now handled by workspace system
+      // No need to create a default terminal here
     })
 
     socketInstance.on('disconnect', (reason: string) => {
@@ -308,7 +189,6 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
 
     // Terminal events - using the correct event names from server
     socketInstance.on('terminal_output', (data: any) => {
-      console.log('Received terminal_output:', data)
       if (data && data.data) {
         // Pass directly to xterm callbacks without adding to buffer
         eventCallbacks.value.onShellOutput.forEach((callback) => callback(data.data))
@@ -316,14 +196,9 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
     })
 
     socketInstance.on('terminal_ready', (data: any) => {
-      console.log('🟢 STORE: Terminal ready event received:', data)
-      console.log('🔧 STORE: Setting session ID to:', data.session)
       session.value.id = data.session || ''
       session.value.isActive = true
-      console.log('✅ STORE: Session updated:', {
-        id: session.value.id,
-        isActive: session.value.isActive
-      })
+      console.log('✅ STORE: Terminal ready - session:', session.value.id)
     })
 
     socketInstance.on('terminal_error', (data: any) => {
@@ -339,7 +214,6 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
 
     // Legacy events for compatibility
     socketInstance.on('shell_output', (data: string) => {
-      console.log('Received shell_output:', data)
       eventCallbacks.value.onShellOutput.forEach((callback) => callback(data))
     })
 
@@ -379,47 +253,39 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
   }
 
   const connect = (): Promise<boolean> => {
-    console.log('🔌 STORE: Connect function called')
-    console.log('🔌 STORE: Current state:', {
-      isConnected: connectionState.value.isConnected,
-      isConnecting: connectionState.value.isConnecting,
-      socketExists: !!socket.value,
-      socketConnected: socket.value?.connected
-    })
     
     return new Promise((resolve) => {
       if (connectionState.value.isConnected) {
-        console.log('⚠️ STORE: Already connected, returning')
         resolve(true)
         return
       }
       
       if (connectionState.value.isConnecting) {
-        console.log('⚠️ STORE: Already connecting, waiting for connection...')
-        // Wait for existing connection attempt
-        const checkConnection = setInterval(() => {
-          if (connectionState.value.isConnected) {
-            clearInterval(checkConnection)
-            resolve(true)
-          } else if (!connectionState.value.isConnecting) {
-            clearInterval(checkConnection)
-            resolve(false)
+        // Already connecting, wait for result
+        return new Promise((resolve) => {
+          const checkConnection = () => {
+            if (connectionState.value.isConnected) {
+              resolve(true)
+            } else if (!connectionState.value.isConnecting) {
+              resolve(false)
+            } else {
+              // Check again in next tick
+              setTimeout(checkConnection, 50)
+            }
           }
-        }, 100)
+          checkConnection()
+        })
         return
       }
 
       connectionState.value.isConnecting = true
       addToOutput('[SYSTEM] Connecting to AetherTerm service...')
-      console.log('🔧 STORE: Setting connecting state to true')
 
       // Setup socket listeners and initiate connection if socket exists
       if (socket.value) {
-        console.log('🔧 STORE: Socket exists, setting up listeners...')
         
         // Set up one-time connection handler
         const handleConnect = () => {
-          console.log('✅ STORE: Connection successful')
           socket.value?.off('connect', handleConnect)
           socket.value?.off('connect_error', handleError)
           resolve(true)
@@ -440,10 +306,8 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
         setupSocketListeners()
         // Explicitly connect if not already connected
         if (!socket.value.connected) {
-          console.log('🔧 STORE: Socket not connected, initiating connection...')
           socket.value.connect()
         } else {
-          console.log('✅ STORE: Socket already connected')
           resolve(true)
         }
         
@@ -504,7 +368,6 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
       terminalOutputCallbacks.value.set(sessionId, [])
     }
     terminalOutputCallbacks.value.get(sessionId)?.push(callback)
-    console.log('📺 STORE: Added terminal output callback for session:', sessionId)
   }
 
   const removeTerminalOutputCallback = (sessionId: string, callback: (data: string) => void) => {
@@ -513,7 +376,6 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
       const index = callbacks.indexOf(callback)
       if (index !== -1) {
         callbacks.splice(index, 1)
-        console.log('🗑️ STORE: Removed terminal output callback for session:', sessionId)
       }
       if (callbacks.length === 0) {
         terminalOutputCallbacks.value.delete(sessionId)
@@ -538,7 +400,6 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
   }
 
   const triggerAskAI = (selectedText: string) => {
-    console.log('AetherTerminalServiceStore: Triggering Ask AI with text:', selectedText)
     eventCallbacks.value.onAskAI.forEach(callback => callback(selectedText))
   }
 

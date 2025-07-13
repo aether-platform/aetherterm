@@ -16,7 +16,6 @@ from .models import (
 
 from .pattern_learner import OperationPatternLearner
 from .inference_engine import OperationContextInferenceEngine
-from .api import router as context_api_router, initialize_context_inference
 
 __all__ = [
     # Models
@@ -29,7 +28,4 @@ __all__ = [
     # Core Classes
     "OperationPatternLearner",
     "OperationContextInferenceEngine",
-    # API
-    "context_api_router",
-    "initialize_context_inference",
 ]

@@ -8,6 +8,8 @@
 import { defineStore } from 'pinia'
 import { ref, reactive, computed } from 'vue'
 import { io, type Socket } from 'socket.io-client'
+import { useTerminalTabStore } from './terminalTabStore'
+import { useTerminalPaneStore } from './terminalPaneStore'
 
 // 型定義
 interface ConnectionState {
@@ -52,18 +54,17 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       return connectionState.isConnected
     }
 
-    console.log('🔌 AETHER_TERMINAL: Connecting to socket...')
     connectionState.isConnecting = true
     connectionState.error = undefined
 
     try {
-      // Socket.IO接続を作成 - Performance optimized
+      // Socket.IO接続を作成 - Connection optimized
       socket.value = io('http://localhost:57575', {
-        transports: ['websocket'], // Websocket only for better performance
-        timeout: 5000, // Reduced timeout
+        transports: ['polling', 'websocket'], // Allow both transports for reliability
+        timeout: 10000, // Increased timeout for better compatibility
         forceNew: true,
         reconnection: true,
-        reconnectionAttempts: 3,
+        reconnectionAttempts: 5,
         reconnectionDelay: 1000
       })
 
@@ -76,7 +77,7 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
           connectionState.isConnecting = false
           connectionState.error = 'Connection timeout'
           resolve(false)
-        }, 5000) // Reduced connection timeout
+        }, 10000) // Increased connection timeout
 
         socket.value?.on('connect', () => {
           clearTimeout(timeout)
@@ -131,21 +132,70 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
     })
 
     // ターミナル出力イベント（統一）- Performance optimized
-    socket.value.on('terminal_output', (data: any) => {
+    socket.value.on('terminal_output', (data: { session?: string; data?: string }) => {
       if (data?.session && data?.data) {
         const callback = outputCallbacks.value.get(data.session)
         if (callback) {
-          // Remove debug logging for performance
           callback(data.data)
+        } else {
+          console.warn(`⚠️ AETHER_STORE: No callback registered for session ${data.session}`)
         }
       }
     })
 
     // セッション作成イベント (backend emits 'terminal_ready' not 'session_created')
-    socket.value.on('terminal_ready', (data: any) => {
+    socket.value.on('terminal_ready', (data: { session?: string; status?: string; tabId?: string }) => {
       if (data?.session) {
-        console.log('✅ AETHER_TERMINAL: Terminal ready:', data.session)
-        // セッション管理は各コンポーネントが個別に処理
+        console.log('✅ AETHER_TERMINAL: Terminal ready:', data.session, 'tabId:', data.tabId, 'status:', data.status)
+        // Update tab status from 'connecting' to 'active'
+        const terminalTabStore = useTerminalTabStore()
+        
+        // Debug: Log all tabs and their sessionIds
+        console.log('📋 AETHER_TERMINAL: Current tabs:', terminalTabStore.tabs.map(t => ({ 
+          id: t.id, 
+          sessionId: t.sessionId, 
+          status: t.status 
+        })))
+        
+        // First try to find tab by sessionId
+        let tab = terminalTabStore.tabs.find(t => t.sessionId === data.session)
+        
+        // If not found and we have tabId, find by tabId
+        if (!tab && data.tabId) {
+          tab = terminalTabStore.tabs.find(t => t.id === data.tabId)
+          // Update the sessionId if found
+          if (tab) {
+            terminalTabStore.setTabSession(tab.id, data.session)
+          }
+        }
+        
+        // If still not found, check if any tab's panes have this sessionId
+        if (!tab) {
+          const terminalPaneStore = useTerminalPaneStore()
+          const pane = terminalPaneStore.panes.find(p => p.sessionId === data.session)
+          if (pane && pane.tabId) {
+            tab = terminalTabStore.tabs.find(t => t.id === pane.tabId)
+            // Update the tab's sessionId to match its first pane
+            if (tab && !tab.sessionId) {
+              terminalTabStore.setTabSession(tab.id, data.session)
+            }
+          }
+        }
+        
+        if (tab) {
+          terminalTabStore.updateTabStatus(tab.id, 'active')
+          console.log('✅ AETHER_TERMINAL: Updated tab status to active for session:', data.session)
+        } else {
+          console.warn('⚠️ AETHER_TERMINAL: No tab found for session:', data.session)
+        }
+        
+        // Also update pane status if applicable
+        const terminalPaneStore = useTerminalPaneStore()
+        const pane = terminalPaneStore.panes.find(p => p.sessionId === data.session)
+        if (pane) {
+          pane.status = 'active'
+          console.log('✅ AETHER_TERMINAL: Updated pane status to active for session:', data.session)
+        }
       }
     })
   }
@@ -170,6 +220,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
             isActive: true,
             createdAt: new Date()
           })
+          
+          // Update tab status to active
+          const terminalTabStore = useTerminalTabStore()
+          const tab = terminalTabStore.tabs.find(t => t.sessionId === sessionId)
+          if (tab) {
+            terminalTabStore.updateTabStatus(tab.id, 'active')
+          }
+          
           resolve(true)
         }
       }
@@ -178,6 +236,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         if (data.session === sessionId) {
           socket.value?.off('terminal_ready', handleTerminalReady)
           socket.value?.off('terminal_error', handleError)
+          
+          // Update tab status to error
+          const terminalTabStore = useTerminalTabStore()
+          const tab = terminalTabStore.tabs.find(t => t.sessionId === sessionId)
+          if (tab) {
+            terminalTabStore.updateTabStatus(tab.id, 'error')
+          }
+          
           resolve(false)
         }
       }
@@ -248,6 +314,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
           })
 
           socket.value?.off('terminal_ready', handleTerminalReady)
+          
+          // Update tab status to active
+          const terminalTabStore = useTerminalTabStore()
+          const tab = terminalTabStore.tabs.find(t => t.sessionId === data.session)
+          if (tab) {
+            terminalTabStore.updateTabStatus(tab.id, 'active')
+          }
+          
           resolve(data.session)
         }
       }
@@ -325,12 +399,22 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       }
 
       console.log('🔄 AETHER_TERMINAL: Attempting to reconnect to session:', sessionId)
+      console.log('📍 AETHER_TERMINAL: Socket connected:', socket.value?.connected)
+      console.log('📍 AETHER_TERMINAL: Socket ID:', socket.value?.id)
       
       const handleReady = (data: any) => {
         if (data.session === sessionId) {
           socket.value?.off('terminal_ready', handleReady)
           socket.value?.off('terminal_error', handleError)
           console.log('✅ AETHER_TERMINAL: Reconnected to session:', sessionId)
+          
+          // Update tab status to active
+          const terminalTabStore = useTerminalTabStore()
+          const tab = terminalTabStore.tabs.find(t => t.sessionId === sessionId)
+          if (tab) {
+            terminalTabStore.updateTabStatus(tab.id, 'active')
+          }
+          
           resolve(true)
         }
       }
@@ -339,6 +423,14 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
         socket.value?.off('terminal_ready', handleReady)
         socket.value?.off('terminal_error', handleError)
         console.error('❌ AETHER_TERMINAL: Failed to reconnect:', data.error)
+        
+        // Update tab status to error
+        const terminalTabStore = useTerminalTabStore()
+        const tab = terminalTabStore.tabs.find(t => t.sessionId === sessionId)
+        if (tab) {
+          terminalTabStore.updateTabStatus(tab.id, 'error')
+        }
+        
         resolve(false)
       }
 
@@ -346,6 +438,8 @@ export const useAetherTerminalStore = defineStore('aetherTerminal', () => {
       socket.value.on('terminal_error', handleError)
       
       // Send reconnect_session event
+      console.log('📤 AETHER_TERMINAL: Emitting reconnect_session with sessionId:', sessionId)
+      console.log('📤 AETHER_TERMINAL: Full event data:', { session: sessionId })
       socket.value.emit('reconnect_session', { session: sessionId })
 
       // Timeout after 5 seconds

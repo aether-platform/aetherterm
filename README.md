@@ -41,6 +41,29 @@ make run  # Starts development server with supervisord
 - **[Claude Instructions](./CLAUDE.md)** - AI assistant configuration
 - **[UI Design](./DESIGN.md)** - Interface principles and layout
 
+## Recent Updates (2025-07-08)
+
+### Bug Fixes
+- Fixed memory leaks in terminal component by properly cleaning up timeouts on unmount
+- Fixed race condition in terminal closure scheduling that could cause multiple closure tasks
+- Added error handling for all asyncio.create_task calls to prevent unhandled exceptions
+- Improved type safety by replacing generic 'any' types with proper TypeScript interfaces
+- Added loading states with spinner for better UX during connection attempts
+
+### Code Optimization
+- Removed ~3.5MB of unused dependencies from frontend bundle
+- Eliminated ~2,000 lines of dead code across the codebase
+- Simplified store implementations for better performance
+- Optimized terminal output buffering for smoother rendering
+
+### Features Enhanced
+- Enhanced terminal search with visual highlighting (Ctrl+Shift+F)
+  - Added search bar UI with next/previous navigation
+  - Visual highlighting of search matches
+  - Keyboard shortcuts for search operations
+- Improved error messages for permission-denied scenarios
+- Better visual feedback during connection and loading states
+
 ## Installation Options
 
 ```bash

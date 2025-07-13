@@ -12,16 +12,13 @@ class ShortTermMemoryManager:
 
     async def initialize(self):
         """Initialize memory manager."""
-        pass
 
     async def store(self, key, value):
         """Store a value in memory."""
-        pass
 
     async def retrieve(self, key):
         """Retrieve a value from memory."""
-        return None
+        return
 
     async def cleanup(self):
         """Cleanup memory manager."""
-        pass

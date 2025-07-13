@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "qdrant-local": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-qdrant"],
+      "env": {
+        "QDRANT_URL": "http://localhost:6333",
+        "COLLECTION_NAME": "code-repository",
+        "EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L6-v2",
+        "TOOL_STORE_DESCRIPTION": "Store code snippets with descriptions. The 'information' parameter should contain a natural language description of what the code does, while the actual code should be included in the 'metadata' parameter as a 'code' property.",
+        "TOOL_FIND_DESCRIPTION": "Search for relevant code snippets using natural language. The 'query' parameter should describe the functionality you're looking for."
+      }
+    }
+  }
+}

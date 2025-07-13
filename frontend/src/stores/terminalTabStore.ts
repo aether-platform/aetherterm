@@ -1,7 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { workspaceEventBus } from './workspace/workspaceEventBus'
-import { PaneFactory } from './workspace/paneFactory'
 import type { TerminalTabWithPanes } from './workspace/workspaceTypes'
 import { useWorkspaceStore } from './workspaceStore'
 
@@ -102,18 +100,7 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
     console.log('📋 STORE: Tab added to store, total tabs:', tabs.value.length)
     console.log('📋 STORE: Active tab ID set to:', id)
     
-    // Emit tab created event for workspace synchronization
-    const workspaceTab: TerminalTabWithPanes = {
-      id,
-      title: title || defaultTitle,
-      type,
-      subType,
-      isActive: true,
-      panes: type === 'terminal' ? [PaneFactory.createTerminalPane(title || defaultTitle)] : [],
-      layout: 'single',
-      lastActivity: new Date()
-    }
-    workspaceEventBus.emitTabCreated(workspaceTab)
+    // Tab creation is now handled by workspace store directly
 
     return newTab
   }
@@ -145,8 +132,7 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
       activeTabId.value = remainingTabs.length > 0 ? remainingTabs[remainingTabs.length - 1].id : null
     }
     
-    // Emit tab closed event
-    workspaceEventBus.emitTabClosed(tabId)
+    // Tab closure is now handled by workspace store directly
 
     // Remove the tab after a delay to allow for cleanup
     setTimeout(() => {
@@ -179,8 +165,7 @@ export const useTerminalTabStore = defineStore('terminalTab', () => {
       // Mark selected tab as active
       tab.isActive = true
       
-      // Emit tab activated event
-      workspaceEventBus.emitTabActivated(tabId)
+      // Tab activation is now handled by workspace store directly
     }
   }
   

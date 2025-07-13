@@ -33,6 +33,9 @@ from typing import Dict, List, Optional
 
 from aetherterm.agentserver.infrastructure.config import utils
 from aetherterm.agentserver.short_term_memory_local import LocalShortTermAnalyzer
+from aetherterm.agentserver.infrastructure.common.memoization import (
+    memoize, memoize_method, regex_cache, cached_property
+)
 
 from .base_terminal import BaseTerminal
 
@@ -54,32 +57,41 @@ class AsyncioTerminal(BaseTerminal):
 
     # Short-term memory management
     short_term_memory_manager = None  # Shared across all sessions
-    log_patterns = {
-        "error": [
-            r"error|ERROR|Error",
-            r"failed|FAILED|Failed",
-            r"exception|EXCEPTION|Exception",
-            r"fatal|FATAL|Fatal",
-            r"panic|PANIC|Panic",
-        ],
-        "warning": [
-            r"warning|WARNING|Warning",
-            r"warn|WARN|Warn",
-            r"deprecated|DEPRECATED|Deprecated",
-        ],
-        "info": [
-            r"info|INFO|Info",
-            r"notice|NOTICE|Notice",
-            r"starting|Starting|STARTING",
-            r"stopping|Stopping|STOPPING",
-        ],
-        "success": [
-            r"success|SUCCESS|Success",
-            r"complete|COMPLETE|Complete",
-            r"done|DONE|Done",
-            r"ok|OK|Ok",
-        ],
-    }
+    
+    # Pre-compile regex patterns for better performance
+    _compiled_patterns = None
+    
+    @classmethod
+    def _get_compiled_patterns(cls):
+        """Get pre-compiled regex patterns with memoization."""
+        if cls._compiled_patterns is None:
+            cls._compiled_patterns = {
+                "error": [
+                    regex_cache.get_pattern(r"error|ERROR|Error"),
+                    regex_cache.get_pattern(r"failed|FAILED|Failed"),
+                    regex_cache.get_pattern(r"exception|EXCEPTION|Exception"),
+                    regex_cache.get_pattern(r"fatal|FATAL|Fatal"),
+                    regex_cache.get_pattern(r"panic|PANIC|Panic"),
+                ],
+                "warning": [
+                    regex_cache.get_pattern(r"warning|WARNING|Warning"),
+                    regex_cache.get_pattern(r"warn|WARN|Warn"),
+                    regex_cache.get_pattern(r"deprecated|DEPRECATED|Deprecated"),
+                ],
+                "info": [
+                    regex_cache.get_pattern(r"info|INFO|Info"),
+                    regex_cache.get_pattern(r"notice|NOTICE|Notice"),
+                    regex_cache.get_pattern(r"starting|Starting|STARTING"),
+                    regex_cache.get_pattern(r"stopping|Stopping|STOPPING"),
+                ],
+                "success": [
+                    regex_cache.get_pattern(r"success|SUCCESS|Success"),
+                    regex_cache.get_pattern(r"complete|COMPLETE|Complete"),
+                    regex_cache.get_pattern(r"done|DONE|Done"),
+                    regex_cache.get_pattern(r"ok|OK|Ok"),
+                ],
+            }
+        return cls._compiled_patterns
     processed_logs = []  # Processed and categorized logs
     log_subscribers = set()  # WebSocket clients subscribed to log updates
 
@@ -188,6 +200,9 @@ class AsyncioTerminal(BaseTerminal):
                 "timestamp": __import__("time").time(),
                 "type": "output",
             }
+            
+            # Debug logging
+            log.debug(f"Adding to buffer for session {self.session}: {len(message)} chars")
 
             buffer_data["lines"].append(buffer_line)
             buffer_data["last_updated"] = __import__("time").time()
@@ -776,18 +791,20 @@ class AsyncioTerminal(BaseTerminal):
         return processed
 
     @classmethod
+    @memoize(maxsize=1000, ttl=300)  # Cache for 5 minutes
     def _categorize_log(cls, text: str) -> str:
-        """Categorize log text based on patterns."""
+        """Categorize log text based on patterns with memoization."""
         text_lower = text.lower()
+        patterns = cls._get_compiled_patterns()
 
-        # Check each category
-        for category, patterns in cls.log_patterns.items():
-            for pattern in patterns:
-                if re.search(pattern, text, re.IGNORECASE):
+        # Check each category with pre-compiled patterns
+        for category, pattern_list in patterns.items():
+            for pattern in pattern_list:
+                if pattern.search(text):
                     return category
 
         # Check for command patterns
-        if re.match(r"^\$|\#", text.strip()):
+        if text.strip() and text.strip()[0] in ('$', '#'):
             return "command"
 
         # Check for system messages
@@ -796,19 +813,21 @@ class AsyncioTerminal(BaseTerminal):
 
         return "general"
 
+    # Use class attribute for constant mapping
+    _severity_map = {
+        "error": 5,
+        "warning": 4,
+        "info": 3,
+        "success": 2,
+        "command": 1,
+        "system": 3,
+        "general": 1,
+    }
+    
     @classmethod
     def _get_severity(cls, category: str) -> int:
         """Get numeric severity for a category."""
-        severity_map = {
-            "error": 5,
-            "warning": 4,
-            "info": 3,
-            "success": 2,
-            "command": 1,
-            "system": 3,
-            "general": 1,
-        }
-        return severity_map.get(category, 1)
+        return cls._severity_map.get(category, 1)
 
     @classmethod
     async def _broadcast_log_updates(cls, new_logs: List[Dict]):

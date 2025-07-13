@@ -58,7 +58,7 @@ const pauseTerminal = () => {
 }
 
 const onTerminalInitialized = () => {
-  console.log('Terminal initialized in container')
+  // Terminal initialized
 }
 
 const openS3Browser = () => {
@@ -66,17 +66,13 @@ const openS3Browser = () => {
 }
 
 onMounted(async () => {
-  console.log('MainContainer mounted')
+  // MainContainer mounted
   
   // Initialize connection using aetherTerminalStore (simpler WebSocket implementation)
   const connected = await aetherTerminalStore.connect()
   
   if (connected) {
-    // Wait a bit for workspace token to be set
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Then initialize workspace system
-    console.log('MainContainer: Connection established, initializing workspace')
+    // Initialize workspace system immediately
     await workspaceStore.initializeWorkspace()
   } else {
     console.error('MainContainer: Failed to establish connection')
@@ -88,7 +84,7 @@ watchEffect(() => {
   // Theme application is handled automatically by the theme store watchers
   // This just ensures the component is reactive to theme changes
   if (themeStore.currentColors) {
-    console.log('🎨 THEME: Theme applied to terminal container:', themeStore.themeConfig.colorScheme)
+    // Theme applied
   }
 })
 

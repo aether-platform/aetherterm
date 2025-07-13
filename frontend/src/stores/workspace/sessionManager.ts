@@ -62,6 +62,8 @@ export class WorkspaceSessionManager {
           const terminalPaneStore = useTerminalPaneStore()
           const terminalTabStore = useTerminalTabStore()
           
+          console.log('📋 SESSION_MANAGER: workspace.tabs before mapping:', workspace.tabs)
+          
           const allTabResults = (data.resumedTabs || []).concat(data.createdTabs || [])
           allTabResults.forEach((tabResult: any) => {
             // Handle pane-level session mapping
@@ -75,12 +77,20 @@ export class WorkspaceSessionManager {
                   const currentPaneId = currentTab.panes[index].id
                   console.log(`📋 SESSION_MANAGER: Mapping server session to current pane - currentPaneId: ${currentPaneId}`)
                   terminalPaneStore.setPaneSession(currentPaneId, paneResult.sessionId)
+                } else {
+                  console.warn(`📋 SESSION_MANAGER: Could not find currentTab or pane for tabId: ${tabResult.tabId}, index: ${index}`)
                 }
               })
             }
             // Backward compatibility: direct tab session
             if (tabResult.sessionId) {
               terminalTabStore.setTabSession(tabResult.tabId, tabResult.sessionId)
+            }
+            
+            // Also update sessionId based on first pane if not set
+            const tab = terminalTabStore.tabs.find(t => t.id === tabResult.tabId)
+            if (tab && !tab.sessionId && tabResult.panes?.[0]?.sessionId) {
+              terminalTabStore.setTabSession(tabResult.tabId, tabResult.panes[0].sessionId)
             }
           })
 
@@ -116,7 +126,7 @@ export class WorkspaceSessionManager {
   /**
    * Reconnect to stored sessions without server communication
    */
-  static async reconnectStoredSessions(workspace: WorkspaceState): Promise<void> {
+  static async reconnectStoredSessions(workspace: WorkspaceState, socket?: Socket): Promise<void> {
     console.log('📋 SESSION_MANAGER: Reconnecting stored sessions for workspace:', workspace.name)
     
     const terminalTabStore = useTerminalTabStore()
@@ -125,16 +135,19 @@ export class WorkspaceSessionManager {
     // Reconstruct the workspace in the stores
     workspace.tabs.forEach(tab => {
       // Register tab in store
+      // Get sessionId from first pane if available (for terminal tabs)
+      const firstPaneSessionId = tab.panes?.[0]?.sessionId
+      
       terminalTabStore.tabs.push({
         id: tab.id,
         title: tab.title,
         type: tab.type || 'terminal', // タブタイプを保持
         subType: tab.subType || 'pure',
         isActive: tab.isActive,
-        sessionId: undefined,
+        sessionId: firstPaneSessionId || undefined, // Use pane's sessionId for tab
         serverContext: undefined,
         lastActivity: new Date(),
-        status: 'disconnected'
+        status: firstPaneSessionId ? 'connecting' : 'disconnected' // Set to connecting if session exists
       })
       
       // Register panes with their stored session IDs
@@ -145,15 +158,28 @@ export class WorkspaceSessionManager {
           
           // Attempt to reconnect to existing session for screen buffer restoration
           console.log(`📋 SESSION_MANAGER: Attempting to reconnect to session ${pane.sessionId}`)
-          socket.emit('reconnect_session', { sessionId: pane.sessionId })
+          // Use resume_terminal for better support of tabId
+          if (socket) {
+            socket.emit('resume_terminal', { 
+              sessionId: pane.sessionId,
+              tabId: tab.id,
+              subType: tab.subType || 'pure',
+              cols: 80,
+              rows: 24
+            })
+          }
         }
         
-        // Register the pane
+        // Register the pane - ensure lastActivity is set
+        const paneWithActivity = {
+          ...pane,
+          lastActivity: pane.lastActivity || new Date()
+        }
         const existingIndex = terminalPaneStore.panes.findIndex(p => p.id === pane.id)
         if (existingIndex >= 0) {
-          terminalPaneStore.panes[existingIndex] = pane
+          terminalPaneStore.panes[existingIndex] = paneWithActivity
         } else {
-          terminalPaneStore.panes.push(pane)
+          terminalPaneStore.panes.push(paneWithActivity)
         }
       })
     })

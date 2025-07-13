@@ -95,7 +95,6 @@ import { onMounted, computed, ref, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTerminalTabStore } from '../stores/terminalTabStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
-import { getWorkspaceCrossTabSync } from '../stores/workspace/crossTabSync'
 import TabCreationMenu from './terminal/tabs/TabCreationMenu.vue'
 
 const tabStore = useTerminalTabStore()
@@ -110,8 +109,7 @@ const switchToWorkspaceTab = (tabId: string) => {
     tab.isActive = tab.id === tabId
   })
   
-  // Save the workspace state
-  workspaceStore.saveCurrentWorkspace()
+  // No need to save - server handles persistence
   
   console.log('🔥 SWITCHED TO WORKSPACE TAB:', tabId)
 }
@@ -134,12 +132,9 @@ const closeTab = (tabId: string) => {
     lastTab.isActive = true
   }
   
-  // Save the workspace state
-  workspaceStore.saveCurrentWorkspace()
+  // No need to save - server handles persistence
   
-  // Broadcast tab close to other tabs
-  const crossTabSync = getWorkspaceCrossTabSync()
-  crossTabSync.broadcastTabClose(workspaceStore.currentWorkspace.id, tabId)
+  // Cross-tab sync removed - using server-driven sync
   
   console.log('🔥 CLOSED WORKSPACE TAB:', tabId)
 }
@@ -210,16 +205,21 @@ const addNewTab = async (type: 'terminal' | 'ai-agent') => {
         console.log('🔥 Workspace tabs after creation:', workspaceStore.currentWorkspace.tabs)
       }
       
-      // Force save workspace to server
-      await workspaceStore.saveCurrentWorkspace()
+      // No need to save - server handles persistence
     } catch (error) {
       console.error('🔥 ERROR CREATING TAB:', error)
     }
   } else {
-    console.log('🔥 NO CURRENT WORKSPACE - using legacy tab store')
-    // Fallback to legacy tab store
-    const newTab = tabStore.createTab(type)
-    console.log('🔥 NEW TAB CREATED (legacy):', newTab)
+    console.log('🔥 NO CURRENT WORKSPACE - initializing workspace first')
+    // Initialize workspace if not ready
+    await workspaceStore.initializeWorkspace()
+    
+    // Try again after initialization
+    if (workspaceStore.currentWorkspace) {
+      await addNewTab(type)  // Recursive call to try again
+    } else {
+      console.error('🔥 Failed to initialize workspace for tab creation')
+    }
   }
 }
 
@@ -229,19 +229,13 @@ let observer: MutationObserver | null = null
 
 // Watch for workspace tab changes
 watch(() => workspaceStore.currentWorkspace?.tabs, (newTabs, oldTabs) => {
-  console.log('🔥 TAB BAR: Workspace tabs changed')
-  console.log('🔥 TAB BAR: Old tabs:', oldTabs)
-  console.log('🔥 TAB BAR: New tabs:', newTabs)
-  console.log('🔥 TAB BAR: Current workspace:', workspaceStore.currentWorkspace)
+  // Debug logs removed for performance
 }, { deep: true, immediate: true })
 
 onMounted(async () => {
-  console.log('🔥 TAB BAR: Mounted')
-  console.log('🔥 TAB BAR: Initial workspace:', workspaceStore.currentWorkspace)
-  console.log('🔥 TAB BAR: Initial tabs:', workspaceStore.currentWorkspace?.tabs)
+  // Tab bar mounted
   
-  // Initialize default tab if none exist
-  tabStore.initializeDefaultTab()
+  // Don't initialize tabs here - let workspace handle it
   
   // DOMの準備を待つ
   await nextTick()

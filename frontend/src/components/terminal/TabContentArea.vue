@@ -78,7 +78,7 @@
     </div>
 
     <!-- Default message when no tabs -->
-    <div v-if="terminalTabStore.tabs.length === 0" class="no-tabs-message">
+    <div v-if="!hasWorkspaceTabs && terminalTabStore.tabs.length === 0" class="no-tabs-message">
       <h3>No active sessions</h3>
       <p>Click the + button to create a new terminal or AI chat session.</p>
     </div>
@@ -171,21 +171,21 @@ const handleLayoutChange = (tabId: string, newLayout: string) => {
   terminalPaneStore.updatePaneLayout(tabId, newLayout as any)
   
   // Save workspace state
-  workspaceStore.saveCurrentWorkspace()
+  // Server handles workspace persistence automatically
 }
 
 const handlePaneCreated = (pane: TerminalPane) => {
   console.log('📋 TAB_CONTENT: Pane created:', pane.id)
   
   // Save workspace state
-  workspaceStore.saveCurrentWorkspace()
+  // Server handles workspace persistence automatically
 }
 
 const handlePaneClosed = (paneId: string) => {
   console.log('📋 TAB_CONTENT: Pane closed:', paneId)
   
   // Save workspace state
-  workspaceStore.saveCurrentWorkspace()
+  // Server handles workspace persistence automatically
 }
 </script>
 

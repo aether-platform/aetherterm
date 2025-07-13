@@ -15,6 +15,24 @@
         >
           {{ getConnectionStatus() }}
         </div>
+        
+        <!-- Retry Status Display -->
+        <div v-if="aiInfo.retry_status && aiInfo.retry_status.attempt > 0" class="retry-status">
+          <div class="retry-info">
+            <span class="retry-label">Retry:</span>
+            <span class="retry-attempt">{{ aiInfo.retry_status.attempt }}/{{ aiInfo.retry_status.max_attempts }}</span>
+            <span v-if="aiInfo.retry_status.next_delay > 0" class="retry-delay">
+              Next: {{ aiInfo.retry_status.next_delay.toFixed(1) }}s
+            </span>
+          </div>
+          <button 
+            @click="resetAIRetry" 
+            class="retry-reset-btn"
+            title="Reset retry attempts"
+          >
+            Reset
+          </button>
+        </div>
       </div>
     </div>
 
@@ -123,6 +141,13 @@
     available: boolean
     status: string
     error?: string
+    retry_status?: {
+      attempt: number
+      max_attempts: number
+      next_delay: number
+      last_error: string | null
+      can_retry: boolean
+    }
   }
 
   const aiInfo = ref<AIInfo>({
@@ -292,6 +317,7 @@
       terminalStore.socket.off('ai_chat_complete')
       terminalStore.socket.off('ai_chat_error')
       terminalStore.socket.off('ai_info_response')
+      terminalStore.socket.off('ai_reset_retry_response')
 
       // AI typing indicator
       terminalStore.socket.on('ai_chat_typing', (data: any) => {
@@ -358,9 +384,17 @@
           available: data.available || false,
           status: data.status || 'disconnected',
           error: data.error,
+          retry_status: data.retry_status,
         }
 
         console.log('AI Info received:', aiInfo.value)
+      })
+      
+      // AI reset retry response
+      terminalStore.socket.on('ai_reset_retry_response', (data: any) => {
+        if (data.success) {
+          addMessage('System', data.message, 'system')
+        }
       })
     }
 
@@ -393,6 +427,7 @@
         terminalStore.socket.off('ai_chat_complete')
         terminalStore.socket.off('ai_chat_error')
         terminalStore.socket.off('ai_info_response')
+        terminalStore.socket.off('ai_reset_retry_response')
       }
     })
   })
@@ -414,6 +449,12 @@
   const requestAIInfo = () => {
     if (terminalStore.socket && terminalStore.connectionState.isConnected) {
       terminalStore.socket.emit('ai_get_info', {})
+    }
+  }
+
+  const resetAIRetry = () => {
+    if (terminalStore.socket && terminalStore.connectionState.isConnected) {
+      terminalStore.socket.emit('ai_reset_retry', {})
     }
   }
 
@@ -561,6 +602,63 @@
 
   .connection-status.connected {
     background-color: #4caf50;
+  }
+
+  /* Retry Status Styling */
+  .retry-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 5px;
+    padding: 6px 10px;
+    background-color: #ff6b35;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .retry-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+  }
+
+  .retry-label {
+    font-weight: bold;
+  }
+
+  .retry-attempt {
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+  }
+
+  .retry-delay {
+    font-style: italic;
+    opacity: 0.9;
+  }
+
+  .retry-reset-btn {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .retry-reset-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .retry-reset-btn:active {
+    transform: translateY(0);
   }
 
   .chat-messages {

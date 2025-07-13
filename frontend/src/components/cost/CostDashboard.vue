@@ -64,7 +64,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
-import embed, { VisualizationSpec } from 'vega-embed'
+// import embed, { VisualizationSpec } from 'vega-embed' // TODO: Install vega-embed
+const embed = null as any // Temporary placeholder
+type VisualizationSpec = any // Temporary placeholder
 
 interface TimeRange {
   label: string

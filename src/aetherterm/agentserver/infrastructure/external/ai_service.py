@@ -12,9 +12,10 @@ import aiohttp
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Callable
+from dataclasses import dataclass, field
 
 from .claude_usage_tracker import ClaudeUsageTracker
 
@@ -34,6 +35,61 @@ class UsageCost:
     timestamp: str
     model: str
     provider: str
+
+
+@dataclass
+class RetryState:
+    """State for retry logic with exponential backoff."""
+    
+    attempt: int = 0
+    next_delay: float = 1.0  # Start with 1 second
+    max_attempts: int = 5
+    max_delay: float = 60.0  # Maximum 60 seconds
+    base_delay: float = 1.0
+    exponential_base: float = 2.0
+    jitter: bool = True
+    last_error: Optional[str] = None
+    last_attempt_time: Optional[float] = None
+    
+    def get_next_delay(self) -> float:
+        """Calculate next delay with exponential backoff and optional jitter."""
+        delay = min(self.base_delay * (self.exponential_base ** self.attempt), self.max_delay)
+        
+        if self.jitter:
+            # Add jitter to prevent thundering herd
+            import random
+            delay = delay * (0.5 + random.random() * 0.5)
+        
+        return delay
+    
+    def should_retry(self) -> bool:
+        """Check if we should retry based on attempts."""
+        return self.attempt < self.max_attempts
+    
+    def increment(self, error: Optional[str] = None):
+        """Increment retry attempt and update state."""
+        self.attempt += 1
+        self.last_error = error
+        self.last_attempt_time = time.time()
+        self.next_delay = self.get_next_delay()
+    
+    def reset(self):
+        """Reset retry state after successful request."""
+        self.attempt = 0
+        self.next_delay = self.base_delay
+        self.last_error = None
+        self.last_attempt_time = None
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current retry status for monitoring."""
+        return {
+            "attempt": self.attempt,
+            "max_attempts": self.max_attempts,
+            "next_delay": round(self.next_delay, 2),
+            "last_error": self.last_error,
+            "last_attempt_time": self.last_attempt_time,
+            "can_retry": self.should_retry()
+        }
 
 
 class ClaudeCostTracker:
@@ -248,6 +304,9 @@ class AIService:
             "requests": 0,
             "estimated_cost": 0.0,
         }
+        
+        # Initialize retry state for LLM connections
+        self.retry_state = RetryState()
 
     @property
     def provider_name(self) -> str:
@@ -298,7 +357,11 @@ class AIService:
                     async with session.get(
                         f"{self.lmstudio_url}/v1/models", timeout=aiohttp.ClientTimeout(total=5)
                     ) as response:
-                        return response.status == 200
+                        if response.status == 200:
+                            # Reset retry state on successful connection
+                            self.retry_state.reset()
+                            return True
+                        return False
             except Exception as e:
                 log.warning(f"LMStudio health check failed: {e}")
                 return False
@@ -409,107 +472,150 @@ class AIService:
 
         return suggestions[:5]
 
+    async def _lmstudio_completion_with_retry(
+        self,
+        messages: List[Dict[str, str]],
+        terminal_context: Optional[Dict[str, Any]] = None,
+        stream: bool = False,
+    ):
+        """Handle LMStudio API completion with retry logic."""
+        # Retry loop with exponential backoff
+        while True:
+            try:
+                # Try to make the request
+                async for chunk in self._lmstudio_completion_internal(messages, terminal_context, stream):
+                    yield chunk
+                
+                # Success! Reset retry state
+                self.retry_state.reset()
+                return
+                
+            except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
+                error_msg = str(e)
+                log.warning(f"LMStudio API error (attempt {self.retry_state.attempt + 1}): {error_msg}")
+                
+                # Update retry state
+                self.retry_state.increment(error_msg)
+                
+                # Check if we should retry
+                if not self.retry_state.should_retry():
+                    # Max retries exceeded
+                    log.error(f"Max retries ({self.retry_state.max_attempts}) exceeded for LMStudio API")
+                    yield f"Failed to connect to AI service after {self.retry_state.max_attempts} attempts. Please check if LMStudio is running."
+                    return
+                
+                # Wait before retrying
+                delay = self.retry_state.next_delay
+                log.info(f"Retrying LMStudio API in {delay:.1f} seconds...")
+                await asyncio.sleep(delay)
+
+    async def _lmstudio_completion_internal(
+        self,
+        messages: List[Dict[str, str]],
+        terminal_context: Optional[Dict[str, Any]] = None,
+        stream: bool = False,
+    ):
+        """Internal LMStudio API completion without retry logic."""
+        input_text = ""
+        output_text = ""
+
+        # Prepare system prompt with terminal context
+        system_prompt = "You are a helpful terminal assistant that helps users with command-line tasks, troubleshooting, and system administration."
+        if terminal_context:
+            context_info = []
+            if "current_directory" in terminal_context:
+                context_info.append(
+                    f"Current directory: {terminal_context['current_directory']}"
+                )
+            if "recent_commands" in terminal_context:
+                context_info.append(
+                    f"Recent commands: {', '.join(terminal_context['recent_commands'][-3:])}"
+                )
+            if context_info:
+                system_prompt += f"\n\nContext: {'; '.join(context_info)}"
+
+        # Convert messages to LMStudio format and collect input text for tracking
+        formatted_messages = [{"role": "system", "content": system_prompt}]
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "user":
+                input_text += content + " "
+            formatted_messages.append({"role": role, "content": content})
+
+        # Prepare request payload
+        payload = {
+            "model": self.model if self.model else "default",
+            "messages": formatted_messages,
+            "temperature": 0.7,
+            "max_tokens": 1000,
+            "stream": stream,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            url = f"{self.lmstudio_url}/v1/chat/completions"
+
+            async with session.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    log.error(f"LMStudio API error: {response.status} - {error_text}")
+                    raise aiohttp.ClientResponseError(
+                        request_info=response.request_info,
+                        history=response.history,
+                        status=response.status,
+                        message=f"LMStudio API returned {response.status}: {error_text}"
+                    )
+
+                if stream:
+                    # Handle streaming response
+                    async for line in response.content:
+                        line = line.decode("utf-8").strip()
+                        if line.startswith("data: "):
+                            data = line[6:]  # Remove 'data: ' prefix
+                            if data == "[DONE]":
+                                break
+                            try:
+                                chunk_data = json.loads(data)
+                                delta = chunk_data.get("choices", [{}])[0].get("delta", {})
+                                if "content" in delta:
+                                    chunk_content = delta["content"]
+                                    output_text += chunk_content
+                                    yield chunk_content
+                            except json.JSONDecodeError:
+                                continue
+
+                    # Track usage after streaming is complete
+                    if input_text or output_text:
+                        self._track_usage(input_text.strip(), output_text)
+                else:
+                    # Handle non-streaming response
+                    result = await response.json()
+                    content = (
+                        result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    )
+                    if content:
+                        output_text = content
+                        self._track_usage(input_text.strip(), output_text)
+                        yield content
+                    else:
+                        error_msg = "I couldn't generate a response. Please try again."
+                        self._track_usage(input_text.strip(), error_msg)
+                        yield error_msg
+
     async def _lmstudio_completion(
         self,
         messages: List[Dict[str, str]],
         terminal_context: Optional[Dict[str, Any]] = None,
         stream: bool = False,
     ):
-        """Handle LMStudio API completion."""
-        input_text = ""
-        output_text = ""
-
-        try:
-            # Prepare system prompt with terminal context
-            system_prompt = "You are a helpful terminal assistant that helps users with command-line tasks, troubleshooting, and system administration."
-            if terminal_context:
-                context_info = []
-                if "current_directory" in terminal_context:
-                    context_info.append(
-                        f"Current directory: {terminal_context['current_directory']}"
-                    )
-                if "recent_commands" in terminal_context:
-                    context_info.append(
-                        f"Recent commands: {', '.join(terminal_context['recent_commands'][-3:])}"
-                    )
-                if context_info:
-                    system_prompt += f"\n\nContext: {'; '.join(context_info)}"
-
-            # Convert messages to LMStudio format and collect input text for tracking
-            formatted_messages = [{"role": "system", "content": system_prompt}]
-            for msg in messages:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if role == "user":
-                    input_text += content + " "
-                formatted_messages.append({"role": role, "content": content})
-
-            # Prepare request payload
-            payload = {
-                "model": self.model if self.model else "default",
-                "messages": formatted_messages,
-                "temperature": 0.7,
-                "max_tokens": 1000,
-                "stream": stream,
-            }
-
-            async with aiohttp.ClientSession() as session:
-                url = f"{self.lmstudio_url}/v1/chat/completions"
-
-                async with session.post(
-                    url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        log.error(f"LMStudio API error: {response.status} - {error_text}")
-                        yield "Sorry, I'm having trouble connecting to the AI service right now."
-                        return
-
-                    if stream:
-                        # Handle streaming response
-                        async for line in response.content:
-                            line = line.decode("utf-8").strip()
-                            if line.startswith("data: "):
-                                data = line[6:]  # Remove 'data: ' prefix
-                                if data == "[DONE]":
-                                    break
-                                try:
-                                    chunk_data = json.loads(data)
-                                    delta = chunk_data.get("choices", [{}])[0].get("delta", {})
-                                    if "content" in delta:
-                                        chunk_content = delta["content"]
-                                        output_text += chunk_content
-                                        yield chunk_content
-                                except json.JSONDecodeError:
-                                    continue
-
-                        # Track usage after streaming is complete
-                        if input_text or output_text:
-                            self._track_usage(input_text.strip(), output_text)
-                    else:
-                        # Handle non-streaming response
-                        result = await response.json()
-                        content = (
-                            result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        )
-                        if content:
-                            output_text = content
-                            self._track_usage(input_text.strip(), output_text)
-                            yield content
-                        else:
-                            error_msg = "I couldn't generate a response. Please try again."
-                            self._track_usage(input_text.strip(), error_msg)
-                            yield error_msg
-
-        except asyncio.TimeoutError:
-            log.error("LMStudio API timeout")
-            yield "The AI service is taking too long to respond. Please try again."
-        except Exception as e:
-            log.error(f"LMStudio API error: {e}")
-            yield f"Error communicating with AI service: {str(e)}"
+        """Handle LMStudio API completion (with retry logic)."""
+        async for chunk in self._lmstudio_completion_with_retry(messages, terminal_context, stream):
+            yield chunk
 
     def get_cost_stats(self, days: int = 30) -> Dict[str, Any]:
         """Get AI usage cost statistics."""
@@ -626,3 +732,12 @@ class AIService:
             self.session_usage["input_tokens"] += input_tokens
             self.session_usage["output_tokens"] += output_tokens
             self.session_usage["requests"] += 1
+    
+    def get_retry_status(self) -> Dict[str, Any]:
+        """Get current retry status for monitoring."""
+        return self.retry_state.get_status()
+    
+    def reset_retry_state(self):
+        """Reset retry state manually."""
+        self.retry_state.reset()
+        log.info("AI service retry state has been reset")

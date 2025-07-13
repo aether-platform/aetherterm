@@ -19,10 +19,15 @@ export interface WorkspaceState {
 
 export interface TerminalPane {
   id: string
-  type: 'terminal' | 'ai-chat' | 'log-viewer'
+  type: 'terminal' | 'ai-agent' | 'log-monitor'
+  subType?: 'pure' | 'inventory' | 'agent' | 'main-agent'
   sessionId?: string
   title: string
   isActive: boolean
+  lastActivity?: Date
+  status?: 'connected' | 'disconnected' | 'connecting' | 'error'
+  position?: { row: number; col: number }
+  tabId?: string
 }
 
 export interface TerminalTabWithPanes {

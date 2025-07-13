@@ -206,6 +206,16 @@ const totalCost = computed(() =>
   props.dailyData.reduce((sum, day) => sum + day.cost, 0)
 )
 
+// Add missing computed properties
+const compactMode = computed(() => terminalWidth.value < 100)
+
+const enhancedDailyData = computed(() => 
+  props.dailyData.map(day => ({
+    ...day,
+    // Add any enhancements needed
+  }))
+)
+
 // Methods
 const loadBillingBlocks = async () => {
   try {

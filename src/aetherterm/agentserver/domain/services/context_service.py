@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 
-from aetherterm.agentserver.application.usecases.context_inference import (
+from aetherterm.agentserver.domain.usecases.context_inference import (
     OperationPatternLearner,
     OperationContextInferenceEngine,
     OperationType,

@@ -163,7 +163,6 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useAetherTerminalStore } from '../stores/aetherTerminalStore'
 import { WorkspacePersistenceManager } from '../stores/workspace/persistenceManager'
-import { getWorkspaceCrossTabSync } from '../stores/workspace/crossTabSync'
 
 // Generate a unique window ID for this instance
 const windowId = ref(`window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`)
@@ -180,7 +179,6 @@ const localStorageData = ref({
   workspaceDetails: [] as any[]
 })
 const syncMessages = ref<any[]>([])
-const crossTabSync = getWorkspaceCrossTabSync()
 
 // Computed
 const currentWorkspace = computed(() => workspaceStore.currentWorkspace)
@@ -240,16 +238,14 @@ const refreshData = async () => {
 }
 
 const createTestWorkspace = () => {
-  const testWorkspace = workspaceStore.createWorkspace(`Test Workspace ${Date.now()}`)
-  console.log('Created test workspace:', testWorkspace)
+  // Workspace creation removed - using global workspace only
+  console.log('Cannot create workspaces - using global workspace only')
   refreshData()
 }
 
 const broadcastTestMessage = () => {
-  if (currentWorkspace.value) {
-    crossTabSync.broadcastUpdate(currentWorkspace.value)
-    console.log('Broadcasted workspace update')
-  }
+  // Cross-tab sync removed - using server-driven sync
+  console.log('Cross-tab sync has been removed. Using server-driven sync instead.')
 }
 
 const clearLocalStorage = () => {
@@ -269,35 +265,34 @@ const formatTimestamp = (timestamp: number) => {
   return new Date(timestamp).toLocaleTimeString()
 }
 
-// Cross-tab sync listener
-const handleCrossTabMessage = (message: any) => {
-  syncMessages.value.unshift({
-    ...message,
-    fromThisWindow: false
-  })
-  if (syncMessages.value.length > 20) {
-    syncMessages.value = syncMessages.value.slice(0, 20)
-  }
-}
+// Cross-tab sync removed - this function is no longer needed
+// const handleCrossTabMessage = (message: any) => {
+//   syncMessages.value.unshift({
+//     ...message,
+//     fromThisWindow: false
+//   })
+//   if (syncMessages.value.length > 20) {
+//     syncMessages.value = syncMessages.value.slice(0, 20)
+//   }
+// }
 
 // Lifecycle
 onMounted(async () => {
   console.log('WorkspaceDebugPage mounted with window ID:', windowId.value)
   
-  // Set up cross-tab sync listener
-  crossTabSync.addListener('debug-page', handleCrossTabMessage)
+  // Cross-tab sync removed - using server-driven sync
   
   // Initial data load
   await refreshData()
   
   // Initialize workspace if needed
   if (!workspaceStore.hasCurrentWorkspace) {
-    await workspaceStore.initialize()
+    await workspaceStore.initializeWorkspace()
   }
 })
 
 onUnmounted(() => {
-  crossTabSync.removeListener('debug-page')
+  // Cross-tab sync removed - cleanup not needed
 })
 </script>
 

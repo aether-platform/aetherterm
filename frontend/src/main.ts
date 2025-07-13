@@ -1,6 +1,5 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
-import { register } from 'vue-advanced-chat'
 import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
@@ -19,8 +18,6 @@ const telemetryConfig = {
 
 initializeTelemetry(telemetryConfig)
 
-// Register vue-advanced-chat
-register()
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -66,8 +63,7 @@ const initializeApp = async () => {
     console.log('🚀 APP: Application initialized successfully')
   } catch (error) {
     console.error('🚀 APP: Failed to initialize application:', error)
-    // Fallback: create default workspace if everything fails
-    await workspaceStore.createDefaultWorkspace()
+    // Don't create default workspace - let the server handle it
   }
 }
 

@@ -10,7 +10,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
-from aetherterm.agentserver.infrastructure.common.validation_utils import ValidationUtilities
+# ValidationService removed - using direct validation instead
 
 log = logging.getLogger("aetherterm.services.terminal_manager")
 
@@ -112,9 +112,9 @@ class TerminalManager:
                 log.warning(f"Terminal session {session_id} not found")
                 return False
 
-            # Validate input
-            if not ValidationUtilities.validate_input_safe(input_data):
-                log.warning(f"Potentially unsafe input rejected for session {session_id}")
+            # Basic input validation
+            if not input_data or len(input_data) > 10000:
+                log.warning(f"Invalid input rejected for session {session_id}")
                 return False
 
             # Send input to terminal

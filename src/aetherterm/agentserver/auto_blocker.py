@@ -19,4 +19,3 @@ def set_socket_io_instance(sio_instance):
     """
     logger.info("Auto-blocker socket.io instance set (placeholder implementation)")
     # This is a placeholder - actual auto-blocker functionality is not implemented
-    pass

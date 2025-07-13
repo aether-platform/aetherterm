@@ -8,9 +8,9 @@ AetherTermのコンポーネント間の依存関係を管理し、
 from dependency_injector import containers, providers
 from dependency_injector.wiring import Provide, inject
 
-from ..logprocessing.log_processing_manager import LogProcessingManager
-from ..common.interfaces import ILogProcessor, IAgentManager, ITerminalController
+from ..common.interfaces import ILogProcessor
 from ..langchain.config.storage_config import StorageConfig
+from ..logprocessing.log_processing_manager import LogProcessingManager
 
 
 class ApplicationContainer(containers.DeclarativeContainer):

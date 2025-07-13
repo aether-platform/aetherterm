@@ -9,6 +9,16 @@ import type { WorkspaceState } from '../workspaceStore'
 // LocalStorage keys
 export const WORKSPACE_STORAGE_KEY = 'aetherterm_workspaces'
 export const CURRENT_WORKSPACE_KEY = 'aetherterm_current_workspace'
+export const TERMINAL_SESSIONS_KEY = 'aetherterm_terminal_sessions'
+
+interface TerminalSessionState {
+  sessionId: string
+  tabId: string
+  paneId: string
+  type: string
+  subType?: string
+  lastActive: string
+}
 
 export class WorkspacePersistenceManager {
   /**
@@ -103,6 +113,52 @@ export class WorkspacePersistenceManager {
   }
 
   /**
+   * Persist terminal sessions for recovery after page refresh
+   */
+  static persistTerminalSessions(workspace: WorkspaceState): void {
+    try {
+      const sessions: TerminalSessionState[] = []
+      
+      workspace.tabs.forEach(tab => {
+        tab.panes.forEach(pane => {
+          if (pane.sessionId) {
+            sessions.push({
+              sessionId: pane.sessionId,
+              tabId: tab.id,
+              paneId: pane.id,
+              type: pane.type,
+              subType: pane.subType,
+              lastActive: new Date().toISOString()
+            })
+          }
+        })
+      })
+      
+      localStorage.setItem(TERMINAL_SESSIONS_KEY, JSON.stringify(sessions))
+      console.log('💾 WORKSPACE: Persisted', sessions.length, 'terminal sessions')
+    } catch (error) {
+      console.error('❌ WORKSPACE: Failed to persist terminal sessions:', error)
+    }
+  }
+
+  /**
+   * Load terminal sessions from localStorage
+   */
+  static loadTerminalSessions(): TerminalSessionState[] {
+    try {
+      const data = localStorage.getItem(TERMINAL_SESSIONS_KEY)
+      if (!data) return []
+      
+      const sessions = JSON.parse(data) as TerminalSessionState[]
+      console.log('💾 WORKSPACE: Loaded', sessions.length, 'terminal sessions from storage')
+      return sessions
+    } catch (error) {
+      console.error('❌ WORKSPACE: Failed to load terminal sessions:', error)
+      return []
+    }
+  }
+
+  /**
    * Clear all workspace data from localStorage
    */
   static clearAll(): void {
@@ -117,6 +173,7 @@ export class WorkspacePersistenceManager {
       // Clear workspace list and current workspace
       localStorage.removeItem(WORKSPACE_STORAGE_KEY)
       localStorage.removeItem(CURRENT_WORKSPACE_KEY)
+      localStorage.removeItem(TERMINAL_SESSIONS_KEY)
       
       console.log('🗑️ WORKSPACE: Cleared all workspace data from localStorage')
     } catch (error) {

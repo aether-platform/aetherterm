@@ -19,3 +19,4 @@ src/aetherterm/agentserver/static/index.html
 butterfly/themes/
 logs/*.log
 *.log
+qdrant_storage/

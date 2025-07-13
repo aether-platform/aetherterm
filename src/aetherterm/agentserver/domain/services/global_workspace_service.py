@@ -7,9 +7,11 @@ All users (including Viewers) connect to the same workspace.
 
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Set
 from uuid import uuid4
+from pathlib import Path
 
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
 
@@ -25,6 +27,9 @@ class GlobalWorkspaceService:
 
     # Default workspace ID
     GLOBAL_WORKSPACE_ID = "global_workspace"
+    
+    # Persistence file path
+    WORKSPACE_FILE = Path.home() / ".aetherterm" / "global_workspace.json"
 
     def __init__(self):
         # The single global workspace
@@ -43,7 +48,77 @@ class GlobalWorkspaceService:
         # Track user permissions (socket_id -> role)
         self._user_roles: Dict[str, str] = {}
 
+        # Try to restore workspace from existing sessions
+        self._restore_from_sessions()
+
         log.info("Global workspace service initialized")
+
+    def _restore_from_sessions(self):
+        """Restore workspace structure from existing terminal sessions."""
+        try:
+            # Check if there are any existing sessions in AsyncioTerminal
+            existing_sessions = list(AsyncioTerminal.sessions.keys())
+            if not existing_sessions:
+                log.info("No existing sessions to restore")
+                return
+
+            log.info(f"Found {len(existing_sessions)} existing sessions to restore")
+
+            # Group sessions by their tab/pane structure
+            # Session IDs are in format: aether_pane_<pane_id> or similar
+            tab_groups = {}
+            
+            for session_id in existing_sessions:
+                # Extract tab information from session ID
+                # Expected formats: aether_pane_XXX, aether_tab_XXX, terminal_pane_XXX
+                parts = session_id.split('_')
+                if len(parts) >= 3:
+                    # Try to extract tab ID from session metadata
+                    terminal = AsyncioTerminal.sessions.get(session_id)
+                    if terminal and hasattr(terminal, 'tab_index'):
+                        tab_index = terminal.tab_index
+                        if tab_index not in tab_groups:
+                            tab_groups[tab_index] = []
+                        tab_groups[tab_index].append({
+                            'session_id': session_id,
+                            'pane_index': getattr(terminal, 'pane_index', 0)
+                        })
+
+            # Create tabs from grouped sessions
+            for tab_index, sessions in sorted(tab_groups.items()):
+                tab_id = f"tab_{tab_index + 1:03d}"
+                tab = {
+                    "id": tab_id,
+                    "title": f"Terminal {tab_index + 1}",
+                    "type": "terminal",
+                    "subType": "pure",
+                    "isActive": tab_index == 0,
+                    "panes": [],
+                    "layout": "single",
+                    "lastActivity": datetime.now().isoformat(),
+                }
+
+                # Create panes for each session
+                for session_info in sorted(sessions, key=lambda x: x['pane_index']):
+                    pane_id = f"pane_{session_info['pane_index'] + 1:03d}"
+                    pane = {
+                        "id": pane_id,
+                        "type": "terminal",
+                        "title": "Terminal",
+                        "isActive": session_info['pane_index'] == 0,
+                        "sessionId": session_info['session_id'],
+                    }
+                    tab["panes"].append(pane)
+
+                self._workspace["tabs"].append(tab)
+                log.info(f"Restored tab {tab_id} with {len(tab['panes'])} panes")
+
+            if self._workspace["tabs"]:
+                self._workspace["activeTabId"] = self._workspace["tabs"][0]["id"]
+                log.info(f"Restored {len(self._workspace['tabs'])} tabs from existing sessions")
+
+        except Exception as e:
+            log.error(f"Error restoring workspace from sessions: {e}", exc_info=True)
 
     def get_workspace(self) -> Dict[str, Any]:
         """Get the global workspace."""
