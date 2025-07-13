@@ -4,6 +4,35 @@
 **Tech**: Python FastAPI + SocketIO, Vue 3 + TypeScript frontend, LangChain AI integration  
 **Features**: MainAgent-controlled agent startup, hierarchical memory, multi-agent coordination, comprehensive security
 
+## Vector-Enhanced Development Strategy
+
+**CRITICAL**: Use semantic search FIRST for all conceptual development tasks. Traditional tools are secondary.
+
+### Mandatory Vector-First Workflow
+```bash
+# For conceptual understanding (PRIMARY)
+mcp__qdrant-local__qdrant-find → semantic discovery
+↓
+Read/Glob/Grep → detailed verification
+
+# For specific known files (SECONDARY)  
+Read/Glob/Grep → direct access
+```
+
+### Semantic Search Patterns
+Before using traditional file tools, query Qdrant for these contexts:
+
+**Architecture & Design**: "system architecture components modules structure dependency injection"
+**Database Operations**: "database models entities repositories ORM SQLAlchemy PostgreSQL"
+**API Development**: "REST API endpoints routes handlers FastAPI WebSocket real-time"
+**Frontend**: "Vue components templates reactive state management Vuetify terminal UI"
+**Authentication**: "authentication authorization JWT tokens security RBAC PAM X.509"
+**AI Integration**: "AI agents LangChain hierarchical coordination MainAgent SubAgents"
+**Testing**: "unit tests integration tests pytest fixtures async testing coverage"
+**Configuration**: "configuration settings environment variables supervisord process"
+**Error Handling**: "exception handling error processing logging OpenTelemetry monitoring"
+**Real-time**: "WebSocket Socket.IO real-time bidirectional terminal communication"
+
 ## Quick Start
 
 ```bash
@@ -26,11 +55,41 @@ cd frontend && pnpm install && pnpm dev
 **Flow**: ControlServer (8765) ← AgentServer (57575) → MainAgent → SubAgents  
 **Features**: MainAgent startup control, specification input, hierarchical memory, ControlServer log summarization
 
+## Context-Aware Development Patterns
+
+### Intelligent Feature Development
+```bash
+# Example: Adding real-time notifications
+1. Query: "real-time notifications WebSocket events user interface terminal"
+2. Discover: existing notification patterns, UI components, event handling
+3. Query: "Vue component reactive state management terminal feedback"
+4. Follow established patterns for consistent implementation
+```
+
+### Smart Bug Investigation
+```bash
+# Example: Connection stability issues
+1. Query: "WebSocket connection stability timeout retry logic error handling"
+2. Discover: connection management, retry mechanisms, error patterns
+3. Query: "terminal session persistence state recovery async"
+4. Analyze specific implementations with full context
+```
+
+### Architecture-First Approach
+```bash
+# Before major changes:
+1. Query: "system architecture component relationships integration points"
+2. Understand impact areas and dependencies
+3. Query: "similar implementations patterns conventions"
+4. Follow established architectural patterns
+```
+
 ## Development Notes
 
 **Build Process**: Frontend builds to `dist/` → copied to AgentServer `static/` → served by FastAPI  
 **Communication**: WebSocket (Socket.IO) for real-time terminal I/O  
 **Security**: SSL/TLS, X.509 certs, PAM integration, RBAC
+**Vector Strategy**: Always start with semantic discovery for conceptual understanding
 
 ## Common Tasks
 
@@ -84,3 +143,27 @@ make logs     # View aggregated logs
 - Implement custom process management
 
 The `make run` command handles all supervisord startup and management automatically.
+
+## Code Standards & Best Practices
+
+### Terminal Implementation
+**PTY Handling**: Terminal functionality is provided by PTY (pseudo-terminal) and the user's shell  
+**Feature Boundary**: Don't reimplement shell features (history, tab completion, etc.) - let the shell handle them  
+**Input/Output**: Simply pass keystrokes to PTY and display output - avoid complex input processing
+
+### Frontend Development
+**Performance**: Remove unused dependencies, use lazy loading for heavy components  
+**Type Safety**: No 'any' types - define proper TypeScript interfaces for all data structures  
+**State Management**: Use Pinia stores with clear separation of concerns  
+**Error UX**: Show loading states and user-friendly error messages
+
+### Backend Development
+**Async Safety**: Always handle asyncio.create_task with error callbacks  
+**Race Conditions**: Properly cancel existing tasks before creating new ones  
+**Memory Management**: Clean up resources (timeouts, event listeners) on component unmount  
+**WebSocket**: Use Socket.IO for real-time communication with proper event handling
+
+### Security
+**Input Validation**: Validate all user input on both frontend and backend  
+**Role Checking**: Enforce RBAC (Viewer vs User roles) consistently  
+**Session Management**: Proper session lifecycle with cleanup on disconnect
