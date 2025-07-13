@@ -524,6 +524,8 @@ def setup_app(**kwargs):
     # Workspace management handlers
     sio.on("workspace_get", socket_handlers.workspace_get)
     sio.on("tab_create", socket_handlers.tab_create)
+    sio.on("tab_close", socket_handlers.tab_close)
+    sio.on("session_cleanup", socket_handlers.session_cleanup)
     # Removed save_workspace, load_workspace, list_workspaces as they don't exist
     # and are not needed for the global workspace design
 

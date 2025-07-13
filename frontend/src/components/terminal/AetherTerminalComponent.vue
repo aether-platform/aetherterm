@@ -12,6 +12,7 @@
       :id="terminalElementId"
       class="aether-terminal"
       ref="terminalRef"
+      :style="{ visibility: isConnecting ? 'hidden' : 'visible' }"
     ></div>
     <div v-if="searchVisible" class="terminal-search">
       <input
@@ -250,6 +251,17 @@ const initializeTerminal = async () => {
     }, 100)
   }
   
+  // ResizeObserver for automatic terminal fitting
+  if (terminalRef.value) {
+    const resizeObserver = new ResizeObserver(() => {
+      debouncedFit()
+    })
+    resizeObserver.observe(terminalRef.value)
+    
+    // Store observer for cleanup
+    terminal.value._resizeObserver = resizeObserver
+  }
+  
   // 初回サイズ調整
   debouncedFit()
 
@@ -342,7 +354,12 @@ const setupInput = () => {
 const requestSession = async () => {
   // Debug: Log current pane store state
   console.log(`📺 AETHER_TERMINAL: Current pane store panes:`, paneStore.panes.map(p => ({ id: p.id, sessionId: p.sessionId })))
-  console.log(`📺 AETHER_TERMINAL: Looking for pane ID: ${props.id}`)
+  console.log(`📺 AETHER_TERMINAL: Looking for ${props.mode} ID: ${props.id}`)
+  
+  // Additional debug for tab mode
+  if (props.mode === 'tab') {
+    console.log(`📺 AETHER_TERMINAL: Current tab store tabs:`, tabStore.tabs.map(t => ({ id: t.id, sessionId: t.sessionId })))
+  }
   
   // First check if we already have a server-assigned session ID
   const existingSession = props.mode === 'pane' 
@@ -603,6 +620,25 @@ watch(() => aetherStore.connectionState.isConnected, (isConnected) => {
   }
 })
 
+// Watch for tab activation to resize terminal
+watch(() => {
+  if (props.mode === 'pane') {
+    const pane = paneStore.panes.find(p => p.id === props.id)
+    return pane?.isActive
+  } else {
+    const tab = tabStore.tabs.find(t => t.id === props.id)
+    return tab?.isActive
+  }
+}, (isActive) => {
+  if (isActive && terminal.value && fitAddon.value) {
+    // When tab becomes active, resize the terminal
+    console.log(`🔄 AETHER_TERMINAL: Tab ${props.id} became active, fitting terminal`)
+    nextTick(() => {
+      fitAddon.value?.fit()
+    })
+  }
+})
+
 // ライフサイクル
 onMounted(async () => {
   // Terminal mounted
@@ -637,6 +673,10 @@ onBeforeUnmount(() => {
   // Safely dispose terminal and addons
   if (terminal.value) {
     try {
+      // Cleanup ResizeObserver
+      if (terminal.value._resizeObserver) {
+        terminal.value._resizeObserver.disconnect()
+      }
       terminal.value.dispose()
     } catch (error) {
       console.warn('⚠️ AETHER_TERMINAL: Error disposing terminal:', error)

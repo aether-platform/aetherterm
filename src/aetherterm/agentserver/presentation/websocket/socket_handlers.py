@@ -2104,3 +2104,143 @@ async def tab_create(sid, data):
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
 
 
+async def tab_close(sid, data):
+    """Handle tab closure and cleanup associated sessions."""
+    try:
+        tab_id = data.get("tabId")
+        
+        if not tab_id:
+            log.warning("Tab close request without tabId")
+            await sio_instance.emit(
+                "workspace_error", {"error": "tabId required for tab close"}, room=sid
+            )
+            return
+
+        log.info(f"Tab close request for tab {tab_id} from client {sid}")
+
+        from aetherterm.agentserver.domain.services.global_workspace_service import (
+            get_global_workspace_service,
+        )
+
+        service = get_global_workspace_service()
+
+        # Check if user has permission to modify
+        if not service.can_user_modify(sid):
+            log.warning(f"User {sid} (Viewer) attempted to close tab")
+            await sio_instance.emit(
+                "workspace_error", {"error": "Viewers cannot modify the workspace"}, room=sid
+            )
+            return
+
+        # Get tab data before closing to find associated sessions
+        workspace = service.get_workspace()
+        tab_to_close = None
+        
+        for tab in workspace.get("tabs", []):
+            if tab.get("id") == tab_id:
+                tab_to_close = tab
+                break
+        
+        if not tab_to_close:
+            log.warning(f"Tab {tab_id} not found for closure")
+            await sio_instance.emit(
+                "workspace_error", {"error": f"Tab {tab_id} not found"}, room=sid
+            )
+            return
+
+        # Close associated terminal sessions
+        panes = tab_to_close.get("panes", [])
+        for pane in panes:
+            session_id = pane.get("sessionId")
+            if session_id:
+                log.info(f"Closing terminal session {session_id} for tab {tab_id}")
+                
+                # Close active terminal session
+                if session_id in AsyncioTerminal.sessions:
+                    terminal = AsyncioTerminal.sessions[session_id]
+                    try:
+                        await terminal.close()
+                        log.info(f"Closed active terminal session {session_id}")
+                    except Exception as e:
+                        log.error(f"Error closing terminal session {session_id}: {e}")
+                
+                # Clean up session buffers
+                if session_id in AsyncioTerminal.session_buffers:
+                    del AsyncioTerminal.session_buffers[session_id]
+                    log.info(f"Cleaned up buffer for session {session_id}")
+                
+                # Clean up session ownership
+                if session_id in AsyncioTerminal.session_owners:
+                    del AsyncioTerminal.session_owners[session_id]
+                    log.info(f"Cleaned up ownership for session {session_id}")
+
+        # Remove tab from workspace
+        success = service.close_tab(tab_id)
+        
+        if success:
+            log.info(f"Successfully closed tab {tab_id}")
+            
+            await sio_instance.emit(
+                "tab_closed", {"success": True, "tabId": tab_id}, room=sid
+            )
+
+            # Broadcast tab closure to all connected users
+            await sio_instance.emit(
+                "tab_removed",
+                {"tabId": tab_id},
+                skip_sid=sid,  # Don't send to the user who closed it
+            )
+        else:
+            await sio_instance.emit(
+                "workspace_error",
+                {"error": f"Failed to close tab {tab_id}"},
+                room=sid,
+            )
+
+    except Exception as e:
+        log.error(f"Error closing tab: {e}", exc_info=True)
+        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
+
+
+async def session_cleanup(sid, data):
+    """Handle explicit session cleanup request."""
+    try:
+        session_id = data.get("sessionId")
+        
+        if not session_id:
+            log.warning("Session cleanup request without sessionId")
+            await sio_instance.emit(
+                "cleanup_error", {"error": "sessionId required for cleanup"}, room=sid
+            )
+            return
+
+        log.info(f"Session cleanup request for {session_id} from client {sid}")
+
+        # Close active terminal session
+        if session_id in AsyncioTerminal.sessions:
+            terminal = AsyncioTerminal.sessions[session_id]
+            try:
+                await terminal.close()
+                log.info(f"Closed active terminal session {session_id}")
+            except Exception as e:
+                log.error(f"Error closing terminal session {session_id}: {e}")
+        
+        # Clean up session buffers
+        if session_id in AsyncioTerminal.session_buffers:
+            del AsyncioTerminal.session_buffers[session_id]
+            log.info(f"Cleaned up buffer for session {session_id}")
+        
+        # Clean up session ownership
+        if session_id in AsyncioTerminal.session_owners:
+            del AsyncioTerminal.session_owners[session_id]
+            log.info(f"Cleaned up ownership for session {session_id}")
+
+        await sio_instance.emit(
+            "session_cleaned", {"success": True, "sessionId": session_id}, room=sid
+        )
+
+    except Exception as e:
+        log.error(f"Error cleaning up session: {e}", exc_info=True)
+        await sio_instance.emit("cleanup_error", {"error": str(e)}, room=sid)
+
+

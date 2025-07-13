@@ -264,6 +264,44 @@ class GlobalWorkspaceService:
                         pane["status"] = "disconnected"
                         log.info(f"Cleaned up closed session {session_id}")
 
+    def close_tab(self, tab_id: str) -> bool:
+        """Close a tab and remove it from the workspace."""
+        try:
+            # Find and remove the tab
+            tab_index = None
+            for i, tab in enumerate(self._workspace["tabs"]):
+                if tab["id"] == tab_id:
+                    tab_index = i
+                    break
+            
+            if tab_index is None:
+                log.warning(f"Tab {tab_id} not found for closure")
+                return False
+            
+            # Remove the tab
+            removed_tab = self._workspace["tabs"].pop(tab_index)
+            log.info(f"Removed tab {tab_id} from workspace")
+            
+            # If this was the active tab, set a new active tab
+            if self._workspace.get("activeTabId") == tab_id:
+                if self._workspace["tabs"]:
+                    # Set the first remaining tab as active
+                    self._workspace["activeTabId"] = self._workspace["tabs"][0]["id"]
+                    log.info(f"Set new active tab: {self._workspace['activeTabId']}")
+                else:
+                    # No tabs left
+                    self._workspace["activeTabId"] = None
+                    log.info("No tabs remaining, cleared activeTabId")
+            
+            # Update timestamp
+            self._workspace["lastAccessed"] = datetime.now().isoformat()
+            
+            return True
+            
+        except Exception as e:
+            log.error(f"Error closing tab {tab_id}: {e}", exc_info=True)
+            return False
+
 
 # Singleton instance
 _global_workspace_service = None

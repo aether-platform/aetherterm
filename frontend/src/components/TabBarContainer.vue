@@ -115,28 +115,74 @@ const switchToWorkspaceTab = (tabId: string) => {
 }
 
 // Close workspace tab
-const closeTab = (tabId: string) => {
+const closeTab = async (tabId: string) => {
   if (!workspaceStore.currentWorkspace) return
   
   const tabIndex = workspaceStore.currentWorkspace.tabs.findIndex(tab => tab.id === tabId)
   if (tabIndex === -1) return
   
-  const wasActive = workspaceStore.currentWorkspace.tabs[tabIndex].isActive
+  console.log('🔥 CLOSING WORKSPACE TAB:', tabId)
   
-  // Remove the tab
-  workspaceStore.currentWorkspace.tabs.splice(tabIndex, 1)
-  
-  // If this was the active tab and there are remaining tabs, activate the last one
-  if (wasActive && workspaceStore.currentWorkspace.tabs.length > 0) {
-    const lastTab = workspaceStore.currentWorkspace.tabs[workspaceStore.currentWorkspace.tabs.length - 1]
-    lastTab.isActive = true
+  try {
+    // Import terminal store to send close request to server
+    const { useAetherTerminalStore } = await import('../stores/aetherTerminalStore')
+    const terminalStore = useAetherTerminalStore()
+    
+    const socket = terminalStore.getSocket()
+    if (socket && socket.connected) {
+      // Send tab close request to server
+      socket.emit('tab_close', { tabId })
+      
+      // Listen for tab_closed confirmation
+      const handleTabClosed = (data: any) => {
+        if (data.success && data.tabId === tabId) {
+          socket.off('tab_closed', handleTabClosed)
+          socket.off('workspace_error', handleError)
+          
+          // Remove from local store after server confirmation
+          const wasActive = workspaceStore.currentWorkspace!.tabs[tabIndex].isActive
+          workspaceStore.currentWorkspace!.tabs.splice(tabIndex, 1)
+          
+          // If this was the active tab and there are remaining tabs, activate the last one
+          if (wasActive && workspaceStore.currentWorkspace!.tabs.length > 0) {
+            const lastTab = workspaceStore.currentWorkspace!.tabs[workspaceStore.currentWorkspace!.tabs.length - 1]
+            lastTab.isActive = true
+          }
+          
+          console.log('✅ WORKSPACE TAB CLOSED:', tabId)
+        }
+      }
+      
+      const handleError = (error: any) => {
+        socket.off('tab_closed', handleTabClosed)
+        socket.off('workspace_error', handleError)
+        console.error('❌ Error closing tab:', error)
+      }
+      
+      socket.on('tab_closed', handleTabClosed)
+      socket.on('workspace_error', handleError)
+      
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        socket.off('tab_closed', handleTabClosed)
+        socket.off('workspace_error', handleError)
+      }, 5000)
+      
+    } else {
+      // Fallback: remove locally if no server connection
+      console.warn('⚠️ No server connection, removing tab locally only')
+      const wasActive = workspaceStore.currentWorkspace.tabs[tabIndex].isActive
+      workspaceStore.currentWorkspace.tabs.splice(tabIndex, 1)
+      
+      if (wasActive && workspaceStore.currentWorkspace.tabs.length > 0) {
+        const lastTab = workspaceStore.currentWorkspace.tabs[workspaceStore.currentWorkspace.tabs.length - 1]
+        lastTab.isActive = true
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in closeTab:', error)
   }
-  
-  // No need to save - server handles persistence
-  
-  // Cross-tab sync removed - using server-driven sync
-  
-  console.log('🔥 CLOSED WORKSPACE TAB:', tabId)
 }
 const router = useRouter()
 
