@@ -23,6 +23,21 @@ git pull origin main
 **Location**: `app/terminal/` within the unified AetherPlatform workspace  
 **Repository**: Independent Git repository as part of tsrc-managed multi-repo setup
 
+## Platform Integration
+
+### Architecture Assumptions
+- **JupyterHub Container**: Runs as a service within JupyterHub user containers
+- **Proxy Authentication**: User identity provided via proxy headers from JupyterHub
+- **Shared Workspace**: Global collaborative workspace with role-based access control
+- **AI Integration**: Native LangChain integration for intelligent terminal assistance
+- **Session Persistence**: Persistent sessions across container restarts via external storage
+
+### Service Dependencies
+- **Upstream**: JupyterHub proxy for authentication and container lifecycle
+- **Database**: PostgreSQL for session metadata, Redis for real-time state
+- **External**: AI providers (Anthropic, LMStudio), vector database (Qdrant)
+- **Storage**: Persistent volumes for session history and workspace data
+
 ## Vector-Enhanced Development Strategy
 
 **CRITICAL**: Use semantic search FIRST for all conceptual development tasks. Traditional tools are secondary.
