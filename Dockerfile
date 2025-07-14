@@ -27,7 +27,7 @@ COPY src/ ./src/
 RUN uv pip install --system --no-cache-dir -e .
 
 # Build frontend stage
-FROM node:20.11.0-alpine as frontend-builder
+FROM node:24.4.0-alpine as frontend-builder
 
 WORKDIR /app/frontend
 
