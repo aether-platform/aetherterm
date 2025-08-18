@@ -1,6 +1,6 @@
 # Multi-stage build for optimized image size
 # Supports both AMD64 and ARM64 architectures
-FROM python:3.11-slim as builder
+FROM python:3.13.7-slim as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,7 +39,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Final stage
-FROM python:3.11-slim
+FROM python:3.13.7-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
