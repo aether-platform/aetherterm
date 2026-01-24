@@ -22,25 +22,17 @@ router = APIRouter()
 
 # Global log processing manager
 log_processing_manager: Optional[LogProcessingManager] = None
-
-
 # Pydantic Models
 class TerminalRequest(BaseModel):
     terminal_id: str
     log_file_path: str
-
-
 class SimulateOutputRequest(BaseModel):
     terminal_id: str
     output: str
     level: str = "INFO"
     timestamp: Optional[str] = None
-
-
 class StressTestRequest(BaseModel):
     test_size: int = 1000
-
-
 @router.post("/initialize")
 async def initialize_log_processing():
     """ログ処理システムを初期化"""
@@ -71,8 +63,6 @@ async def initialize_log_processing():
     except Exception as e:
         logger.error(f"Failed to initialize log processing: {e}")
         raise HTTPException(status_code=500, detail=f"Initialization failed: {e!s}")
-
-
 @router.post("/start-monitoring")
 async def start_monitoring(request: TerminalRequest):
     """指定ターミナルのログ監視を開始"""
@@ -97,8 +87,6 @@ async def start_monitoring(request: TerminalRequest):
     except Exception as e:
         logger.error(f"Failed to start monitoring for {request.terminal_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start monitoring: {e!s}")
-
-
 @router.post("/stop-monitoring/{terminal_id}")
 async def stop_monitoring(terminal_id: str):
     """指定ターミナルのログ監視を停止"""
@@ -119,8 +107,6 @@ async def stop_monitoring(terminal_id: str):
     except Exception as e:
         logger.error(f"Failed to stop monitoring for {terminal_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop monitoring: {e!s}")
-
-
 @router.get("/search")
 async def search_logs(
     q: str = Query(description="検索クエリ"),
@@ -189,8 +175,6 @@ async def search_logs(
     except Exception as e:
         logger.error(f"Search failed for query '{q}': {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {e!s}")
-
-
 @router.post("/simulate-output")
 async def simulate_output(request: SimulateOutputRequest):
     """テスト用のターミナル出力をシミュレート"""
@@ -235,8 +219,6 @@ async def simulate_output(request: SimulateOutputRequest):
     except Exception as e:
         logger.error(f"Failed to simulate output for {request.terminal_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to simulate output: {e!s}")
-
-
 @router.post("/test-error-patterns")
 async def test_error_patterns():
     """エラーパターンテスト"""

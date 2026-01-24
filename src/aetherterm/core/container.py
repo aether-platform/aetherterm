@@ -11,8 +11,6 @@ from dependency_injector.wiring import Provide, inject
 from ..common.interfaces import ILogProcessor
 from ..langchain.config.storage_config import StorageConfig
 from ..logprocessing.log_processing_manager import LogProcessingManager
-
-
 class ApplicationContainer(containers.DeclarativeContainer):
     """アプリケーション依存関係コンテナ"""
 
@@ -38,8 +36,6 @@ class ApplicationContainer(containers.DeclarativeContainer):
     log_processor = providers.Singleton(
         providers.Object(log_processing_manager.provided),
     )
-
-
 class DIContainer:
     """シンプルなDIコンテナヘルパー"""
 
@@ -76,7 +72,5 @@ class DIContainer:
     def wire_modules(cls, modules: list):
         """モジュールにDIを適用"""
         cls._container.wire(modules=modules)
-
-
 # グローバルコンテナインスタンス
 container = DIContainer()

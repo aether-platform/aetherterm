@@ -11,8 +11,6 @@ from typing import Any, Dict
 from aetherterm.agentserver.domain.services.terminal_session_service import TerminalSessionService
 
 log = logging.getLogger(__name__)
-
-
 class TerminalHandler:
     """Handles terminal-related WebSocket events."""
 

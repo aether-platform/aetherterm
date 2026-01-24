@@ -15,8 +15,6 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from .jupyterhub_auth import JupyterHubAuthService
 
 log = logging.getLogger("aetherterm.infrastructure.s3_credential")
-
-
 class S3CredentialService:
     """Service for generating temporary AWS credentials with S3 access scoped to user context."""
 

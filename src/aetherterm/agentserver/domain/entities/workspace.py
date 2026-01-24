@@ -9,8 +9,6 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 import json
 import uuid
-
-
 @dataclass
 class WorkspacePane:
     """Represents a pane within a workspace tab"""
@@ -47,8 +45,6 @@ class WorkspacePane:
             if "createdAt" in data
             else datetime.utcnow(),
         )
-
-
 @dataclass
 class WorkspaceTab:
     """Represents a tab within a workspace"""
@@ -88,8 +84,6 @@ class WorkspaceTab:
             if "lastActivity" in data
             else datetime.utcnow(),
         )
-
-
 @dataclass
 class Workspace:
     """Represents a user workspace with tabs and panes"""

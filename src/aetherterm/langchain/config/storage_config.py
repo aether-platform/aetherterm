@@ -8,8 +8,6 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
-
-
 class VectorStoreType(Enum):
     """ベクトルストアタイプ"""
 
@@ -17,16 +15,12 @@ class VectorStoreType(Enum):
     FAISS = "faiss"
     PINECONE = "pinecone"
     PGVECTOR = "pgvector"
-
-
 class DatabaseType(Enum):
     """データベースタイプ"""
 
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
     MYSQL = "mysql"
-
-
 @dataclass
 class StorageConfig:
     """ストレージ設定"""

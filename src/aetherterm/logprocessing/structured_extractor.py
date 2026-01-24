@@ -14,8 +14,6 @@ from ..langchain.storage.sql_adapter import SQLStorageAdapter
 from ..langchain.storage.vector_adapter import VectorStoreAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class StructuredExtractor:
     """構造化データ抽出クラス"""
 

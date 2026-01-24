@@ -15,8 +15,6 @@ from aetherterm.agentserver.infrastructure.config.di_container import get_contai
 log = logging.getLogger("aetherterm.endpoint.s3_browser")
 
 router = APIRouter(prefix="/api/s3", tags=["s3-browser"])
-
-
 class S3Credentials(BaseModel):
     """S3 credentials response model."""
 
@@ -24,8 +22,6 @@ class S3Credentials(BaseModel):
     secret_access_key: str
     session_token: str
     expiration: str
-
-
 class S3Config(BaseModel):
     """S3 configuration response model."""
 
@@ -33,16 +29,12 @@ class S3Config(BaseModel):
     bucket: str
     prefix: str
     read_only: bool
-
-
 class S3CredentialsResponse(BaseModel):
     """Complete S3 credentials response."""
 
     credentials: S3Credentials
     s3_config: S3Config
     user_info: Dict[str, Any]
-
-
 class S3Object(BaseModel):
     """S3 object metadata."""
 
@@ -52,8 +44,6 @@ class S3Object(BaseModel):
     etag: str
     storage_class: str
     is_folder: bool = False
-
-
 class S3ListResponse(BaseModel):
     """S3 list objects response."""
 
@@ -62,8 +52,6 @@ class S3ListResponse(BaseModel):
     prefix: str
     has_more: bool = False
     next_marker: Optional[str] = None
-
-
 def extract_jupyterhub_token(authorization: Optional[str] = Header(None)) -> Optional[str]:
     """Extract JupyterHub token from Authorization header."""
     if not authorization:
@@ -75,8 +63,6 @@ def extract_jupyterhub_token(authorization: Optional[str] = Header(None)) -> Opt
         return authorization[6:]
 
     return authorization
-
-
 @router.get("/credentials", response_model=S3CredentialsResponse)
 async def get_s3_credentials(
     bucket: Optional[str] = Query(None, description="Specific bucket name"),
@@ -104,8 +90,6 @@ async def get_s3_credentials(
     except Exception as e:
         log.error(f"Error generating S3 credentials: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/buckets")
 async def list_buckets(authorization: Optional[str] = Header(None)):
     """List S3 buckets accessible to the user."""
@@ -126,8 +110,6 @@ async def list_buckets(authorization: Optional[str] = Header(None)):
     except Exception as e:
         log.error(f"Error listing buckets: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
 @router.get("/objects/{bucket_name:path}", response_model=S3ListResponse)
 async def list_objects(
     bucket_name: str,
@@ -202,8 +184,6 @@ async def list_objects(
     except Exception as e:
         log.error(f"Error listing objects in bucket {bucket_name}: {e}")
         raise HTTPException(status_code=500, detail="Failed to list objects")
-
-
 @router.get("/object/{bucket_name:path}")
 async def get_object_url(
     bucket_name: str,
@@ -245,8 +225,6 @@ async def get_object_url(
     except Exception as e:
         log.error(f"Error generating presigned URL for {key}: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate download URL")
-
-
 @router.post("/upload/{bucket_name:path}")
 async def upload_object(
     bucket_name: str,
@@ -303,8 +281,6 @@ async def upload_object(
     except Exception as e:
         log.error(f"Error uploading file {key}: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload file")
-
-
 @router.delete("/object/{bucket_name:path}")
 async def delete_object(
     bucket_name: str,
@@ -346,8 +322,6 @@ async def delete_object(
     except Exception as e:
         log.error(f"Error deleting object {key}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete object")
-
-
 @router.post("/folder/{bucket_name:path}")
 async def create_folder(
     bucket_name: str,
@@ -396,8 +370,6 @@ async def create_folder(
     except Exception as e:
         log.error(f"Error creating folder {folder_path}: {e}")
         raise HTTPException(status_code=500, detail="Failed to create folder")
-
-
 @router.get("/status")
 async def get_s3_status():
     """Check S3 service status and AWS connectivity."""

@@ -12,8 +12,6 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 from collections import OrderedDict
 import asyncio
 import re
-
-
 class LRUCache:
     """Thread-safe LRU cache implementation."""
 
@@ -42,8 +40,6 @@ class LRUCache:
             # Remove oldest if over capacity
             if len(self.cache) > self.maxsize:
                 self.cache.popitem(last=False)
-
-
 class TTLCache:
     """Time-based cache with TTL support."""
 
@@ -68,8 +64,6 @@ class TTLCache:
         """Set value in cache with timestamp."""
         async with self._lock:
             self.cache[key] = (value, time.time())
-
-
 def memoize(maxsize: int = 128, ttl: Optional[int] = None):
     """
     Decorator for memoizing function results.
@@ -134,8 +128,6 @@ def memoize(maxsize: int = 128, ttl: Optional[int] = None):
             return sync_wrapper
 
     return decorator
-
-
 def memoize_method(maxsize: int = 128, ttl: Optional[int] = None):
     """
     Decorator for memoizing instance method results.
@@ -185,8 +177,6 @@ def memoize_method(maxsize: int = 128, ttl: Optional[int] = None):
         return wrapper
 
     return decorator
-
-
 def _make_cache_key(func_name: str, args: Tuple, kwargs: Dict) -> str:
     """Create a cache key from function name and arguments."""
     # Convert args and kwargs to a hashable representation
@@ -211,8 +201,6 @@ def _make_cache_key(func_name: str, args: Tuple, kwargs: Dict) -> str:
     # Create hash of the key
     key_str = "|".join(key_parts)
     return hashlib.md5(key_str.encode()).hexdigest()
-
-
 class RegexCache:
     """Cache for compiled regex patterns."""
 
@@ -235,12 +223,8 @@ class RegexCache:
                 del self._cache[oldest]
 
         return self._cache[key]
-
-
 # Global regex cache instance
 regex_cache = RegexCache()
-
-
 def cached_property(func: Callable) -> property:
     """
     Decorator that converts a method into a cached property.
@@ -255,8 +239,6 @@ def cached_property(func: Callable) -> property:
         return getattr(self, attr_name)
 
     return property(wrapper)
-
-
 class MemoizationStats:
     """Track memoization statistics for monitoring."""
 

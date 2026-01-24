@@ -138,8 +138,6 @@ const toggleDebugPanel = () => {
   overflow: auto;
   padding: 16px;
 }
-
-
 .tab-content {
   display: flex;
   flex-direction: column;

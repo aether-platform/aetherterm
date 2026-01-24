@@ -15,8 +15,6 @@ from pathlib import Path
 import re
 
 log = logging.getLogger("aetherterm.infrastructure.security_utils")
-
-
 class SecurityUtilities:
     """Centralized security operations and utilities."""
 

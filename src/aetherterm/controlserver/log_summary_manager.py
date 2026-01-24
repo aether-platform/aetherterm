@@ -12,8 +12,6 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class ShortTermMemory:
     """AgentServerからの短期記憶データ"""
@@ -25,8 +23,6 @@ class ShortTermMemory:
     metadata: Dict
     timestamp: str
     severity: str = "info"  # debug, info, warning, error, critical
-
-
 @dataclass
 class LogSummary:
     """生成されたログサマリ"""
@@ -43,8 +39,6 @@ class LogSummary:
     performance_summary: Optional[str]
     recommendations: List[str]
     timestamp: str
-
-
 class LogSummaryManager:
     """ログサマリ管理システム"""
 

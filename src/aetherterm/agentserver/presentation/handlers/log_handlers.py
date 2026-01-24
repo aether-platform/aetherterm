@@ -17,9 +17,6 @@ log = logging.getLogger("aetherterm.handlers.log")
 # Global tracking for log subscriptions
 log_subscribers = set()
 log_background_task = None
-
-
-# @inject
 async def log_monitor_subscribe(
     sid,
     data,
@@ -56,8 +53,6 @@ async def log_monitor_subscribe(
     except Exception as e:
         log.error(f"Failed to subscribe to log monitoring: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def log_monitor_unsubscribe(sid, data, sio_instance):
     """Unsubscribe from real-time log monitoring."""
     try:
@@ -75,9 +70,6 @@ async def log_monitor_unsubscribe(sid, data, sio_instance):
     except Exception as e:
         log.error(f"Failed to unsubscribe from log monitoring: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def log_monitor_search(
     sid,
     data,
@@ -118,8 +110,6 @@ async def log_monitor_search(
     except Exception as e:
         log.error(f"Failed to search logs: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def broadcast_log_statistics():
     """Broadcast log statistics to all subscribers."""
     try:
@@ -142,8 +132,6 @@ async def broadcast_log_statistics():
 
     except Exception as e:
         log.error(f"Failed to broadcast log statistics: {e}")
-
-
 async def start_log_monitoring_background_task():
     """Start background task for log monitoring."""
     try:
@@ -160,8 +148,6 @@ async def start_log_monitoring_background_task():
     finally:
         global log_background_task
         log_background_task = None
-
-
 async def start_redis_pubsub_listener():
     """Start Redis pub/sub listener for real-time logs."""
     try:
@@ -171,8 +157,6 @@ async def start_redis_pubsub_listener():
 
     except Exception as e:
         log.error(f"Failed to start Redis pub/sub listener: {e}")
-
-
 async def handle_realtime_log_event(channel: str, message: str):
     """Handle real-time log events from Redis."""
     try:
@@ -182,8 +166,6 @@ async def handle_realtime_log_event(channel: str, message: str):
 
     except Exception as e:
         log.error(f"Failed to handle real-time log event: {e}")
-
-
 async def update_and_broadcast_statistics():
     """Update and broadcast log statistics."""
     try:
@@ -191,9 +173,6 @@ async def update_and_broadcast_statistics():
 
     except Exception as e:
         log.error(f"Failed to update and broadcast statistics: {e}")
-
-
-# @inject
 async def unblock_request(
     sid,
     data,
@@ -225,9 +204,6 @@ async def unblock_request(
     except Exception as e:
         log.error(f"Failed to unblock request: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def get_block_status(
     sid,
     data,

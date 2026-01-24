@@ -6,8 +6,6 @@ import os
 from logging import getLogger
 
 log = getLogger("aetherterm.agentserver.utils.socket_utils")
-
-
 def get_hex_ip_port(remote):
     ip, port = remote
     if ip.startswith("::ffff:"):
@@ -37,8 +35,6 @@ def get_hex_ip_port(remote):
         )
 
     return "".join(ipv6_parts) + ":%04X" % port
-
-
 def parse_cert(cert):
     user = None
     for elt in cert["subject"]:
@@ -46,8 +42,6 @@ def parse_cert(cert):
         if user:
             break
     return user
-
-
 class ConnectionInfo:
     """Connection information for Socket.IO and other non-socket connections."""
 
@@ -108,8 +102,6 @@ class ConnectionInfo:
             proxy_info,
             self.user,
         )
-
-
 class Socket:
     def __init__(self, socket):
         from .system_utils import get_lsof_socket_line, get_procfs_socket_line, get_socket_env

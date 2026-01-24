@@ -13,9 +13,6 @@ from uuid import uuid4
 # from aetherterm.agentserver.infrastructure.config.di_container import MainContainer
 
 log = logging.getLogger("aetherterm.handlers.agent")
-
-
-# @inject
 async def agent_start_request(
     sid,
     data,
@@ -50,8 +47,6 @@ async def agent_start_request(
     except Exception as e:
         log.error(f"Failed to start agent: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def agent_hello(sid, data, sio_instance):
     """Handle agent registration and initialization."""
     try:
@@ -77,9 +72,6 @@ async def agent_hello(sid, data, sio_instance):
     except Exception as e:
         log.error(f"Error handling agent hello: {e}")
         await sio_instance.emit("error", {"message": f"Agent hello failed: {e!s}"}, room=sid)
-
-
-# @inject
 async def spec_upload(
     sid,
     data,
@@ -100,9 +92,6 @@ async def spec_upload(
     except Exception as e:
         log.error(f"Error handling spec upload: {e}")
         await sio_instance.emit("error", {"message": f"Spec upload failed: {e!s}"}, room=sid)
-
-
-# @inject
 async def spec_query(
     sid,
     data,
@@ -127,8 +116,6 @@ async def spec_query(
     except Exception as e:
         log.error(f"Error handling spec query: {e}")
         await sio_instance.emit("error", {"message": f"Spec query failed: {e!s}"}, room=sid)
-
-
 async def control_message(sid, data, sio_instance):
     """Handle system control messages."""
     try:

@@ -12,8 +12,6 @@ from datetime import datetime
 # from aetherterm.agentserver.infrastructure.config.di_container import MainContainer
 
 log = logging.getLogger("aetherterm.handlers.auth")
-
-
 def get_user_info_from_environ(environ):
     """Extract user information from environment/headers."""
     user_info = {
@@ -69,9 +67,6 @@ def get_user_info_from_environ(environ):
     user_info["roles"] = roles
 
     return user_info
-
-
-# @inject
 def check_session_ownership(
     session_id,
     current_user_info,
@@ -86,9 +81,6 @@ def check_session_ownership(
     except Exception as e:
         log.error(f"Failed to check session ownership: {e}")
         return False
-
-
-# @inject
 async def connect(
     sid,
     environ,
@@ -122,9 +114,6 @@ async def connect(
     except Exception as e:
         log.error(f"Failed to handle connection: {e}")
         await sio_instance.disconnect(sid)
-
-
-# @inject
 async def disconnect(
     sid,
     environ=None,
@@ -134,15 +123,10 @@ async def disconnect(
     try:
         log.info(f"Client disconnected: {sid}")
 
-        # Clean up through security service
-        # await security_service.cleanup_session(sid)
-        # Temporarily disabled cleanup
+        # TODO: Implement proper session cleanup
 
     except Exception as e:
         log.error(f"Failed to handle disconnection: {e}")
-
-
-# @inject
 async def validate_request(
     sid,
     data,
@@ -171,9 +155,6 @@ async def validate_request(
     except Exception as e:
         log.error(f"Failed to validate request: {e}")
         return False
-
-
-# @inject
 async def session_heartbeat(
     sid,
     data,
@@ -192,9 +173,6 @@ async def session_heartbeat(
 
     except Exception as e:
         log.error(f"Failed to handle heartbeat: {e}")
-
-
-# @inject
 async def request_permissions(
     sid,
     data,

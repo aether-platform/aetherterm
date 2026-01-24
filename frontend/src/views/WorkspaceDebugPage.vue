@@ -289,8 +289,6 @@ const clearLocalStorage = () => {
     refreshData()
   }
 }
-
-
 // Development role simulation functions
 const getCurrentAuthStatus = () => {
   const user = getCurrentUser()

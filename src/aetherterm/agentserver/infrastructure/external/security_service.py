@@ -8,8 +8,6 @@ import logging
 from typing import Any, Dict, List
 
 log = logging.getLogger("aetherterm.infrastructure.security")
-
-
 class SecurityService:
     """Automatic blocking system for security and compliance."""
 

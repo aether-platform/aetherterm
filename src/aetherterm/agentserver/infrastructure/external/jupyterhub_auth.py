@@ -12,8 +12,6 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
 log = logging.getLogger("aetherterm.infrastructure.jupyterhub_auth")
-
-
 class JupyterHubAuthService:
     """Service for authenticating with JupyterHub and managing user sessions."""
 

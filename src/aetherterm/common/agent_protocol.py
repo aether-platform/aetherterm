@@ -9,8 +9,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
-
-
 class MessageType(str, Enum):
     """メッセージタイプ"""
 
@@ -43,8 +41,6 @@ class MessageType(str, Enum):
     # データ同期
     SYNC_REQUEST = "sync_request"
     SYNC_RESPONSE = "sync_response"
-
-
 class PaneType(str, Enum):
     """ペーンタイプ"""
 
@@ -52,8 +48,6 @@ class PaneType(str, Enum):
     AGENT = "agent"
     LOG = "log"
     REPORT = "report"
-
-
 @dataclass
 class AgentMessage:
     """エージェント間メッセージ"""
@@ -93,8 +87,6 @@ class AgentMessage:
             correlation_id=UUID(data["correlation_id"]) if data.get("correlation_id") else None,
             reply_to=UUID(data["reply_to"]) if data.get("reply_to") else None,
         )
-
-
 @dataclass
 class PaneConfig:
     """ペーン設定"""
@@ -106,8 +98,6 @@ class PaneConfig:
     parent_pane_id: Optional[str] = None
     agent_config: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-
 @dataclass
 class TaskCreateRequest:
     """タスク作成リクエスト"""
@@ -133,8 +123,6 @@ class TaskCreateRequest:
             "timeout_seconds": self.timeout_seconds,
             "allow_user_intervention": self.allow_user_intervention,
         }
-
-
 @dataclass
 class ProgressUpdate:
     """進捗更新"""
@@ -154,8 +142,6 @@ class ProgressUpdate:
             "details": self.details,
             "estimated_remaining_seconds": self.estimated_remaining_seconds,
         }
-
-
 @dataclass
 class InterventionRequest:
     """ユーザー介入要求"""
@@ -183,8 +169,6 @@ class InterventionRequest:
             "timeout_seconds": self.timeout_seconds,
             "context": self.context,
         }
-
-
 @dataclass
 class InterventionResponse:
     """ユーザー介入応答"""
@@ -204,8 +188,6 @@ class InterventionResponse:
             "response_time_seconds": self.response_time_seconds,
             "timed_out": self.timed_out,
         }
-
-
 class MessageBuilder:
     """メッセージビルダー（便利クラス）"""
 

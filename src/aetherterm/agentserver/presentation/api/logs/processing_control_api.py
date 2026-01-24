@@ -15,8 +15,6 @@ log = logging.getLogger("aetherterm.api.logs.processing")
 
 # Initialize router
 router = APIRouter()
-
-
 @router.post("/start-processing")
 async def start_log_processing() -> JSONResponse:
     """Start the log processing task."""
@@ -26,8 +24,6 @@ async def start_log_processing() -> JSONResponse:
     except Exception as e:
         log.error(f"Error starting log processing: {e}")
         raise HTTPException(status_code=500, detail="Failed to start log processing")
-
-
 @router.post("/stop-processing")
 async def stop_log_processing() -> JSONResponse:
     """Stop the log processing task."""
@@ -37,8 +33,6 @@ async def stop_log_processing() -> JSONResponse:
     except Exception as e:
         log.error(f"Error stopping log processing: {e}")
         raise HTTPException(status_code=500, detail="Failed to stop log processing")
-
-
 @router.get("/processing-status")
 async def get_processing_status() -> JSONResponse:
     """Get the current status of log processing."""

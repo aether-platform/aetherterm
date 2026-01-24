@@ -12,8 +12,6 @@ from aetherterm.agentserver.infrastructure.external.supervisord_mcp_service impo
 )
 
 log = logging.getLogger(__name__)
-
-
 async def get_processes_list(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Get list of all processes managed by supervisord."""
     try:
@@ -24,8 +22,6 @@ async def get_processes_list(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         log.error(f"Error getting processes list: {e}")
         return {"status": "error", "message": str(e)}
-
-
 async def start_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Start a specific process."""
     try:
@@ -40,8 +36,6 @@ async def start_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         log.error(f"Error starting process: {e}")
         return {"status": "error", "message": str(e)}
-
-
 async def stop_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Stop a specific process."""
     try:
@@ -56,8 +50,6 @@ async def stop_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         log.error(f"Error stopping process: {e}")
         return {"status": "error", "message": str(e)}
-
-
 async def restart_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Restart a specific process."""
     try:
@@ -72,8 +64,6 @@ async def restart_process(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         log.error(f"Error restarting process: {e}")
         return {"status": "error", "message": str(e)}
-
-
 async def get_process_logs(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Get logs for a specific process."""
     try:
@@ -90,8 +80,6 @@ async def get_process_logs(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         log.error(f"Error getting process logs: {e}")
         return {"status": "error", "message": str(e)}
-
-
 async def get_supervisord_status(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Get status of supervisord MCP integration."""
     try:

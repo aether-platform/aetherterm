@@ -16,8 +16,6 @@ log = logging.getLogger("aetherterm.api.logs.basic")
 
 # Initialize router
 router = APIRouter()
-
-
 @router.get("/recent")
 async def get_recent_logs(
     limit: int = Query(100, ge=1, le=1000, description="Number of recent logs to retrieve"),
@@ -32,8 +30,6 @@ async def get_recent_logs(
     except Exception as e:
         log.error(f"Error retrieving recent logs: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve logs")
-
-
 @router.get("/statistics")
 async def get_log_statistics() -> JSONResponse:
     """Get statistics about processed logs."""
@@ -43,8 +39,6 @@ async def get_log_statistics() -> JSONResponse:
     except Exception as e:
         log.error(f"Error retrieving log statistics: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
-
-
 @router.get("/categories")
 async def get_log_categories() -> JSONResponse:
     """Get available log categories with descriptions."""
@@ -62,8 +56,6 @@ async def get_log_categories() -> JSONResponse:
     except Exception as e:
         log.error(f"Error retrieving log categories: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve categories")
-
-
 def get_category_description(category: str) -> str:
     """Get description for a specific log category."""
     descriptions = {

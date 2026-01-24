@@ -18,8 +18,6 @@ from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import As
 # Initialize router
 router = APIRouter()
 log = logging.getLogger("aetherterm.routes.agent")
-
-
 # Agent Management Models
 class AgentStartRequest(BaseModel):
     """Agent startup request model"""
@@ -33,8 +31,6 @@ class AgentStartRequest(BaseModel):
     startup_command: Optional[str] = None  # MainAgentが指定するカスタムコマンド
     environment_vars: Dict[str, str] = {}  # 追加環境変数
     config: Dict[str, Any] = {}
-
-
 class AgentStartResponse(BaseModel):
     """Agent startup response model"""
 
@@ -45,8 +41,6 @@ class AgentStartResponse(BaseModel):
     working_directory: str
     startup_command: Optional[str] = None
     error: Optional[str] = None
-
-
 async def _create_agent_terminal_via_rest(
     session_id: str,
     agent_id: str,
@@ -148,8 +142,6 @@ async def _create_agent_terminal_via_rest(
     except Exception as e:
         log.error(f"REST API terminal creation failed: {e}")
         return False
-
-
 def _rest_api_broadcast(session_id: str, message: str):
     """
     REST API経由で作成されたターミナル用のブロードキャスト関数
@@ -180,8 +172,6 @@ def _rest_api_broadcast(session_id: str, message: str):
 
     except Exception as e:
         log.error(f"REST API broadcast error: {e}")
-
-
 @router.post("/api/v1/agents/start", response_model=AgentStartResponse)
 async def start_agent(request: AgentStartRequest):
     """
@@ -287,8 +277,6 @@ async def start_agent(request: AgentStartRequest):
                 "requester_agent_id": request.requester_agent_id,
             },
         )
-
-
 @router.get("/api/v1/agents/status")
 async def get_agents_status():
     """

@@ -12,8 +12,6 @@ from typing import Dict, Optional, Set
 from collections import defaultdict
 
 log = logging.getLogger(__name__)
-
-
 class BufferManager:
     """Manages terminal session buffers at the infrastructure level."""
 

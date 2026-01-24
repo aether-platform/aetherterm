@@ -22,8 +22,6 @@ from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
 
 logger = logging.getLogger(__name__)
-
-
 class GrafanaCloudTelemetry:
     """Grafana Cloud OpenTelemetry configuration manager."""
 
@@ -206,12 +204,8 @@ class GrafanaCloudTelemetry:
     def get_meter(self, name: str = None):
         """Get a meter instance."""
         return metrics.get_meter(name or self.service_name)
-
-
 # Global telemetry instance
 _telemetry_instance: Optional[GrafanaCloudTelemetry] = None
-
-
 def initialize_telemetry(
     service_name: str = "aetherterm-agentserver", **kwargs
 ) -> GrafanaCloudTelemetry:
@@ -222,20 +216,14 @@ def initialize_telemetry(
         _telemetry_instance = GrafanaCloudTelemetry(service_name=service_name, **kwargs)
 
     return _telemetry_instance
-
-
 def get_telemetry() -> Optional[GrafanaCloudTelemetry]:
     """Get the global telemetry instance."""
     return _telemetry_instance
-
-
 def get_tracer(name: str = "aetherterm"):
     """Get a tracer instance."""
     if _telemetry_instance:
         return _telemetry_instance.get_tracer(name)
     return trace.get_tracer(name)
-
-
 def get_meter(name: str = "aetherterm"):
     """Get a meter instance."""
     if _telemetry_instance:

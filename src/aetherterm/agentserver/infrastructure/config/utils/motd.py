@@ -6,8 +6,6 @@ import os
 from logging import getLogger
 
 log = getLogger("aetherterm.agentserver.utils.motd")
-
-
 class AnsiColors:
     colors = {
         "black": 30,
@@ -30,11 +28,7 @@ class AnsiColors:
         if key == "reset":
             return "\x1b[0m"
         return ""
-
-
 ansi_colors = AnsiColors()
-
-
 def render_motd(
     socket, user, uri, unsecure=False, i_hereby_declare_i_dont_want_any_security_whatsoever=False
 ):

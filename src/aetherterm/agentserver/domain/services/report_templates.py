@@ -13,8 +13,6 @@ from ..common.report_models import (
     TimelineReport,
     WorkSection,
 )
-
-
 class ReportTemplate:
     """レポートテンプレート"""
 

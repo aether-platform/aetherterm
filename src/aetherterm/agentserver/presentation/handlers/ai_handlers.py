@@ -13,8 +13,6 @@ from aetherterm.agentserver.infrastructure.config.di_container import get_contai
 # from dependency_injector.wiring import inject, Provide
 
 log = logging.getLogger("aetherterm.handlers.ai")
-
-
 async def ai_chat_message(sid, data):
     """Handle AI chat message requests."""
     print(f"DEBUG: ai_chat_message called from sid: {sid}, data: {data}")
@@ -106,8 +104,6 @@ async def ai_chat_message(sid, data):
             },
             room=sid,
         )
-
-
 async def ai_log_search(sid, data):
     """Search logs using AI-enhanced matching."""
     from aetherterm.agentserver.presentation.websocket.socket_handlers import sio_instance
@@ -148,8 +144,6 @@ async def ai_log_search(sid, data):
     except Exception as e:
         log.error(f"Failed to search logs: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def ai_search_suggestions(sid, data):
     """Get search term suggestions for log search."""
     from aetherterm.agentserver.presentation.websocket.socket_handlers import sio_instance
@@ -175,8 +169,6 @@ async def ai_search_suggestions(sid, data):
     except Exception as e:
         log.error(f"Failed to get search suggestions: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def ai_get_info(sid, data):
     """Get AI service information and status."""
     print(f"DEBUG: ai_get_info called from sid: {sid}")
@@ -211,8 +203,6 @@ async def ai_get_info(sid, data):
     except Exception as e:
         log.error(f"Failed to get AI info: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def ai_reset_retry(sid, data):
     """Reset AI service retry state."""
     log.info(f"ai_reset_retry called from sid: {sid}")
@@ -247,7 +237,5 @@ async def ai_reset_retry(sid, data):
     except Exception as e:
         log.error(f"Failed to reset AI retry state: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 # All other AI functions removed - focusing only on chat and log search
 # Use local insights API for analytics and suggestions

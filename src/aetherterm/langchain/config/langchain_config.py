@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class LangChainConfig:
     """LangChain統合設定"""

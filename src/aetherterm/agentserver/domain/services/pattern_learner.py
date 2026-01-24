@@ -15,8 +15,6 @@ from aetherterm.langchain.storage.vector_adapter import VectorStorageAdapter
 from .models import OperationPattern, OperationType
 
 logger = logging.getLogger(__name__)
-
-
 class OperationPatternLearner:
     """オペレーションパターン学習エンジン"""
 

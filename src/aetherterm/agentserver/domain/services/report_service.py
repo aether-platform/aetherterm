@@ -10,8 +10,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("aetherterm.application.report")
-
-
 @dataclass
 class ReportMetadata:
     """Report metadata structure."""
@@ -24,8 +22,6 @@ class ReportMetadata:
     period_start: Optional[str] = None
     period_end: Optional[str] = None
     parameters: Optional[Dict[str, Any]] = None
-
-
 @dataclass
 class TimelineEvent:
     """Timeline event structure."""
@@ -37,8 +33,6 @@ class TimelineEvent:
     details: Optional[Dict[str, Any]] = None
     session_id: Optional[str] = None
     user_id: Optional[str] = None
-
-
 @dataclass
 class AnalyticsMetric:
     """Analytics metric structure."""
@@ -48,8 +42,6 @@ class AnalyticsMetric:
     metric_type: str  # "counter", "gauge", "histogram"
     timestamp: str
     labels: Optional[Dict[str, str]] = None
-
-
 class ReportService:
     """Manages report generation and analytics."""
 

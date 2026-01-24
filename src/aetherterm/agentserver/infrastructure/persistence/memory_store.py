@@ -8,8 +8,6 @@ import logging
 from typing import Any, Dict, Optional
 
 log = logging.getLogger("aetherterm.infrastructure.memory")
-
-
 class MemoryStore:
     """Short-term memory storage for agent sessions."""
 

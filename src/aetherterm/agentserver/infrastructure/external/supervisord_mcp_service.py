@@ -16,8 +16,6 @@ from typing import Any, Dict, List, Optional, Union
 import psutil
 
 log = logging.getLogger(__name__)
-
-
 class SupervisordMCPService:
     """
     Service for integrating Supervisord process management via MCP protocol.
@@ -318,26 +316,18 @@ class SupervisordMCPService:
             "config_path": self.config_path,
             "mcp_server_path": self.mcp_server_path,
         }
-
-
 # Singleton instance for use across the application
 _supervisord_mcp_service: Optional[SupervisordMCPService] = None
-
-
 def get_supervisord_mcp_service() -> SupervisordMCPService:
     """Get the singleton supervisord MCP service instance."""
     global _supervisord_mcp_service
     if _supervisord_mcp_service is None:
         _supervisord_mcp_service = SupervisordMCPService()
     return _supervisord_mcp_service
-
-
 async def initialize_supervisord_mcp() -> bool:
     """Initialize the supervisord MCP service."""
     service = get_supervisord_mcp_service()
     return await service.start_mcp_server()
-
-
 async def shutdown_supervisord_mcp() -> bool:
     """Shutdown the supervisord MCP service."""
     service = get_supervisord_mcp_service()

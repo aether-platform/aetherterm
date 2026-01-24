@@ -57,8 +57,6 @@ DEFAULT_CONFIG = {
     "conf": "",  # Will be set dynamically
     "ssl_dir": "",  # Will be set dynamically
 }
-
-
 def setup_config_paths(config_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
     Setup configuration paths and update the config dictionary.
@@ -116,8 +114,6 @@ def setup_config_paths(config_dict: Dict[str, Any]) -> Dict[str, Any]:
             print(f"Could not install default aetherterm.conf: {e}")
 
     return config_dict
-
-
 def parse_environment_config() -> Dict[str, Any]:
     """
     Parse configuration from environment variables.
@@ -159,8 +155,6 @@ def parse_environment_config() -> Dict[str, Any]:
     config["ai_model"] = os.getenv("AETHERTERM_AI_MODEL", "claude-3-5-sonnet-20241022")
 
     return config
-
-
 def _parse_bool_env(env_var: str, default: bool = False) -> bool:
     """
     Parse a boolean value from an environment variable.
@@ -174,8 +168,6 @@ def _parse_bool_env(env_var: str, default: bool = False) -> bool:
     """
     value = os.getenv(env_var, "").lower()
     return value in ("true", "1", "yes", "on")
-
-
 def validate_config(config: Dict[str, Any]) -> Dict[str, str]:
     """
     Validate configuration values and return any validation errors.
@@ -224,8 +216,6 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, str]:
         )
 
     return errors
-
-
 def create_server_config(**kwargs) -> Dict[str, Any]:
     """
     Create a complete server configuration by merging defaults, environment variables,
@@ -267,8 +257,6 @@ def create_server_config(**kwargs) -> Dict[str, Any]:
         raise ValueError(error_msg)
 
     return config
-
-
 def get_ssl_paths(config: Dict[str, Any]) -> Dict[str, str]:
     """
     Generate SSL certificate file paths based on configuration.
@@ -289,8 +277,6 @@ def get_ssl_paths(config: Dict[str, Any]) -> Dict[str, str]:
         "server_key": os.path.join(ssl_dir, f"aetherterm_{host}.key"),
         "pkcs12": os.path.join(ssl_dir, f"{host}.p12"),
     }
-
-
 def is_ssl_configured(config: Dict[str, Any]) -> bool:
     """
     Check if SSL certificates are properly configured for the server.

@@ -48,8 +48,6 @@ logger = logging.getLogger(__name__)
 
 # SQLAlchemy Base
 Base = declarative_base()
-
-
 class GUID(TypeDecorator):
     """プラットフォーム独立のGUID型"""
 
@@ -74,8 +72,6 @@ class GUID(TypeDecorator):
         if value is None:
             return value
         return str(value)
-
-
 class ConversationModel(Base):
     """会話テーブルモデル"""
 
@@ -104,8 +100,6 @@ class ConversationModel(Base):
         Index("idx_conversations_type_role", "conversation_type", "role"),
         Index("idx_conversations_thread_id", "thread_id"),
     )
-
-
 class SessionModel(Base):
     """セッションテーブルモデル"""
 
@@ -139,8 +133,6 @@ class SessionModel(Base):
         Index("idx_sessions_last_activity", "last_activity"),
         Index("idx_sessions_start_time", "start_time"),
     )
-
-
 class SummaryModel(Base):
     """要約テーブルモデル"""
 
@@ -171,8 +163,6 @@ class SummaryModel(Base):
         Index("idx_summaries_session_type", "session_id", "summary_type"),
         Index("idx_summaries_created_at", "created_at"),
     )
-
-
 class SQLStorageAdapter(
     BaseStorageAdapter, MemoryStorageAdapter, SessionStorageAdapter, SummaryStorageAdapter
 ):

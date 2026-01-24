@@ -13,8 +13,6 @@ from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import As
 # ValidationService removed - using direct validation instead
 
 log = logging.getLogger("aetherterm.services.terminal_manager")
-
-
 class TerminalManager:
     """
     Focused terminal lifecycle management service.

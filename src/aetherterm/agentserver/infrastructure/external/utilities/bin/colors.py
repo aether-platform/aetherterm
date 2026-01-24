@@ -12,8 +12,6 @@ parser.add_argument(
 args = parser.parse_args()
 
 print()
-
-
 if args.colors in ["8", "16"]:
     print("Background\n")
     for l in range(3):

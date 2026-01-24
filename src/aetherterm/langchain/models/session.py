@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-
-
 class SessionStatus(Enum):
     """セッションステータス"""
 
@@ -16,8 +14,6 @@ class SessionStatus(Enum):
     INACTIVE = "inactive"
     EXPIRED = "expired"
     TERMINATED = "terminated"
-
-
 class SessionType(Enum):
     """セッションタイプ"""
 
@@ -25,8 +21,6 @@ class SessionType(Enum):
     CHAT = "chat"
     API = "api"
     SYSTEM = "system"
-
-
 @dataclass
 class SessionContext:
     """セッションコンテキスト"""
@@ -251,8 +245,6 @@ class SessionContext:
             f"duration={self.get_duration_minutes():.1f}min"
             f")"
         )
-
-
 @dataclass
 class SessionSummary:
     """セッションサマリー"""

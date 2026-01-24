@@ -15,8 +15,6 @@ from fastapi.responses import JSONResponse
 # Initialize router
 router = APIRouter()
 log = logging.getLogger("aetherterm.routes.session")
-
-
 @router.get("/sessions/list.json")
 async def sessions_list(request: Request) -> JSONResponse:
     """Get the list of active sessions."""

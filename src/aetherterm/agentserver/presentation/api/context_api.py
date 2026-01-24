@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 # API Router
 router = APIRouter(prefix="/api/context", tags=["Operation Context"])
-
-
 # Pydantic Models for API
 class OperationContextResponse(BaseModel):
     """オペレーションコンテキストレスポンス"""
@@ -34,8 +32,6 @@ class OperationContextResponse(BaseModel):
     next_likely_commands: List[str] = Field(default_factory=list)
     risk_factors: List[str] = Field(default_factory=list)
     suggested_actions: List[str] = Field(default_factory=list)
-
-
 class InferenceResultResponse(BaseModel):
     """推定結果レスポンス"""
 
@@ -46,15 +42,11 @@ class InferenceResultResponse(BaseModel):
     reasoning: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
-
-
 class PatternLearningRequest(BaseModel):
     """パターン学習リクエスト"""
 
     days: int = Field(30, ge=1, le=365, description="Learning period in days")
     retrain: bool = Field(False, description="Whether to retrain existing patterns")
-
-
 class PatternLearningResponse(BaseModel):
     """パターン学習レスポンス"""
 
@@ -62,11 +54,7 @@ class PatternLearningResponse(BaseModel):
     patterns_learned: int
     learning_duration: float
     message: str
-
-
 # API Endpoints
-
-
 @router.get("/infer/{terminal_id}", response_model=InferenceResultResponse)
 async def infer_operation_context(
     terminal_id: str = Path(description="Terminal ID to analyze"),
@@ -80,8 +68,6 @@ async def infer_operation_context(
         status_code=501,
         detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
     )
-
-
 @router.get("/status/{terminal_id}", response_model=OperationContextResponse)
 async def get_operation_status(
     terminal_id: str = Path(description="Terminal ID to check"),
@@ -93,8 +79,6 @@ async def get_operation_status(
         status_code=501,
         detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
     )
-
-
 @router.get("/predict/{terminal_id}/next-commands")
 async def predict_next_commands(
     terminal_id: str = Path(description="Terminal ID to predict for"),
@@ -107,8 +91,6 @@ async def predict_next_commands(
         status_code=501,
         detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
     )
-
-
 @router.get("/active-operations")
 async def get_active_operations() -> Dict[str, List[OperationContextResponse]]:
     """
@@ -118,8 +100,6 @@ async def get_active_operations() -> Dict[str, List[OperationContextResponse]]:
         status_code=501,
         detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
     )
-
-
 @router.post("/learn-patterns", response_model=PatternLearningResponse)
 async def learn_operation_patterns(request: PatternLearningRequest) -> PatternLearningResponse:
     """
@@ -129,8 +109,6 @@ async def learn_operation_patterns(request: PatternLearningRequest) -> PatternLe
         status_code=501,
         detail="Context inference is not implemented. Use /api/v1/insights/ endpoints instead.",
     )
-
-
 @router.get("/patterns/summary")
 async def get_patterns_summary() -> Dict[str, Any]:
     """
@@ -151,8 +129,6 @@ async def get_patterns_summary() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Failed to get patterns summary: {e}")
         raise HTTPException(status_code=500, detail=f"Patterns summary failed: {e!s}")
-
-
 @router.get("/analytics/{terminal_id}")
 async def get_operation_analytics(
     terminal_id: str = Path(description="Terminal ID to analyze"),
@@ -181,8 +157,6 @@ async def get_operation_analytics(
     except Exception as e:
         logger.error(f"Failed to get analytics for terminal {terminal_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Analytics retrieval failed: {e!s}")
-
-
 @router.post("/feedback/{terminal_id}")
 async def submit_context_feedback(
     feedback: Dict[str, Any], terminal_id: str = Path(description="Terminal ID")
@@ -203,11 +177,7 @@ async def submit_context_feedback(
     except Exception as e:
         logger.error(f"Failed to submit feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Feedback submission failed: {e!s}")
-
-
 # Helper Functions
-
-
 def _context_to_response(context: OperationContext) -> OperationContextResponse:
     """OperationContextをレスポンスモデルに変換"""
     return OperationContextResponse(
@@ -223,10 +193,6 @@ def _context_to_response(context: OperationContext) -> OperationContextResponse:
         risk_factors=context.risk_factors,
         suggested_actions=context.suggested_actions,
     )
-
-
-
-
 # Health Check
 @router.get("/health")
 async def health_check() -> Dict[str, str]:

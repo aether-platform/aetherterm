@@ -10,8 +10,6 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 log = logging.getLogger("aetherterm.services.session_manager")
-
-
 class SessionManager:
     """
     Focused session management service.

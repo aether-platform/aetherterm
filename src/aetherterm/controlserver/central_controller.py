@@ -18,8 +18,6 @@ from websockets.server import WebSocketServerProtocol
 from .log_summary_manager import LogSummaryManager
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class BlockCommand:
     """ブロックコマンド"""
@@ -31,8 +29,6 @@ class BlockCommand:
     affected_sessions: List[str]
     timestamp: str
     expires_at: Optional[str] = None
-
-
 @dataclass
 class SessionInfo:
     """セッション情報"""
@@ -44,8 +40,6 @@ class SessionInfo:
     last_activity: str
     is_blocked: bool = False
     block_reason: Optional[str] = None
-
-
 class CentralController:
     """中央制御システム"""
 

@@ -14,8 +14,6 @@ from ..models.memory import MemoryEntry, MemoryType
 from .hierarchical_memory import HierarchicalMemoryManager
 
 logger = logging.getLogger(__name__)
-
-
 class ConversationMemoryManager:
     """
     会話メモリ管理クラス。

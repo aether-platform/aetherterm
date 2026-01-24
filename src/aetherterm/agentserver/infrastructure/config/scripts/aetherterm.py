@@ -10,8 +10,6 @@ from aetherterm.agentserver import start_server
 # Configure logging for the launcher script
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("butterfly.launcher")
-
-
 @click.command()
 @click.option("--debug", is_flag=True, help="Debug mode")
 @click.option("--more", is_flag=True, help="Debug mode with more verbosity")
@@ -93,7 +91,5 @@ def main(**kwargs):
 
     # Run the async server
     asyncio.run(start_server(**kwargs))
-
-
 if __name__ == "__main__":
     main()

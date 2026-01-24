@@ -10,8 +10,6 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 log = logging.getLogger("aetherterm.application.agent")
-
-
 class AgentService:
     """Manages agent communication and coordination."""
 

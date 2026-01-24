@@ -14,14 +14,10 @@ if get_lsof_socket_line is None:
 
     def get_lsof_socket_line(*args, **kwargs):
         return None
-
-
 if get_procfs_socket_line is None:
 
     def get_procfs_socket_line(*args, **kwargs):
         return None
-
-
 if get_socket_env is None:
 
     def get_socket_env(*args, **kwargs):

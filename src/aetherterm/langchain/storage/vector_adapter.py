@@ -21,8 +21,6 @@ from ..models.conversation import ConversationEntry, ConversationType, MessageRo
 from .base_storage import BaseStorageAdapter, VectorStorageAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class VectorStoreAdapter(BaseStorageAdapter, VectorStorageAdapter):
     """ベクトルストレージアダプター"""
 

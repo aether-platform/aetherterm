@@ -16,8 +16,6 @@ log = logging.getLogger("aetherterm.api.logs.websocket")
 
 # Initialize router
 router = APIRouter()
-
-
 @router.websocket("/stream")
 async def websocket_log_stream(websocket: WebSocket):
     """WebSocket endpoint for real-time log streaming."""
@@ -71,8 +69,6 @@ async def websocket_log_stream(websocket: WebSocket):
     finally:
         # Clean up: remove client from subscribers
         AsyncioTerminal.log_subscribers.discard(client_id)
-
-
 async def broadcast_log_to_websockets(log_entry: Dict):
     """Broadcast log entry to all connected WebSocket clients."""
     if not AsyncioTerminal.log_subscribers:

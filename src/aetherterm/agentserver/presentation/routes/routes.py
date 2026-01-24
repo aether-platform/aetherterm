@@ -45,19 +45,13 @@ router.include_router(theme_router, tags=["Theme"])
 router.include_router(session_router, tags=["Session"])
 router.include_router(agent_router, tags=["Agent"])
 router.include_router(spec_router, tags=["Specification"])
-
-
 # AI Service Test Endpoints
 class ChatMessage(BaseModel):
     role: str
     content: str
-
-
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     stream: bool = False
-
-
 @router.post("/api/ai/test-chat")
 async def test_ai_chat(request: ChatRequest):
     """Test AI chat completion with LMStudio."""
@@ -94,8 +88,6 @@ async def test_ai_chat(request: ChatRequest):
     except Exception as e:
         log.error(f"AI test error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/api/ai/status")
 async def ai_service_status():
     """Get AI service status."""
@@ -118,8 +110,6 @@ async def ai_service_status():
     except Exception as e:
         log.error(f"AI status error: {e}")
         return {"error": str(e), "status": "error"}
-
-
 @router.get("/api/ai/costs")
 async def ai_cost_stats(days: int = 30):
     """Get AI usage cost statistics."""
@@ -161,8 +151,6 @@ async def ai_cost_stats(days: int = 30):
             "input_tokens": 0,
             "output_tokens": 0,
         }
-
-
 @router.get("/api/ai/costs/daily")
 async def ai_daily_costs(days: int = 7):
     """Get AI daily cost breakdown."""
@@ -178,8 +166,6 @@ async def ai_daily_costs(days: int = 7):
     except Exception as e:
         log.error(f"AI daily costs error: {e}")
         return {"error": str(e), "daily_breakdown": []}
-
-
 @router.get("/api/ai/costs/models")
 async def ai_model_costs(days: int = 30):
     """Get AI cost breakdown by model."""
@@ -195,8 +181,6 @@ async def ai_model_costs(days: int = 30):
     except Exception as e:
         log.error(f"AI model costs error: {e}")
         return {"error": str(e), "model_breakdown": []}
-
-
 @router.get("/api/ai/costs/blocks")
 async def ai_session_blocks(hours: int = 24):
     """Get AI cost breakdown by 5-hour billing blocks."""
@@ -212,8 +196,6 @@ async def ai_session_blocks(hours: int = 24):
     except Exception as e:
         log.error(f"AI session blocks error: {e}")
         return {"error": str(e), "billing_blocks": []}
-
-
 @router.get("/api/ai/costs/burn-rate")
 async def ai_burn_rate():
     """Get current AI usage burn rate and projections."""
@@ -234,8 +216,6 @@ async def ai_burn_rate():
     except Exception as e:
         log.error(f"AI burn rate error: {e}")
         return {"error": str(e), "available": False}
-
-
 @router.get("/api/ai/costs/hourly")
 async def ai_hourly_costs(hours: int = 24):
     """Get AI hourly cost breakdown."""
@@ -251,8 +231,6 @@ async def ai_hourly_costs(hours: int = 24):
     except Exception as e:
         log.error(f"AI hourly costs error: {e}")
         return {"error": str(e), "hourly_breakdown": []}
-
-
 @router.get("/api/ai/costs/monthly")
 async def ai_monthly_costs(months: int = 12):
     """Get AI monthly cost breakdown."""
@@ -268,8 +246,6 @@ async def ai_monthly_costs(months: int = 12):
     except Exception as e:
         log.error(f"AI monthly costs error: {e}")
         return {"error": str(e), "monthly_breakdown": []}
-
-
 @router.get("/api/ai/costs/export")
 async def ai_export_costs(days: int = 30, format: str = "json"):
     """Export AI usage data in JSON or CSV format."""
@@ -285,6 +261,4 @@ async def ai_export_costs(days: int = 30, format: str = "json"):
     except Exception as e:
         log.error(f"AI export error: {e}")
         return {"error": str(e)}
-
-
 # Workspace token stats endpoint removed - not needed for global workspace design

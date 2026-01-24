@@ -7,8 +7,6 @@ Handles configuration for Grafana Cloud APM integration.
 import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-
-
 @dataclass
 class GrafanaCloudConfig:
     """Configuration for Grafana Cloud integration."""
@@ -117,13 +115,9 @@ class GrafanaCloudConfig:
             )
 
         return config
-
-
 def load_grafana_config() -> GrafanaCloudConfig:
     """Load Grafana Cloud configuration from environment."""
     return GrafanaCloudConfig()
-
-
 def setup_environment_variables():
     """Setup example environment variables for Grafana Cloud."""
     example_env = """
@@ -161,7 +155,5 @@ export OTEL_TRACE_SAMPLE_RATE="1.0"
         f.write(example_env)
 
     print(f"Example configuration written to: {env_file}")
-
-
 if __name__ == "__main__":
     setup_environment_variables()

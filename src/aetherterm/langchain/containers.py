@@ -18,8 +18,6 @@ from .storage.sql_adapter import SQLStorageAdapter
 from .storage.vector_adapter import VectorStoreAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class LangChainContainer(containers.DeclarativeContainer):
     """LangChain統合用DIコンテナ"""
 

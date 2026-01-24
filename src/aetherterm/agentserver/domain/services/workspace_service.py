@@ -12,8 +12,6 @@ import json
 from ..entities.workspace import Workspace, WorkspaceTab, WorkspacePane
 
 log = logging.getLogger(__name__)
-
-
 class WorkspaceService:
     """Service for managing workspaces in memory"""
 

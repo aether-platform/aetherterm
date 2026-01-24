@@ -8,8 +8,6 @@ import sys
 from logging import getLogger
 
 log = getLogger("aetherterm.agentserver.utils.user_management")
-
-
 class User:
     def __init__(self, uid=None, name=None):
         if uid is None and not name:
@@ -52,15 +50,11 @@ class User:
 
     def __repr__(self):
         return "%s [%r]" % (self.name, self.uid)
-
-
 def add_user_info(id, fd, pid, user, host):
     """Add user information to system logs."""
     if sys.platform != "linux":
         return
     # utmp/wtmp functionality is currently disabled
-
-
 def rm_user_info(id, pid):
     """Remove user information from system logs."""
     if sys.platform != "linux":

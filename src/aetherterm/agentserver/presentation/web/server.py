@@ -51,17 +51,11 @@ from aetherterm.agentserver.presentation.websocket import socket_handlers
 #         if options["more"]:
 #             level = logging.DEBUG
 #     logging.getLogger(logger_name).setLevel(level)
-
-
 log = logging.getLogger("aetherterm")
-
-
 def create_app(**kwargs):
     """Create the Butterfly ASGI application with dependency injection."""
     factory = LegacyApplicationFactory()
     return factory.create_app(**kwargs)
-
-
 async def start_server(**kwargs):
     """Start the Butterfly server with dependency injection."""
     container, config = create_app(**kwargs)
@@ -409,11 +403,7 @@ async def start_server(**kwargs):
         log.warning("Butterfly is ready, open your browser to: %s", url)
 
     await server.serve()
-
-
 # Factory functions for ASGI servers (uvicorn/hypercorn compatibility)
-
-
 def create_app(**kwargs):
     """Create the AetherTerm AgentServer ASGI application with dependency injection."""
     import os
@@ -496,8 +486,6 @@ def create_app(**kwargs):
     )
 
     return asgi_app, sio, di_container, config
-
-
 def setup_app(**kwargs):
     """Setup the application and prepare it for running."""
     # Create and return the ASGI app
@@ -637,8 +625,6 @@ def setup_app(**kwargs):
     log.info("AetherTerm AgentServer application setup complete")
 
     return asgi_app
-
-
 def create_asgi_app():
     """
     Factory function for creating the ASGI application.
@@ -650,12 +636,8 @@ def create_asgi_app():
 
     # Setup and return the app
     return setup_app(**config)
-
-
 # Module-level app instance for simple usage
 app = None
-
-
 if __name__ == "__main__":
     # This block is now handled by scripts/aetherterm
     pass

@@ -43,8 +43,6 @@ from aetherterm.agentserver.infrastructure.common.memoization import (
 from .base_terminal import BaseTerminal
 
 log = getLogger("aetherterm.terminal")
-
-
 class AsyncioTerminal(BaseTerminal):
     sessions = {}
     closed_sessions = set()  # Track closed session IDs

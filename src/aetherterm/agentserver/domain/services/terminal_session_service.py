@@ -15,8 +15,6 @@ from aetherterm.agentserver.infrastructure.terminal.pty_manager import PTYManage
 from aetherterm.agentserver.infrastructure.terminal.buffer_manager import BufferManager
 
 log = logging.getLogger(__name__)
-
-
 class TerminalSession:
     """Domain entity representing a terminal session."""
 
@@ -37,8 +35,6 @@ class TerminalSession:
         # Callbacks
         self.output_callback: Optional[Callable] = None
         self.close_callback: Optional[Callable] = None
-
-
 class TerminalSessionService:
     """
     Domain service for managing terminal sessions.

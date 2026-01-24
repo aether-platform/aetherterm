@@ -19,8 +19,6 @@ from aetherterm.agentserver.domain.usecases.context_inference import (
 )
 
 log = logging.getLogger("aetherterm.services.context")
-
-
 class ContextService:
     """
     Application service for context inference and pattern learning.

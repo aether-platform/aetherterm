@@ -22,8 +22,6 @@ import sys
 from logging import getLogger
 
 log = getLogger("aetherterm.agentserver")
-
-
 def get_hex_ip_port(remote):
     ip, port = remote
     if ip.startswith("::ffff:"):
@@ -53,8 +51,6 @@ def get_hex_ip_port(remote):
         )
 
     return "".join(ipv6_parts) + ":%04X" % port
-
-
 def parse_cert(cert):
     user = None
 
@@ -64,8 +60,6 @@ def parse_cert(cert):
             break
 
     return user
-
-
 class User:
     def __init__(self, uid=None, name=None):
         if uid is None and not name:
@@ -108,8 +102,6 @@ class User:
 
     def __repr__(self):
         return "%s [%r]" % (self.name, self.uid)
-
-
 class ConnectionInfo:
     """Connection information for Socket.IO and other non-socket connections."""
 
@@ -170,8 +162,6 @@ class ConnectionInfo:
             proxy_info,
             self.user,
         )
-
-
 class Socket:
     def __init__(self, socket):
         sn = socket.getsockname()
@@ -222,8 +212,6 @@ class Socket:
             self.remote_port,
             self.user,
         )
-
-
 # Portable way to get the user, if lsof is installed
 def get_lsof_socket_line(addr, port):
     # May want to make this into a dictionary in the future...
@@ -241,8 +229,6 @@ def get_lsof_socket_line(addr, port):
             if int(match[5]) == port:
                 return match
     raise Exception("Couldn't find a match!")
-
-
 # Linux only socket line get
 def get_procfs_socket_line(hex_ip_port):
     fn = None
@@ -262,8 +248,6 @@ def get_procfs_socket_line(hex_ip_port):
                 return line.split()
     except Exception:
         log.debug("getting socket %s line fail" % fn, exc_info=True)
-
-
 # Linux only browser environment far fetch
 def get_socket_env(inode, user):
     for pid in os.listdir("/proc/"):
@@ -322,141 +306,12 @@ def get_socket_env(inode, user):
                                         key, val = keyval.split("=", 1)
                                         env[key] = val
                                 return env
-
-
-# utmp_struct = struct.Struct("hi32s4s32s256shhiii4i20s") # Removed as it's not used after removing utmp/wtmp logic
-
-# if sys.version_info[0] == 2:
-#     b = lambda x: x
-# else:
-
-#     def b(x):
-#         if isinstance(x, str):
-#             return x.encode("utf-8")
-#         return x
-
-# def get_utmp_file():
-#     for file in (
-#         "/var/run/utmp",
-#         "/var/adm/utmp",
-#         "/var/adm/utmpx",
-#         "/etc/utmp",
-#         "/etc/utmpx",
-#         "/var/run/utx.active",
-#     ):
-#         if os.path.exists(file):
-#             return file
-
-# def get_wtmp_file():
-#     for file in (
-#         "/var/log/wtmp",
-#         "/var/adm/wtmp",
-#         "/var/adm/wtmpx",
-#         "/var/run/utx.log",
-#     ):
-#         if os.path.exists(file):
-#             return file
-
-# UTmp = namedtuple(
-#     "UTmp",
-#     [
-#         "type",
-#         "pid",
-#         "line",
-#         "id",
-#         "user",
-#         "host",
-#         "exit0",
-#         "exit1",
-#         "session",
-#         "sec",
-#         "usec",
-#         "addr0",
-#         "addr1",
-#         "addr2",
-#         "addr3",
-#         "unused",
-#     ],
-# )
-
-# def utmp_line(id, type, pid, fd, user, host, ts):
-#     return UTmp(
-#         type,  # Type, 7 : user process
-#         pid,  # pid
-#         b(fd),  # line
-#         b(id),  # id
-#         b(user),  # user
-#         b(host),  # host
-#         0,  # exit 0
-#         0,  # exit 1
-#         0,  # session
-#         int(ts),  # sec
-#         int(10 ** 6 * (ts - int(ts))),  # usec
-#         0,  # addr 0
-#         0,  # addr 1
-#         0,  # addr 2
-#         0,  # addr 3
-#         b(""),  # unused
-#     )
-
-
 def add_user_info(id, fd, pid, user, host):
-    # Freebsd format is not yet supported.
-    # Please submit PR
-    if sys.platform != "linux":
-        return
-    # utmp = utmp_line(id, 7, pid, fd, user, host, time.time())
-    # for kind, file in {"utmp": get_utmp_file(), "wtmp": get_wtmp_file()}.items():
-    #     if not file:
-    #         continue
-    #     try:
-    #         with open(file, "rb+") as f:
-    #             s = f.read(utmp_struct.size)
-    #             while s:
-    #                 entry = UTmp(*utmp_struct.unpack(s))
-    #                 if kind == "utmp" and entry.id == utmp.id:
-    #                     # Same id recycling
-    #                     f.seek(f.tell() - utmp_struct.size)
-    #                     f.write(utmp_struct.pack(*utmp))
-    #                     break
-    #                 s = f.read(utmp_struct.size)
-    #             else:
-    #                 f.write(utmp_struct.pack(*utmp))
-    #     except Exception:
-    #         log.debug("Unable to write utmp info to " + file, exc_info=True)
-
-
+    """Legacy function - no longer needed for modern systems."""
+    pass
 def rm_user_info(id, pid):
-    if sys.platform != "linux":
-        return
-    # utmp = utmp_line(id, 8, pid, "", "", "", time.time())
-    # for kind, file in {"utmp": get_utmp_file(), "wtmp": get_wtmp_file()}.items():
-    #     if not file:
-    #         continue
-    #     try:
-    #         with open(file, "rb+") as f:
-    #             s = f.read(utmp_struct.size)
-    #             while s:
-    #                 entry = UTmp(*utmp_struct.unpack(s))
-    #                 if entry.id == utmp.id:
-    #                     if kind == "utmp":
-    #                         # Same id closing
-    #                         f.seek(f.tell() - utmp_struct.size)
-    #                         f.write(utmp_struct.pack(*utmp))
-    #                         break
-    #                     else:
-    #                         utmp = utmp_line(
-    #                             id, 8, pid, entry.line, entry.user, "", time.time()
-    #                         )
-
-    #                 s = f.read(utmp_struct.size)
-    #             else:
-    #                 f.write(utmp_struct.pack(*utmp))
-
-    #     except Exception:
-    #         log.debug("Unable to update utmp info to " + file, exc_info=True)
-
-
+    """Legacy function - no longer needed for modern systems."""
+    pass
 class AnsiColors:
     colors = {
         "black": 30,
@@ -479,11 +334,7 @@ class AnsiColors:
         if key == "reset":
             return "\x1b[0m"
         return ""
-
-
 ansi_colors = AnsiColors()
-
-
 def render_motd(
     socket, user, uri, unsecure=False, i_hereby_declare_i_dont_want_any_security_whatsoever=False
 ):

@@ -34,8 +34,6 @@ from ctypes import (
     c_void_p,
 )
 from ctypes.util import find_library
-
-
 class PamHandle(Structure):
     """wrapper class for pam_handle_t pointer"""
 
@@ -44,8 +42,6 @@ class PamHandle(Structure):
     def __init__(self):
         Structure.__init__(self)
         self.handle = 0
-
-
 class PamMessage(Structure):
     """wrapper class for pam_message structure"""
 
@@ -53,8 +49,6 @@ class PamMessage(Structure):
 
     def __repr__(self):
         return "<PamMessage %i '%s'>" % (self.msg_style, self.msg)
-
-
 class PamResponse(Structure):
     """wrapper class for pam_response structure"""
 
@@ -62,19 +56,13 @@ class PamResponse(Structure):
 
     def __repr__(self):
         return "<PamResponse %i '%s'>" % (self.resp_retcode, self.resp)
-
-
 conv_func = CFUNCTYPE(
     c_int, c_int, POINTER(POINTER(PamMessage)), POINTER(POINTER(PamResponse)), c_void_p
 )
-
-
 class PamConv(Structure):
     """wrapper class for pam_conv structure"""
 
     _fields_ = [("conv", conv_func), ("appdata_ptr", c_void_p)]
-
-
 # Various constants
 PAM_PROMPT_ECHO_OFF = 1
 PAM_PROMPT_ECHO_ON = 2
@@ -111,8 +99,6 @@ pam_authenticate.restype = c_int
 pam_authenticate.argtypes = [PamHandle, c_int]
 
 misc_conv = libpam_misc.misc_conv
-
-
 class PAM:
     code = 0
     reason = None
@@ -179,8 +165,6 @@ class PAM:
         pam_end(handle, retval)
 
         return auth_success
-
-
 def login_prompt(username, profile, env):
     pam = PAM()
 
@@ -193,8 +177,6 @@ def login_prompt(username, profile, env):
             su = "/bin/su"
         os.execvpe(su, [su, "-l", username], env)
     return success
-
-
 if __name__ == "__main__":
     if login_prompt(sys.argv[1], sys.argv[2], os.environ):
         exit(0)

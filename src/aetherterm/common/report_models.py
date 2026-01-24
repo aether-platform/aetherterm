@@ -9,8 +9,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-
-
 class ActivityType(str, Enum):
     """アクティビティタイプ"""
 
@@ -24,8 +22,6 @@ class ActivityType(str, Enum):
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
-
-
 @dataclass
 class ExecutionStep:
     """実行ステップの記録"""
@@ -41,8 +37,6 @@ class ExecutionStep:
     error: Optional[str] = None
     screenshots: List[str] = field(default_factory=list)
     logs: List[str] = field(default_factory=list)
-
-
 @dataclass
 class UserIntervention:
     """ユーザー介入記録"""
@@ -55,8 +49,6 @@ class UserIntervention:
     user_response: Optional[Any] = None
     response_time_seconds: Optional[float] = None
     timed_out: bool = False
-
-
 @dataclass
 class AgentExecution:
     """エージェント実行の記録"""
@@ -70,8 +62,6 @@ class AgentExecution:
     steps: List[ExecutionStep] = field(default_factory=list)
     interventions: List[UserIntervention] = field(default_factory=list)
     resource_usage: Dict[str, float] = field(default_factory=dict)
-
-
 @dataclass
 class ExecutionReport:
     """実行詳細レポート"""
@@ -145,8 +135,6 @@ class ExecutionReport:
             "errors": self.errors,
             "warnings": self.warnings,
         }
-
-
 @dataclass
 class WorkActivity:
     """作業アクティビティ"""
@@ -190,8 +178,6 @@ class WorkActivity:
             "tags": self.tags,
             "metadata": self.metadata,
         }
-
-
 @dataclass
 class WorkSection:
     """作業セクション（関連する作業のグループ）"""
@@ -215,8 +201,6 @@ class WorkSection:
         if self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return 0.0
-
-
 @dataclass
 class TimelineReport:
     """時系列作業レポート"""
@@ -300,8 +284,6 @@ class TimelineReport:
 
         # 総実行時間を更新
         self.total_duration_seconds = (self.period_end - self.period_start).total_seconds()
-
-
 class ReportType(str, Enum):
     """レポートタイプ"""
 

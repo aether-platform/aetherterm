@@ -15,8 +15,6 @@ import click
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("aetherterm.ssl_generator")
-
-
 def get_ssl_directory():
     """Get the default SSL directory."""
     if os.getuid() == 0:
@@ -27,28 +25,20 @@ def get_ssl_directory():
             os.path.join(os.getenv("HOME", os.path.expanduser("~")), ".config"),
         )
     return os.path.join(config_dir, "aetherterm", "ssl")
-
-
 def ensure_directory_exists(path):
     """Ensure directory exists and has proper permissions."""
     Path(path).mkdir(parents=True, exist_ok=True)
     os.chmod(path, 0o700)  # Only owner can read/write/execute
-
-
 def write_file(file_path, content, mode=0o600):
     """Write content to file with specific permissions."""
     with open(file_path, "wb") as fd:
         fd.write(content)
     os.chmod(file_path, mode)
     log.info(f"Created: {file_path}")
-
-
 def read_file(file_path):
     """Read file content."""
     with open(file_path, "rb") as fd:
         return fd.read()
-
-
 def fill_certificate_fields(subject):
     """Fill standard certificate fields."""
     subject.C = "WW"
@@ -56,8 +46,6 @@ def fill_certificate_fields(subject):
     subject.OU = "AetherTerm Terminal"
     subject.ST = "World Wide"
     subject.L = "Terminal"
-
-
 def generate_ca_certificate(ssl_dir):
     """Generate Certificate Authority certificate."""
     try:
@@ -121,8 +109,6 @@ def generate_ca_certificate(ssl_dir):
     write_file(ca_key_path, crypto.dump_privatekey(crypto.FILETYPE_PEM, ca_key), 0o600)
 
     return ca_cert, ca_key
-
-
 def generate_server_certificate(ssl_dir, host, ca_cert, ca_key):
     """Generate server certificate signed by CA."""
     try:
@@ -179,8 +165,6 @@ def generate_server_certificate(ssl_dir, host, ca_cert, ca_key):
     write_file(server_key_path, crypto.dump_privatekey(crypto.FILETYPE_PEM, server_key), 0o600)
 
     return server_cert, server_key
-
-
 def generate_client_certificate(ssl_dir, username, ca_cert, ca_key):
     """Generate client certificate for user authentication."""
     try:
@@ -229,8 +213,6 @@ def generate_client_certificate(ssl_dir, username, ca_cert, ca_key):
     write_file(p12_path, p12.export(password.encode("utf-8")), 0o600)
 
     return client_cert, client_key
-
-
 @click.command()
 @click.option("--host", default="localhost", help="Hostname for server certificate")
 @click.option("--ssl-dir", help="SSL directory (default: ~/.config/aetherterm/ssl)")
@@ -282,7 +264,5 @@ def main(host, ssl_dir, generate_client, generate_current_user):
     except Exception as e:
         log.error(f"Certificate generation failed: {e}")
         sys.exit(1)
-
-
 if __name__ == "__main__":
     main()

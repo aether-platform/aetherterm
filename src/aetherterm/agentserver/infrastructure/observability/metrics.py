@@ -7,8 +7,6 @@ Defines application-specific metrics for monitoring AetherTerm performance.
 from typing import Optional
 from opentelemetry.metrics import Counter, Histogram, Gauge
 from .telemetry import get_meter
-
-
 class AetherTermMetrics:
     """Custom metrics for AetherTerm monitoring."""
 
@@ -168,12 +166,8 @@ class AetherTermMetrics:
     def record_error(self, error_type: str = "general", severity: str = "error"):
         """Record an error occurrence."""
         self.errors_total.add(1, {"error_type": error_type, "severity": severity})
-
-
 # Global metrics instance
 _metrics_instance: Optional[AetherTermMetrics] = None
-
-
 def get_metrics() -> AetherTermMetrics:
     """Get the global metrics instance."""
     global _metrics_instance
@@ -182,8 +176,6 @@ def get_metrics() -> AetherTermMetrics:
         _metrics_instance = AetherTermMetrics()
 
     return _metrics_instance
-
-
 def initialize_metrics() -> AetherTermMetrics:
     """Initialize and return the global metrics instance."""
     return get_metrics()

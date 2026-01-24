@@ -14,8 +14,6 @@ import logging
 from typing import Tuple, Optional
 
 log = logging.getLogger(__name__)
-
-
 class PTYManager:
     """Manages PTY (pseudo-terminal) operations at the infrastructure level."""
 

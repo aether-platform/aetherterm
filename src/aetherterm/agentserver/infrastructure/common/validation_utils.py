@@ -13,8 +13,6 @@ from urllib.parse import urlparse
 from pathlib import Path
 
 log = logging.getLogger("aetherterm.infrastructure.validation_utils")
-
-
 class ValidationUtilities:
     """Centralized validation operations and utilities."""
 

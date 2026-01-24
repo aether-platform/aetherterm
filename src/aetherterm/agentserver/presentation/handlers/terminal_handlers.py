@@ -12,15 +12,10 @@ from uuid import uuid4
 # from aetherterm.agentserver.infrastructure.config.di_container import MainContainer
 
 log = logging.getLogger("aetherterm.handlers.terminal")
-
-
 async def connect(sid, environ, sio_instance):
     """Handle client connection."""
     log.info(f"Client connected: {sid}")
     await sio_instance.emit("connected", {"data": "Connected to Butterfly"}, room=sid)
-
-
-# @inject
 async def disconnect(
     sid,
     sio_instance,
@@ -32,9 +27,6 @@ async def disconnect(
     # Clean up client sessions using injected service
     # workspace_service.cleanup_client_sessions(sid)
     # Temporarily disabled cleanup
-
-
-# @inject
 async def create_terminal(
     sid,
     data,
@@ -87,9 +79,6 @@ async def create_terminal(
     except Exception as e:
         log.error(f"Failed to create terminal: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def resume_workspace(
     sid,
     data,
@@ -116,9 +105,6 @@ async def resume_workspace(
     except Exception as e:
         log.error(f"Failed to resume workspace: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def terminal_input(
     sid,
     data,
@@ -139,9 +125,6 @@ async def terminal_input(
     except Exception as e:
         log.error(f"Failed to handle terminal input: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def terminal_resize(
     sid,
     data,

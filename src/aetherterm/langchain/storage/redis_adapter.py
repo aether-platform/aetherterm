@@ -16,8 +16,6 @@ from ..models.session import SessionContext
 from .base_storage import BaseStorageAdapter, CacheStorageAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
     """Redisストレージアダプター"""
 

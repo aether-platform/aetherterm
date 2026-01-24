@@ -26,8 +26,6 @@ from aetherterm.agentserver.presentation.web.config import (
 )
 
 log = logging.getLogger("aetherterm.interfaces.web.app_factory")
-
-
 class ASGIApplicationFactory:
     """Factory for creating ASGI applications with proper configuration."""
 
@@ -133,8 +131,6 @@ class ASGIApplicationFactory:
 
         log.info("Combined ASGI application created with socketio_path: %s", socketio_path)
         return asgi_app
-
-
 class LegacyApplicationFactory:
     """Legacy application factory for backward compatibility."""
 
@@ -168,8 +164,6 @@ class LegacyApplicationFactory:
         )
 
         return container, config
-
-
 class ApplicationFactoryRegistry:
     """Registry for different application factory types."""
 
@@ -189,8 +183,6 @@ class ApplicationFactoryRegistry:
     def register_factory(cls, name: str, factory_class: type) -> None:
         """Register a new factory type."""
         cls._factories[name] = factory_class
-
-
 def create_asgi_app_from_environment() -> Any:
     """
     Factory function for creating the ASGI application from environment.

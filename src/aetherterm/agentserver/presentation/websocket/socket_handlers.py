@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
 from .terminal_creation_service import create_terminal_with_service
+from .workspace_resume_service import resume_workspace_with_service
 from aetherterm.agentserver.infrastructure.config import utils
 from aetherterm.agentserver.infrastructure.config.utils import User
 from aetherterm.agentserver.infrastructure.logging.log_analyzer import (
@@ -17,8 +18,6 @@ log = logging.getLogger("aetherterm.socket_handlers")
 # Global storage for socket.io server instance
 sio_instance = None
 log_processing_manager = None
-
-
 # Error handling decorator to reduce duplicate try-catch blocks
 def socket_error_handler(error_event: str = "error"):
     """Decorator to handle socket operation errors consistently."""
@@ -34,15 +33,11 @@ def socket_error_handler(error_event: str = "error"):
         return wrapper
 
     return decorator
-
-
 def set_sio_instance(sio):
     """Set the global socket.io server instance."""
     global sio_instance
     sio_instance = sio
     log.info("Socket.IO instance configured")
-
-
 def get_user_info_from_environ(environ):
     """Extract user information from environment/headers."""
 
@@ -61,8 +56,6 @@ def get_user_info_from_environ(environ):
             break
 
     return user_info
-
-
 def check_session_ownership(session_id, current_user_info):
     """Check if the current user is the owner of the session."""
 
@@ -88,8 +81,6 @@ def check_session_ownership(session_id, current_user_info):
         return True
 
     return False
-
-
 async def connect(
     sid,
     environ,
@@ -134,8 +125,6 @@ async def connect(
         )
     except Exception as e:
         log.error(f"Error sending MOTD: {e}")
-
-
 async def disconnect(sid, environ=None):
     """Handle client disconnection."""
     log.info(f"Client disconnected: {sid}")
@@ -162,8 +151,6 @@ async def disconnect(sid, environ=None):
                 )
                 # Add a grace period of 30 seconds for reconnection
                 await _schedule_terminal_closure(session_id, terminal, grace_period=30)
-
-
 async def _schedule_terminal_closure(session_id: str, terminal, grace_period: int = 30):
     """Schedule terminal closure after a grace period, cancelling if clients reconnect."""
     import asyncio
@@ -178,8 +165,6 @@ async def _schedule_terminal_closure(session_id: str, terminal, grace_period: in
     terminal._closure_task = asyncio.create_task(
         _delayed_terminal_closure(session_id, terminal, grace_period)
     )
-
-
 async def _delayed_terminal_closure(session_id: str, terminal, grace_period: int):
     """Execute delayed terminal closure, checking for client reconnection."""
     import asyncio
@@ -210,9 +195,6 @@ async def _delayed_terminal_closure(session_id: str, terminal, grace_period: int
         # Clear the closure task reference
         if hasattr(terminal, "_closure_task"):
             terminal._closure_task = None
-
-
-# @inject  # Temporarily disabled for testing
 async def create_terminal(
     sid,
     data,
@@ -230,427 +212,9 @@ async def create_terminal(
         config_pam_profile=config_pam_profile,
         config_uri_root_path=config_uri_root_path,
     )
-        log.debug(f"Terminal data: user={user_name}, path={path}")
-
-        # Check if session already exists and is still active
-        if session_id in AsyncioTerminal.sessions:
-            existing_terminal = AsyncioTerminal.sessions[session_id]
-            if not existing_terminal.closed:
-                log.info(f"Reusing existing terminal session {session_id}")
-
-                # Cancel any pending closure task since client is reconnecting
-                if hasattr(existing_terminal, "_closure_task") and existing_terminal._closure_task:
-                    existing_terminal._closure_task.cancel()
-                    existing_terminal._closure_task = None
-                    log.info(f"Cancelled pending closure for session {session_id}")
-
-                # Add this client to the existing terminal's client set
-                existing_terminal.client_sids.add(sid)
-                # Send terminal history to new client
-                await send_terminal_history(sid, session_id, existing_terminal)
-                # Notify client that terminal is ready
-                await sio_instance.emit(
-                    "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
-                )
-                return
-            # Session exists but is closed - check ownership and notify client
-            log.info(f"Attempted to connect to closed session {session_id}")
-            # Get environ for user info checking
-            environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
-            current_user_info = get_user_info_from_environ(environ)
-            is_owner = check_session_ownership(session_id, current_user_info)
-
-            await sio_instance.emit(
-                "terminal_closed",
-                {
-                    "session": session_id,
-                    "reason": "session_already_closed",
-                    "is_owner": is_owner,
-                },
-                room=sid,
-            )
-            return
-
-        # Check if this is a request for a specific session that was previously closed
-        if is_specific_session_request and session_id in AsyncioTerminal.closed_sessions:
-            log.info(f"Attempted to connect to previously closed session {session_id}")
-            # Get environ for user info checking
-            environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
-            current_user_info = get_user_info_from_environ(environ)
-            is_owner = check_session_ownership(session_id, current_user_info)
-
-            await sio_instance.emit(
-                "terminal_closed",
-                {"session": session_id, "reason": "session_already_closed", "is_owner": is_owner},
-                room=sid,
-            )
-            return
-
-        # Create connection info for Socket.IO
-        # Get environ from Socket.IO if available, otherwise use defaults
-        environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
-
-        # Try to get more accurate socket information from the session
-        # For Socket.IO, we need to extract the real client information
-        socket_remote_addr = None
-        if hasattr(sio_instance, "manager") and hasattr(sio_instance.manager, "get_session"):
-            try:
-                session = sio_instance.manager.get_session(sid)
-                if session and "transport" in session:
-                    transport = session["transport"]
-                    if hasattr(transport, "socket") and hasattr(transport.socket, "getpeername"):
-                        try:
-                            peer = transport.socket.getpeername()
-                            socket_remote_addr = peer[0]
-                            # Update environ with real remote port
-                            environ["REMOTE_PORT"] = str(peer[1])
-                        except:
-                            pass
-            except:
-                pass
-
-        # Get current user info for ownership checking
-        current_user_info = get_user_info_from_environ(environ)
-
-        socket = utils.ConnectionInfo(environ, socket_remote_addr)
-
-        # Determine user
-        terminal_user = None
-        if user_name:
-            try:
-                terminal_user = User(name=user_name)
-                log.debug(f"Using user: {terminal_user}")
-            except LookupError:
-                log.warning(f"Invalid user: {user_name}, falling back to default user.")
-                terminal_user = User()  # Fallback to current user
-
-        # Create terminal instance with agent configuration
-        log.debug(f"Creating AsyncioTerminal instance with launch_mode: {launch_mode}")
-
-        # P0 緊急対応: エージェント起動コマンドの準備
-        startup_command = None
-        if launch_mode == "agent" and agent_type:
-            # 特定エージェント起動コマンド
-            startup_command = _build_agent_command(agent_type, agent_config)
-
-        terminal_instance = AsyncioTerminal(
-            user=terminal_user,
-            path=path,
-            session=session_id,
-            socket=socket,
-            uri=f"http://{socket.local_addr}:{socket.local_port}{config_uri_root_path.rstrip('/') if config_uri_root_path else ''}/?session={session_id}",  # Full sharing URL with root path
-            render_string=None,  # Not used in asyncio_terminal directly for MOTD rendering
-            broadcast=lambda s, m: broadcast_to_session(s, m),
-            login=config_login,
-            pam_profile=config_pam_profile,
-        )
-
-        # Store agent configuration for tracking
-        if launch_mode == "agent":
-            terminal_instance.agent_config = {
-                "launch_mode": launch_mode,
-                "agent_type": agent_type,
-                "agent_config": agent_config,
-                "requester_agent_id": requester_agent_id,
-                "startup_command": startup_command,
-                "agent_hierarchy": "sub" if requester_agent_id else "main",
-                "parent_agent_id": requester_agent_id,
-            }
-
-        # Associate terminal with client using the new client set
-        terminal_instance.client_sids.add(sid)
-
-        # Store metadata for session restoration in global workspace
-        # Find tab and pane indices from the create_terminal call context
-        # This is set during resume_workspace when creating new terminals
-        if (
-            hasattr(AsyncioTerminal, "_temp_creation_context")
-            and AsyncioTerminal._temp_creation_context
-        ):
-            terminal_instance.tab_index = AsyncioTerminal._temp_creation_context.get("tab_index", 0)
-            terminal_instance.pane_index = AsyncioTerminal._temp_creation_context.get(
-                "pane_index", 0
-            )
-        else:
-            # Default to 0 if not in resume context
-            terminal_instance.tab_index = 0
-            terminal_instance.pane_index = 0
-        log.info(
-            f"Terminal {session_id} created in global workspace tab[{terminal_instance.tab_index}] pane[{terminal_instance.pane_index}]"
-        )
-
-        # Start the PTY
-        log.debug("Starting PTY")
-        await terminal_instance.start_pty()
-        log.info(f"PTY started successfully for session {session_id}")
-
-        # P0 緊急対応: エージェント自動起動
-        if startup_command and launch_mode == "agent":
-            try:
-                log.info(f"Auto-starting {launch_mode} with command: {startup_command}")
-                await asyncio.sleep(1)  # PTY初期化待ち
-                await terminal_instance.write(startup_command + "\n")
-
-                # MainAgentに通知（ブロードキャスト形式）
-                if requester_agent_id:
-                    await sio_instance.emit(
-                        "agent_message",
-                        {
-                            "message_type": "agent_start_response",
-                            "requester_agent_id": requester_agent_id,
-                            "session_id": session_id,
-                            "agent_type": agent_type,
-                            "agent_id": agent_config.get("agent_id"),
-                            "status": "started",
-                            "launch_mode": launch_mode,
-                            "hierarchy": "sub",
-                            "parent_agent_id": requester_agent_id,
-                            "working_directory": agent_config.get("working_directory"),
-                            "timestamp": datetime.utcnow().isoformat(),
-                        },
-                    )
-
-                # 新しく起動したエージェントに初期情報を送信
-                await asyncio.sleep(2)  # エージェントの初期化待ち
-                await sio_instance.emit(
-                    "agent_message",
-                    {
-                        "message_type": "agent_initialization",
-                        "to_agent_id": agent_config.get("agent_id"),
-                        "agent_info": {
-                            "agent_id": agent_config.get("agent_id"),
-                            "agent_type": agent_type,
-                            "role": "sub_agent",
-                            "hierarchy": "sub" if requester_agent_id else "main",
-                            "parent_agent_id": requester_agent_id,
-                            "working_directory": agent_config.get("working_directory"),
-                            "session_id": session_id,
-                            "launch_mode": launch_mode,
-                            "server_info": {
-                                "websocket_url": "ws://localhost:57575",
-                                "rest_api_base": "http://localhost:57575/api/v1",
-                            },
-                            "capabilities": _get_agent_capabilities(agent_type),
-                            "instructions": _get_agent_instructions(agent_type, requester_agent_id),
-                        },
-                        "timestamp": datetime.utcnow().isoformat(),
-                    },
-                )
-            except Exception as e:
-                log.error(f"Failed to auto-start agent: {e}")
-
-        # Initialize log capture for this terminal
-        if log_processing_manager:
-            try:
-                await log_processing_manager.initialize_terminal_capture(session_id)
-                log.debug(f"Log capture initialized for session {session_id}")
-            except Exception as e:
-                log.error(f"Failed to initialize log capture for session {session_id}: {e}")
-
-        # Notify client that terminal is ready
-        response_data = {"session": session_id, "status": "ready"}
-        if launch_mode == "agent":
-            response_data.update(
-                {"launch_mode": launch_mode, "agent_type": agent_type, "agent_config": agent_config}
-            )
-
-        await sio_instance.emit("terminal_ready", response_data, room=sid)
-        log.debug(f"Sent terminal_ready event to client {sid}")
-
-    except Exception as e:
-        log.error(f"Error creating terminal: {e}", exc_info=True)
-        await sio_instance.emit("terminal_error", {"error": str(e)}, room=sid)
-
-
 async def resume_workspace(sid, data):
     """Handle resuming an entire workspace with multiple tabs, panes and sessions."""
-    try:
-        workspace_id = data.get("workspaceId")
-        tabs = data.get("tabs", [])  # Each tab can contain multiple panes
-
-        log.info(
-            f"Resume workspace request for workspace {workspace_id} with {len(tabs)} tabs from client {sid}"
-        )
-
-        if not workspace_id:
-            log.warning("Resume workspace request without workspaceId")
-            await sio_instance.emit(
-                "workspace_error", {"error": "workspaceId required for workspace resume"}, room=sid
-            )
-            return
-
-        # Process each tab with panes in the workspace
-        resumed_tabs = []
-        created_tabs = []
-
-        for tab_data in tabs:
-            tab_id = tab_data.get("id")
-            tab_title = tab_data.get("title", "Tab")
-            tab_layout = tab_data.get("layout", "single")
-            panes = tab_data.get("panes", [])
-
-            if not tab_id:
-                log.warning(f"Tab data missing id, skipping: {tab_data}")
-                continue
-
-            log.info(f"Processing tab {tab_id} with {len(panes)} panes")
-
-            # Process each pane in the tab
-            resumed_panes = []
-            created_panes = []
-
-            for pane_data in panes:
-                pane_id = pane_data.get("id")
-                session_id = pane_data.get("sessionId")
-                pane_type = pane_data.get("type", "terminal")
-                sub_type = pane_data.get("subType", "pure")
-                pane_title = pane_data.get("title", "Terminal")
-                position = pane_data.get("position", {"x": 0, "y": 0, "width": 100, "height": 100})
-
-                if not pane_id:
-                    log.warning(f"Pane data missing id, skipping: {pane_data}")
-                    continue
-
-                log.info(f"Processing pane {pane_id} with session {session_id}")
-
-                # For global workspace, we use the session ID directly if available
-                # Simplified session restoration without workspace token dependencies
-                tab_index = tabs.index(tab_data)
-                pane_index = panes.index(pane_data)
-
-                # Look for existing session by session ID
-                session_found = False
-
-                # Check if session exists by the provided session_id
-                if session_id and session_id in AsyncioTerminal.sessions:
-                    existing_terminal = AsyncioTerminal.sessions[session_id]
-                    if not existing_terminal.closed:
-                        log.info(
-                            f"Resuming existing active terminal session {session_id} for pane {pane_id}"
-                        )
-
-                        # Add this client to the existing terminal's client set
-                        existing_terminal.client_sids.add(sid)
-
-                        # Update terminal metadata for future lookups
-                        existing_terminal.tab_index = tab_index
-                        existing_terminal.pane_index = pane_index
-
-                        # Don't send history here - let the terminal component request it
-                        # when it's ready via reconnect_session
-                        log.info(
-                            f"Terminal {session_id} exists, client should reconnect when ready"
-                        )
-
-                        resumed_panes.append(
-                            {
-                                "paneId": pane_id,
-                                "sessionId": session_id,
-                                "status": "resumed",
-                                "type": pane_type,
-                                "subType": sub_type,
-                                "title": pane_title,
-                                "position": position,
-                            }
-                        )
-                        continue
-                    log.info(
-                        f"Session {session_id} exists but is closed for pane {pane_id}, will create new"
-                    )
-                else:
-                    log.info(f"Session {session_id} not found for pane {pane_id}, will create new")
-
-                # Session doesn't exist or is closed - create new terminal
-                # Generate new session ID if none provided or if session was closed
-                new_session_id = session_id or f"terminal_{pane_id}_{uuid4().hex[:8]}"
-
-                log.info(f"Creating new terminal session {new_session_id} for pane {pane_id}")
-
-                # Store creation context in AsyncioTerminal class temporarily
-                # so create_terminal can access it
-                AsyncioTerminal._temp_creation_context = {
-                    "tab_index": tab_index,
-                    "pane_index": pane_index,
-                }
-
-                # Create new terminal session
-                await create_terminal(
-                    sid,
-                    {
-                        "session": new_session_id,
-                        "tabId": tab_id,
-                        "paneId": pane_id,
-                        "subType": sub_type,
-                        "type": pane_type,
-                        "cols": 80,
-                        "rows": 24,
-                        "user": "",
-                        "path": "",
-                    },
-                )
-
-                # Clean up temporary context
-                AsyncioTerminal._temp_creation_context = None
-
-                created_panes.append(
-                    {
-                        "paneId": pane_id,
-                        "sessionId": new_session_id,
-                        "status": "created",
-                        "type": pane_type,
-                        "subType": sub_type,
-                        "title": pane_title,
-                        "position": position,
-                    }
-                )
-
-            # Add tab result with panes
-            if resumed_panes:
-                resumed_tabs.append(
-                    {
-                        "tabId": tab_id,
-                        "title": tab_title,
-                        "layout": tab_layout,
-                        "panes": resumed_panes,
-                        "status": "resumed",
-                    }
-                )
-
-            if created_panes:
-                created_tabs.append(
-                    {
-                        "tabId": tab_id,
-                        "title": tab_title,
-                        "layout": tab_layout,
-                        "panes": created_panes,
-                        "status": "created",
-                    }
-                )
-
-        # Send workspace resume response
-        await sio_instance.emit(
-            "workspace_resumed",
-            {
-                "workspaceId": workspace_id,
-                "status": "success",
-                "resumedTabs": resumed_tabs,
-                "createdTabs": created_tabs,
-                "totalTabs": len(tabs),
-                "totalPanes": sum(len(tab.get("panes", [])) for tab in resumed_tabs + created_tabs),
-                "message": f"Workspace resumed with {len(resumed_tabs)} existing and {len(created_tabs)} new tab configurations",
-            },
-            room=sid,
-        )
-
-        log.info(
-            f"Workspace {workspace_id} resumed successfully: {len(resumed_tabs)} resumed, {len(created_tabs)} created"
-        )
-
-    except Exception as e:
-        log.error(f"Error resuming workspace: {e}", exc_info=True)
-        await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
+    await resume_workspace_with_service(sid, data, sio_instance)
 async def resume_terminal(sid, data):
     """Handle resuming an existing terminal session or create new if not found."""
     try:
@@ -720,8 +284,6 @@ async def resume_terminal(sid, data):
     except Exception as e:
         log.error(f"Error resuming terminal: {e}", exc_info=True)
         await sio_instance.emit("terminal_error", {"error": str(e)}, room=sid)
-
-
 async def get_session_info(sid, data):
     """Get information about a session for debugging."""
     try:
@@ -759,8 +321,6 @@ async def get_session_info(sid, data):
     except Exception as e:
         log.error(f"Error getting session info: {e}", exc_info=True)
         await sio_instance.emit("session_info", {"error": str(e)}, room=sid)
-
-
 @socket_error_handler("terminal_error")
 async def terminal_input(sid, data):
     """Handle input from client to terminal."""
@@ -792,8 +352,6 @@ async def terminal_input(sid, data):
         await terminal.write(input_data)
     else:
         log.warning(f"Terminal session {session_id} not found")
-
-
 @socket_error_handler("terminal_error")
 async def terminal_resize(sid, data):
     """Handle terminal resize from client."""
@@ -806,8 +364,6 @@ async def terminal_resize(sid, data):
         await terminal.resize(cols, rows)
     else:
         log.warning(f"Terminal session {session_id} not found")
-
-
 def broadcast_to_session(session_id, message):
     """Broadcast message to all clients connected to a session."""
     if sio_instance:
@@ -874,8 +430,6 @@ def broadcast_to_session(session_id, message):
                 )
     else:
         log.warning("sio_instance is None, cannot broadcast message")
-
-
 def _build_agent_command(agent_type: str, agent_config: dict) -> str:
     """
     MainAgentの指示に基づいて起動コマンドを構築
@@ -950,8 +504,6 @@ def _build_agent_command(agent_type: str, agent_config: dict) -> str:
     if agent_type == "researcher":
         return f"cd {working_dir} && {env_vars_str} claude --name {agent_id} --role researcher --mode analyze --sub-agent"
     return f"cd {working_dir} && {env_vars_str} claude --name {agent_id} --sub-agent"
-
-
 async def agent_start_request(sid, data):
     """
     エージェント起動要請を処理
@@ -1036,8 +588,6 @@ async def agent_start_request(sid, data):
                 "timestamp": datetime.utcnow().isoformat(),
             },
         )
-
-
 async def spec_upload(sid, data):
     """
     エージェント向け仕様ドキュメントのアップロード・配信
@@ -1101,8 +651,6 @@ async def spec_upload(sid, data):
     except Exception as e:
         log.error(f"Error handling spec upload: {e}")
         await sio_instance.emit("error", {"message": f"Spec upload failed: {e!s}"}, room=sid)
-
-
 async def spec_query(sid, data):
     """
     エージェントによる仕様問い合わせ
@@ -1150,8 +698,6 @@ async def spec_query(sid, data):
     except Exception as e:
         log.error(f"Error handling spec query: {e}")
         await sio_instance.emit("error", {"message": f"Spec query failed: {e!s}"}, room=sid)
-
-
 async def control_message(sid, data):
     """
     システム制御メッセージを処理
@@ -1190,8 +736,6 @@ async def control_message(sid, data):
     except Exception as e:
         log.error(f"Error handling control message: {e}")
         await sio_instance.emit("error", {"message": f"Control message failed: {e!s}"}, room=sid)
-
-
 def _get_agent_capabilities(agent_type: str) -> list:
     """
     エージェントタイプ別の能力一覧を取得
@@ -1243,8 +787,6 @@ def _get_agent_capabilities(agent_type: str) -> list:
     }
 
     return capabilities_map.get(agent_type, ["general_assistance"])
-
-
 def _get_agent_instructions(agent_type: str, parent_agent_id: str = None) -> dict:
     """
     エージェントタイプ別の初期指示を取得
@@ -1347,8 +889,6 @@ def _get_agent_instructions(agent_type: str, parent_agent_id: str = None) -> dic
         }
 
     return base_instructions
-
-
 async def agent_hello(sid, data):
     """
     エージェントからの初期接続メッセージを処理
@@ -1444,8 +984,6 @@ async def agent_hello(sid, data):
     except Exception as e:
         log.error(f"Error handling agent hello: {e}")
         await sio_instance.emit("error", {"message": f"Agent hello failed: {e!s}"}, room=sid)
-
-
 async def wrapper_session_sync(sid, data):
     """Handle session synchronization from wrapper programs."""
     try:
@@ -1500,8 +1038,6 @@ async def wrapper_session_sync(sid, data):
         await sio_instance.emit(
             "wrapper_session_sync_response", {"status": "error", "error": str(e)}, room=sid
         )
-
-
 async def get_wrapper_sessions(sid, data):
     """Handle request for wrapper session information."""
     try:
@@ -1517,8 +1053,6 @@ async def get_wrapper_sessions(sid, data):
         await sio_instance.emit(
             "wrapper_sessions_response", {"status": "error", "error": str(e)}, room=sid
         )
-
-
 async def log_monitor_subscribe(sid, data):
     """Subscribe to log monitoring updates."""
     try:
@@ -1541,8 +1075,6 @@ async def log_monitor_subscribe(sid, data):
     except Exception as e:
         log.error(f"Error subscribing to log monitor: {e}")
         await sio_instance.emit("log_monitor_error", {"error": str(e)}, room=sid)
-
-
 async def log_monitor_unsubscribe(sid, data):
     """Unsubscribe from log monitoring updates."""
     try:
@@ -1557,8 +1089,6 @@ async def log_monitor_unsubscribe(sid, data):
         )
     except Exception as e:
         log.error(f"Error unsubscribing from log monitor: {e}")
-
-
 async def log_monitor_search(sid, data):
     """Handle log search requests."""
     try:
@@ -1596,13 +1126,9 @@ async def log_monitor_search(sid, data):
     except Exception as e:
         log.error(f"Error handling log search: {e}")
         await sio_instance.emit("log_search_error", {"error": str(e)}, room=sid)
-
-
 # Event-driven log statistics broadcasting
 _log_stats_task = None
 _log_stats_interval = 5  # seconds
-
-
 async def broadcast_log_statistics():
     """Broadcast log statistics to all subscribed clients via event-driven approach."""
     global _log_stats_task
@@ -1626,14 +1152,10 @@ async def broadcast_log_statistics():
     # Schedule next broadcast
     if _log_stats_task and not _log_stats_task.cancelled():
         _log_stats_task = asyncio.create_task(_schedule_next_broadcast())
-
-
 async def _schedule_next_broadcast():
     """Schedule the next statistics broadcast."""
     await asyncio.sleep(_log_stats_interval)
     await broadcast_log_statistics()
-
-
 def start_log_monitoring_background_task():
     """Start the background task for log monitoring with Pub/Sub."""
     global _log_stats_task
@@ -1643,8 +1165,6 @@ def start_log_monitoring_background_task():
         _log_stats_task = asyncio.create_task(broadcast_log_statistics())
         # Pub/Subリスナーも開始
         asyncio.create_task(start_redis_pubsub_listener())
-
-
 def stop_log_monitoring_background_task():
     """Stop the log monitoring background task."""
     global _log_stats_task
@@ -1652,8 +1172,6 @@ def stop_log_monitoring_background_task():
     if _log_stats_task and not _log_stats_task.cancelled():
         _log_stats_task.cancel()
         _log_stats_task = None
-
-
 async def start_redis_pubsub_listener():
     """
     Redis Pub/Subリスナーを開始してリアルタイムアップデートを受信
@@ -1675,8 +1193,6 @@ async def start_redis_pubsub_listener():
 
     except Exception as e:
         log.error(f"Failed to start Redis Pub/Sub listener: {e}")
-
-
 async def handle_realtime_log_event(channel: str, message: str):
     """
     Redis Pub/SubメッセージをWebSocketクライアントにブロードキャスト
@@ -1729,8 +1245,6 @@ async def handle_realtime_log_event(channel: str, message: str):
 
     except Exception as e:
         log.error(f"Error handling realtime log event: {e}")
-
-
 async def update_and_broadcast_statistics():
     """統計情報を更新してブロードキャスト"""
     try:
@@ -1742,8 +1256,6 @@ async def update_and_broadcast_statistics():
 
     except Exception as e:
         log.error(f"Error updating statistics: {e}")
-
-
 async def send_terminal_history(sid, session_id, terminal):
     """Send terminal history to a client - centralizes history sending logic."""
     try:
@@ -1759,7 +1271,7 @@ async def send_terminal_history(sid, session_id, terminal):
             )
             # Log first 200 chars for debugging
             log.info(f"Buffer preview: {repr(buffer_content[:200])}")
-            
+
             # Clear screen first to ensure clean restoration
             clear_sequence = "\033[2J\033[H"
             await sio_instance.emit(
@@ -1774,7 +1286,7 @@ async def send_terminal_history(sid, session_id, terminal):
             )
             # Log first 200 chars for debugging
             log.info(f"History preview: {repr(terminal.history[:200])}")
-            
+
             # Clear screen first to ensure clean restoration
             clear_sequence = "\033[2J\033[H"
             await sio_instance.emit(
@@ -1786,11 +1298,7 @@ async def send_terminal_history(sid, session_id, terminal):
             log.warning(f"No buffer content or history available for session {session_id}")
     except Exception as e:
         log.error(f"Error sending terminal history: {e}", exc_info=True)
-
-
 # AI Chat and Log Search Handlers
-
-
 async def reconnect_session(sid, data):
     """Handle session reconnection request."""
     log.info(f"🔄 RECONNECT_SESSION: Called from client {sid} with data: {data}")
@@ -1855,12 +1363,16 @@ async def reconnect_session(sid, data):
             # Combine all buffer lines into one continuous output to preserve ANSI sequences
             buffer_content = "".join(line["content"] for line in buffer_data["lines"])
             if buffer_content:
-                log.info(f"Sending combined buffer content ({len(buffer_content)} chars) for session {session_id}")
-                
+                log.info(
+                    f"Sending combined buffer content ({len(buffer_content)} chars) for session {session_id}"
+                )
+
                 # Clear screen first to ensure clean restoration
                 clear_sequence = "\033[2J\033[H"
                 await sio_instance.emit(
-                    "terminal_output", {"session": session_id, "data": clear_sequence + buffer_content}, room=sid
+                    "terminal_output",
+                    {"session": session_id, "data": clear_sequence + buffer_content},
+                    room=sid,
                 )
 
             # Send ready signal
@@ -1883,13 +1395,9 @@ async def reconnect_session(sid, data):
             {"session": session_id if "session_id" in locals() else None, "error": str(e)},
             room=sid,
         )
-
-
 # ========================================
 # Workspace Management Event Handlers
 # ========================================
-
-
 async def on_workspace_connect(sid, data):
     """Handle user connection to the global workspace."""
     try:
@@ -1923,8 +1431,6 @@ async def on_workspace_connect(sid, data):
     except Exception as e:
         log.error(f"Error connecting to workspace: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def workspace_get(sid, data):
     """Get the global workspace."""
     log.info(f"🔍 workspace_get called by {sid} with data: {data}")
@@ -1949,8 +1455,6 @@ async def workspace_get(sid, data):
     except Exception as e:
         log.error(f"Error getting workspace: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def on_workspace_create(sid, data):
     """Create workspace - returns the global workspace since we can't create new workspaces."""
     try:
@@ -1980,8 +1484,6 @@ async def on_workspace_create(sid, data):
     except Exception as e:
         log.error(f"Error in workspace create handler: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def on_workspace_update(sid, data):
     """Update the global workspace."""
     try:
@@ -2020,8 +1522,6 @@ async def on_workspace_update(sid, data):
     except Exception as e:
         log.error(f"Error updating workspace: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def tab_create(sid, data):
     """Create a new tab in the global workspace."""
     log.info(f"📝 tab_create called by {sid} with data: {data}")
@@ -2095,8 +1595,6 @@ async def tab_create(sid, data):
     except Exception as e:
         log.error(f"Error creating tab: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def tab_close(sid, data):
     """Handle tab closure and cleanup associated sessions."""
     try:
@@ -2191,8 +1689,6 @@ async def tab_close(sid, data):
     except Exception as e:
         log.error(f"Error closing tab: {e}", exc_info=True)
         await sio_instance.emit("workspace_error", {"error": str(e)}, room=sid)
-
-
 async def session_cleanup(sid, data):
     """Handle explicit session cleanup request."""
     try:

@@ -15,8 +15,6 @@ from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("aetherterm.infrastructure.system_utils")
-
-
 class SystemUtilities:
     """Centralized system operations and utilities."""
 

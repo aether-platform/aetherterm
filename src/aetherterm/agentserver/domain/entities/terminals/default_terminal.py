@@ -39,15 +39,11 @@ log = getLogger("aetherterm")
 ioloop = tornado.ioloop.IOLoop.instance()
 server = utils.User()
 daemon = utils.User(name="daemon")
-
-
 # Python 2 backward compatibility
 try:
     input = raw_input
 except NameError:
     pass
-
-
 class DefaultTerminal(BaseTerminal):
     sessions = {}
 

@@ -15,8 +15,6 @@ from ..common.interfaces import ITerminalController
 from ..langchain.storage.redis_adapter import RedisStorageAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class TerminalLogCapture:
     """ターミナルログキャプチャクラス"""
 

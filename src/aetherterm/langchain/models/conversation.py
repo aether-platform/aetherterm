@@ -8,8 +8,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-
-
 class ConversationType(Enum):
     """会話タイプ"""
 
@@ -19,8 +17,6 @@ class ConversationType(Enum):
     SYSTEM_MESSAGE = "system_message"
     ERROR_MESSAGE = "error_message"
     LOG_ENTRY = "log_entry"
-
-
 class MessageRole(Enum):
     """メッセージロール（LangChain互換）"""
 
@@ -28,8 +24,6 @@ class MessageRole(Enum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     FUNCTION = "function"
-
-
 @dataclass
 class ConversationEntry:
     """会話エントリ"""

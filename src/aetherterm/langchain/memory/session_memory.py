@@ -12,8 +12,6 @@ from ..models.session import SessionContext, SessionSummary, SessionType
 from .hierarchical_memory import HierarchicalMemoryManager
 
 logger = logging.getLogger(__name__)
-
-
 class SessionMemoryManager:
     """
     セッションメモリ管理クラス。

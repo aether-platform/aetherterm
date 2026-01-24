@@ -12,12 +12,16 @@ from uuid import uuid4
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
 
 log = logging.getLogger(__name__)
-
-
 class TerminalCreationService:
     """Service for handling terminal creation with proper separation of concerns."""
 
-    def __init__(self, sio_instance, config_login: bool = False, config_pam_profile: str = "", config_uri_root_path: str = ""):
+    def __init__(
+        self,
+        sio_instance,
+        config_login: bool = False,
+        config_pam_profile: str = "",
+        config_uri_root_path: str = "",
+    ):
         self.sio_instance = sio_instance
         self.config_login = config_login
         self.config_pam_profile = config_pam_profile
@@ -63,11 +67,11 @@ class TerminalCreationService:
         try:
             if session_id in AsyncioTerminal.sessions:
                 existing_terminal = AsyncioTerminal.sessions[session_id]
-                
+
                 if not existing_terminal.closed:
                     log.info(f"Adding client {sid} to existing terminal session {session_id}")
                     existing_terminal.client_sids.add(sid)
-                    
+
                     await self.sio_instance.emit(
                         "terminal_ready",
                         {"session": session_id, "status": "connected"},
@@ -78,7 +82,7 @@ class TerminalCreationService:
                     log.info(f"Existing session {session_id} is closed, creating new one")
                     # Clean up closed session
                     del AsyncioTerminal.sessions[session_id]
-            
+
             return None
         except Exception as e:
             log.error(f"Error checking existing session {session_id}: {e}")
@@ -90,16 +94,23 @@ class TerminalCreationService:
             "launch_mode": request_data["launch_mode"],
             "agent_type": request_data["agent_type"],
             "requester_agent_id": request_data["requester_agent_id"],
-            "auto_start_agent": request_data["launch_mode"] == "agent" and request_data["agent_type"],
+            "auto_start_agent": request_data["launch_mode"] == "agent"
+            and request_data["agent_type"],
         }
-        
+
         # Add agent-specific configuration
         if agent_config["auto_start_agent"]:
-            agent_config.update({
-                "agent_command_template": self._get_agent_command_template(request_data["agent_type"]),
-                "agent_env_vars": self._get_agent_environment_variables(request_data["agent_type"]),
-            })
-        
+            agent_config.update(
+                {
+                    "agent_command_template": self._get_agent_command_template(
+                        request_data["agent_type"]
+                    ),
+                    "agent_env_vars": self._get_agent_environment_variables(
+                        request_data["agent_type"]
+                    ),
+                }
+            )
+
         return agent_config
 
     def _get_agent_command_template(self, agent_type: str) -> str:
@@ -119,27 +130,27 @@ class TerminalCreationService:
             "AETHER_AGENT_TYPE": agent_type,
             "AETHER_AGENT_MODE": "terminal",
         }
-        
+
         # Add agent-specific environment variables
         if agent_type == "developer":
-            base_env.update({
-                "AETHER_DEV_MODE": "true",
-                "AETHER_AUTO_COMPLETE": "true",
-            })
+            base_env.update(
+                {
+                    "AETHER_DEV_MODE": "true",
+                    "AETHER_AUTO_COMPLETE": "true",
+                }
+            )
         elif agent_type == "tester":
-            base_env.update({
-                "AETHER_TEST_MODE": "true",
-                "AETHER_AUTO_TEST": "true",
-            })
-        
+            base_env.update(
+                {
+                    "AETHER_TEST_MODE": "true",
+                    "AETHER_AUTO_TEST": "true",
+                }
+            )
+
         return base_env
 
     async def create_terminal_instance(
-        self, 
-        session_id: str, 
-        sid: str, 
-        request_data: Dict[str, Any], 
-        agent_config: Dict[str, Any]
+        self, session_id: str, sid: str, request_data: Dict[str, Any], agent_config: Dict[str, Any]
     ) -> Tuple[bool, Optional[AsyncioTerminal], Optional[str]]:
         """Create new terminal instance with configuration."""
         try:
@@ -168,7 +179,7 @@ class TerminalCreationService:
 
             # Store terminal session
             AsyncioTerminal.sessions[session_id] = terminal
-            
+
             log.info(f"Created terminal session {session_id} for client {sid}")
             return True, terminal, None
 
@@ -177,17 +188,21 @@ class TerminalCreationService:
             log.error(error_msg)
             return False, None, error_msg
 
-    async def handle_agent_autostart(self, terminal: AsyncioTerminal, agent_config: Dict[str, Any]) -> None:
+    async def handle_agent_autostart(
+        self, terminal: AsyncioTerminal, agent_config: Dict[str, Any]
+    ) -> None:
         """Handle automatic agent startup after terminal creation."""
         if not agent_config.get("auto_start_agent"):
             return
 
         try:
-            log.info(f"Auto-starting agent {agent_config['agent_type']} for session {terminal.session_id}")
-            
+            log.info(
+                f"Auto-starting agent {agent_config['agent_type']} for session {terminal.session_id}"
+            )
+
             # Agent will be started automatically by the startup_command in the terminal
             # Additional agent-specific initialization can be added here
-            
+
             await self.sio_instance.emit(
                 "agent_autostart",
                 {
@@ -197,7 +212,7 @@ class TerminalCreationService:
                 },
                 room=terminal.session_id,
             )
-            
+
         except Exception as e:
             log.error(f"Error in agent autostart for session {terminal.session_id}: {e}")
 
@@ -210,10 +225,10 @@ class TerminalCreationService:
                 "rows": terminal.rows,
                 "status": "ready",
             }
-            
+
             await self.sio_instance.emit("terminal_ready", response_data, room=sid)
             log.info(f"Terminal {terminal.session_id} ready notification sent to client {sid}")
-            
+
         except Exception as e:
             log.error(f"Error sending terminal ready response: {e}")
 
@@ -226,11 +241,9 @@ class TerminalCreationService:
                 room=sid,
             )
             log.error(f"Terminal creation error for client {sid}: {error_message}")
-            
+
         except Exception as e:
             log.error(f"Error handling creation error: {e}")
-
-
 async def create_terminal_with_service(
     sid: str,
     data: Dict[str, Any],
@@ -246,7 +259,7 @@ async def create_terminal_with_service(
     service = TerminalCreationService(
         sio_instance, config_login, config_pam_profile, config_uri_root_path
     )
-    
+
     try:
         # Step 1: Validate user permissions
         if not await service.validate_user_permissions(sid):

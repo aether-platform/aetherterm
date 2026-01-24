@@ -14,8 +14,6 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta
 
 log = logging.getLogger("aetherterm.infrastructure.network_utils")
-
-
 class NetworkUtilities:
     """Centralized network operations and utilities."""
 

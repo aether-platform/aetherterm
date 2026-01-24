@@ -9,8 +9,6 @@ except ImportError:
     from urllib import urlencode
 
     from urlparse import parse_qs, urlparse, urlunparse
-
-
 parser = argparse.ArgumentParser(description="Butterfly tab opener.")
 parser.add_argument(
     "location",

@@ -6,8 +6,6 @@
 
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
-
-
 class ITerminalController(ABC):
     """ターミナルコントローラのインターフェース"""
 
@@ -26,8 +24,6 @@ class ITerminalController(ABC):
     @abstractmethod
     def add_output_callback(self, callback: Callable[[str], None]) -> None:
         """出力コールバック追加"""
-
-
 class ILogProcessor(ABC):
     """ログプロセッサのインターフェース"""
 
@@ -38,8 +34,6 @@ class ILogProcessor(ABC):
     @abstractmethod
     async def search_logs(self, query: str, **kwargs) -> List[Dict[str, Any]]:
         """ログ検索"""
-
-
 class IAgentManager(ABC):
     """エージェント管理のインターフェース"""
 

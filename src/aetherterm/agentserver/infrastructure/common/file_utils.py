@@ -13,8 +13,6 @@ from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 log = logging.getLogger("aetherterm.infrastructure.file_utils")
-
-
 class FileUtilities:
     """Centralized file operations and utilities."""
 

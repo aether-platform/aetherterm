@@ -15,8 +15,6 @@ parser.add_argument("files", metavar="FILES", nargs="+", help="Force original ca
 args, remaining = parser.parse_known_args()
 if args.original:
     os.execvp("/usr/bin/cat", remaining + args.files)
-
-
 for file in args.files:
     if not os.path.exists(sys.argv[1]):
         print("%s: No such file" % file)

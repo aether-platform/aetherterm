@@ -18,8 +18,6 @@ from .structured_extractor import StructuredExtractor
 from .terminal_log_capture import TerminalLogCapture
 
 logger = logging.getLogger(__name__)
-
-
 def get_log_processing_manager() -> "LogProcessingManager":
     """
     ログ処理マネージャーのインスタンスを取得
@@ -38,8 +36,6 @@ def get_log_processing_manager() -> "LogProcessingManager":
 
         default_config = StorageConfig()
         return LogProcessingManager(default_config)
-
-
 class LogProcessingManager:
     """ログ処理統合マネージャークラス"""
 

@@ -78,8 +78,6 @@ export const useScreenBufferStore = defineStore('screenBuffer', {
       
       // Note: Persistence is handled by the backend, not localStorage
     },
-
-
     clearBuffer(sessionId: string) {
       const buffer = this.getBuffer(sessionId)
       buffer.lines = []

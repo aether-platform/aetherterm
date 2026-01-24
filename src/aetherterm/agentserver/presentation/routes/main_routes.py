@@ -27,8 +27,6 @@ templates = Jinja2Templates(
 static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
 if os.path.exists(static_dir) and os.listdir(static_dir):
     router.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main index route that serves the terminal interface."""
@@ -58,15 +56,11 @@ async def index(request: Request):
             "uri_root_path": root_path,
         },
     )
-
-
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Lightweight health check endpoint for fast response."""
     # Return minimal response for performance
     return {"status": "ok"}
-
-
 @router.get("/local.js")
 async def local_js():
     """Serve local JavaScript files."""

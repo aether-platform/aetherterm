@@ -10,8 +10,6 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 log = logging.getLogger("aetherterm.log_analyzer")
-
-
 class SeverityLevel(Enum):
     """危険度レベル"""
 
@@ -19,8 +17,6 @@ class SeverityLevel(Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
-
 @dataclass
 class DetectionResult:
     """検出結果"""
@@ -31,8 +27,6 @@ class DetectionResult:
     should_block: bool
     alert_message: str
     timestamp: float
-
-
 class LogAnalyzer:
     """リアルタイムログ解析クラス"""
 
@@ -223,12 +217,8 @@ class LogAnalyzer:
         }
 
         return stats
-
-
 # グローバルインスタンス
 _log_analyzer_instance = None
-
-
 def get_log_analyzer() -> LogAnalyzer:
     """ログ解析器のシングルトンインスタンスを取得"""
     global _log_analyzer_instance

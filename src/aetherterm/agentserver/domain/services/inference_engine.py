@@ -21,8 +21,6 @@ from .models import (
 from .pattern_learner import OperationPatternLearner
 
 logger = logging.getLogger(__name__)
-
-
 class OperationContextInferenceEngine:
     """オペレーションコンテキスト推定エンジン"""
 

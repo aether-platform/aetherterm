@@ -7,16 +7,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-
-
 class MemoryType(Enum):
     """メモリタイプ"""
 
     SHORT_TERM = "short_term"  # 短期メモリ（Redis）
     MEDIUM_TERM = "medium_term"  # 中期メモリ（SQL）
     LONG_TERM = "long_term"  # 長期メモリ（Vector Store）
-
-
 class MemoryPriority(Enum):
     """メモリ優先度"""
 
@@ -24,8 +20,6 @@ class MemoryPriority(Enum):
     NORMAL = "normal"
     HIGH = "high"
     CRITICAL = "critical"
-
-
 @dataclass
 class MemoryEntry:
     """メモリエントリ"""
@@ -158,8 +152,6 @@ class MemoryEntry:
         """最終アクセスからの経過時間を時間単位で取得"""
         time_diff = datetime.utcnow() - self.accessed_at
         return time_diff.total_seconds() / 3600
-
-
 @dataclass
 class ContextEntry:
     """コンテキストエントリ"""
@@ -212,8 +204,6 @@ class ContextEntry:
         """指定した時間以内の最近のエントリかどうか"""
         time_diff = datetime.utcnow() - self.timestamp
         return time_diff.total_seconds() <= hours * 3600
-
-
 @dataclass
 class MemorySearchResult:
     """メモリ検索結果"""
@@ -245,8 +235,6 @@ class MemorySearchResult:
     def filter_by_tag(self, tag: str) -> List[MemoryEntry]:
         """タグでフィルタリング"""
         return [entry for entry in self.entries if entry.has_tag(tag)]
-
-
 @dataclass
 class MemoryStatistics:
     """メモリ統計情報"""

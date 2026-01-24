@@ -16,8 +16,6 @@ from pathlib import Path
 from aetherterm.agentserver.domain.entities.terminals.asyncio_terminal import AsyncioTerminal
 
 log = logging.getLogger(__name__)
-
-
 class GlobalWorkspaceService:
     """Manages a single global workspace shared by all users."""
 
@@ -303,12 +301,8 @@ class GlobalWorkspaceService:
         except Exception as e:
             log.error(f"Error closing tab {tab_id}: {e}", exc_info=True)
             return False
-
-
 # Singleton instance
 _global_workspace_service = None
-
-
 def get_global_workspace_service() -> GlobalWorkspaceService:
     """Get the singleton global workspace service instance."""
     global _global_workspace_service

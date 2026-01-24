@@ -4,40 +4,30 @@ import tty
 from contextlib import contextmanager
 
 from aetherterm.agentserver.utils import ansi_colors as colors  # noqa: F401
-
-
 @contextmanager
 def html():
     sys.stdout.write("\x1bP;HTML|")
     yield
     sys.stdout.write("\x1bP")
     sys.stdout.flush()
-
-
 @contextmanager
 def image(mime="image"):
     sys.stdout.write("\x1bP;IMAGE|%s;" % mime)
     yield
     sys.stdout.write("\x1bP\n")
     sys.stdout.flush()
-
-
 @contextmanager
 def prompt():
     sys.stdout.write("\x1bP;PROMPT|")
     yield
     sys.stdout.write("\x1bP")
     sys.stdout.flush()
-
-
 @contextmanager
 def text():
     sys.stdout.write("\x1bP;TEXT|")
     yield
     sys.stdout.write("\x1bP")
     sys.stdout.flush()
-
-
 def geolocation():
     sys.stdout.write("\x1b[?99n")
     sys.stdout.flush()

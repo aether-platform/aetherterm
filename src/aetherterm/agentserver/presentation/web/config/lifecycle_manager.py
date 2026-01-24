@@ -15,8 +15,6 @@ from aetherterm.agentserver.presentation.websocket import socket_handlers
 from aetherterm.core.container import DIContainer
 
 log = logging.getLogger("aetherterm.interfaces.web.lifecycle_manager")
-
-
 class SocketIOEventRegistrar:
     """Handles registration of Socket.IO event handlers."""
 
@@ -141,8 +139,6 @@ class SocketIOEventRegistrar:
             self.sio.on(event, handler)
 
         log.debug("Workspace management handlers registered")
-
-
 class ServerLifecycleManager:
     """Manages server lifecycle including startup and shutdown operations."""
 
@@ -287,8 +283,6 @@ class ServerLifecycleManager:
             log.info("Log processing service stopped")
         except Exception as e:
             log.warning("Error stopping log processing service: %s", e)
-
-
 class ServerSetupOrchestrator:
     """Orchestrates the complete server setup process."""
 
@@ -352,8 +346,6 @@ class ServerSetupOrchestrator:
                 "shutdown", self.lifecycle_manager.execute_shutdown_sequence
             )
             log.debug("FastAPI lifecycle events configured")
-
-
 class UvicornServerManager:
     """Manages Uvicorn server configuration and startup."""
 

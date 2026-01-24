@@ -16,8 +16,6 @@ from websockets.client import WebSocketClientProtocol
 from .terminals.asyncio_terminal import AsyncioTerminal
 
 logger = logging.getLogger(__name__)
-
-
 class ControlIntegration:
     """ControlServer統合クラス"""
 

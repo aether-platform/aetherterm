@@ -16,8 +16,6 @@ from pydantic import BaseModel
 # Initialize router
 router = APIRouter()
 log = logging.getLogger("aetherterm.routes.spec")
-
-
 # Specification Document Models
 class SpecDocument(BaseModel):
     """Specification document model"""
@@ -29,16 +27,12 @@ class SpecDocument(BaseModel):
     priority: str = "medium"
     format: str = "markdown"  # markdown, json, yaml, plain
     metadata: Dict[str, Any] = {}
-
-
 class SpecQuery(BaseModel):
     """Specification query model"""
 
     query: str
     spec_types: List[str] = []  # 検索対象の仕様タイプ
     context: str = ""
-
-
 @router.post("/api/v1/specs/upload")
 async def upload_specification(request: SpecDocument):
     """
@@ -66,8 +60,6 @@ async def upload_specification(request: SpecDocument):
     except Exception as e:
         log.error(f"Error uploading specification: {e}")
         raise HTTPException(status_code=500, detail=f"Specification upload failed: {e!s}")
-
-
 @router.post("/api/v1/specs/query")
 async def query_specifications(request: SpecQuery):
     """
@@ -101,8 +93,6 @@ async def query_specifications(request: SpecQuery):
     except Exception as e:
         log.error(f"Error querying specifications: {e}")
         raise HTTPException(status_code=500, detail=f"Specification query failed: {e!s}")
-
-
 @router.get("/api/v1/specs/list")
 async def list_specifications(spec_type: Optional[str] = None):
     """

@@ -9,8 +9,6 @@ import os
 import ssl
 
 log = logging.getLogger("aetherterm.infrastructure.config")
-
-
 class SSLConfig:
     """SSL/TLS certificate management."""
 

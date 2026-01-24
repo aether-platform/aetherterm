@@ -26,8 +26,6 @@ CLAUDE_PRICING = {
     # Default fallback pricing
     "default": {"input": 3.0, "output": 15.0},
 }
-
-
 class ClaudeUsageTracker:
     """Enhanced Claude usage tracker with ccusage-inspired features using pandas."""
 

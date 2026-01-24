@@ -14,8 +14,6 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
-
-
 @dataclass
 class MemoryPattern:
     """検出されたパターン"""
@@ -29,8 +27,6 @@ class MemoryPattern:
     last_seen: str
     sessions_affected: List[str]
     suggested_action: Optional[str] = None
-
-
 @dataclass
 class QuickInsight:
     """即座の洞察"""
@@ -43,8 +39,6 @@ class QuickInsight:
     timestamp: str
     related_sessions: List[str]
     data: Dict
-
-
 class LocalShortTermAnalyzer:
     """ローカル短期記憶分析システム"""
 

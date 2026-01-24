@@ -10,8 +10,6 @@ from ..models.conversation import ConversationEntry
 from ..models.session import SessionContext, SessionSummary
 
 logger = logging.getLogger(__name__)
-
-
 class MemoryStorageAdapter(ABC):
     """メモリストレージアダプターの抽象基底クラス"""
 
@@ -83,8 +81,6 @@ class MemoryStorageAdapter(ABC):
         Returns:
             Dict[str, Any]: 統計情報
         """
-
-
 class SessionStorageAdapter(ABC):
     """セッションストレージアダプターの抽象基底クラス"""
 
@@ -138,8 +134,6 @@ class SessionStorageAdapter(ABC):
         Returns:
             int: クリーンアップされたセッション数
         """
-
-
 class SummaryStorageAdapter(ABC):
     """要約ストレージアダプターの抽象基底クラス"""
 
@@ -194,8 +188,6 @@ class SummaryStorageAdapter(ABC):
         Returns:
             int: 削除された件数
         """
-
-
 class VectorStorageAdapter(ABC):
     """ベクトルストレージアダプターの抽象基底クラス"""
 
@@ -265,8 +257,6 @@ class VectorStorageAdapter(ABC):
         Returns:
             Dict[str, Any]: 統計情報
         """
-
-
 class CacheStorageAdapter(ABC):
     """キャッシュストレージアダプターの抽象基底クラス"""
 
@@ -337,8 +327,6 @@ class CacheStorageAdapter(ABC):
         Returns:
             Dict[str, Any]: 統計情報
         """
-
-
 class BaseStorageAdapter:
     """ストレージアダプター基底実装クラス"""
 

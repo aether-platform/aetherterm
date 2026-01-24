@@ -13,8 +13,6 @@ parser = argparse.ArgumentParser(
 )
 
 parser.parse_known_args()
-
-
 with html():
     for line in fileinput.input():
         sys.stdout.write(line)

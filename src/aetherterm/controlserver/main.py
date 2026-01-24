@@ -20,8 +20,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
 class ControlServerApp:
     """ControlServerアプリケーション"""
 
@@ -55,8 +53,6 @@ class ControlServerApp:
         if self.controller:
             await self.controller.stop()
         logger.info("ControlServer stopped")
-
-
 async def main_async(host: str, port: int, debug: bool):
     """非同期メイン関数"""
     if debug:
@@ -81,8 +77,6 @@ async def main_async(host: str, port: int, debug: bool):
         logger.info("Keyboard interrupt received")
     finally:
         await app.stop()
-
-
 @click.command()
 @click.option("--host", default="localhost", help="Host to bind to")
 @click.option("--port", default=8765, help="Port to bind to")
@@ -113,7 +107,5 @@ def main(host: str, port: int, debug: bool):
     except Exception as e:
         logger.error(f"Application error: {e}")
         sys.exit(1)
-
-
 if __name__ == "__main__":
     main()

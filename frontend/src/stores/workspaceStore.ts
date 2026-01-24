@@ -4,6 +4,7 @@ import { useAetherTerminalStore } from './aetherTerminalStore'
 import { WorkspaceSessionManager } from './workspace/sessionManager'
 import { WorkspacePersistenceManager } from './workspace/persistenceManager'
 import type { WorkspaceState, TerminalTabWithPanes, TerminalPane } from './workspace/workspaceTypes'
+import { workspaceLogger } from '@/utils/logger'
 
 // Re-export types for other modules
 export type { WorkspaceState, TerminalTabWithPanes, TerminalPane }
@@ -33,7 +34,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const socketRequest = async (emitEvent: string, successEvent: string, data: Record<string, unknown>) => {
     try {
       const socket = getSocket()
-      // console.log(`📨 SOCKET_REQUEST: Emitting ${emitEvent} with data:`, data)
+      // workspaceLogger.debug(`📨 SOCKET_REQUEST: Emitting ${emitEvent} with data:`, data)
       return new Promise<WorkspaceState | TerminalTabWithPanes | null>((resolve) => {
         const cleanup = () => {
           socket.off(successEvent, handleSuccess)
@@ -41,13 +42,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
         
         const handleSuccess = (response: { success?: boolean; [key: string]: unknown }) => {
-          // console.log(`✅ SOCKET_REQUEST: Received ${successEvent}:`, response)
+          // workspaceLogger.debug(`✅ SOCKET_REQUEST: Received ${successEvent}:`, response)
           cleanup()
           resolve(response.success ? (response as any) : null)
         }
         
         const handleError = (error: any) => {
-          console.error(`❌ SOCKET_REQUEST: Error on ${emitEvent}:`, error)
+          workspaceLogger.error(`❌ SOCKET_REQUEST: Error on ${emitEvent}:`, error)
           cleanup()
           resolve(null)
         }
@@ -57,13 +58,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         socket.emit(emitEvent, data)
         
         setTimeout(() => {
-          // console.warn(`⏱️ SOCKET_REQUEST: Timeout waiting for ${successEvent}`)
+          // workspaceLogger.warn(`⏱️ SOCKET_REQUEST: Timeout waiting for ${successEvent}`)
           cleanup()
           resolve(null)
         }, 5000)
       })
     } catch (error) {
-      console.error(`❌ SOCKET_REQUEST: Exception:`, error)
+      workspaceLogger.error(`❌ SOCKET_REQUEST: Exception:`, error)
       return null
     }
   }
@@ -89,10 +90,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   const loadGlobalWorkspace = async (): Promise<WorkspaceState | null> => {
-    // console.log('📋 WORKSPACE: Requesting global workspace from server...')
+    // workspaceLogger.debug('📋 WORKSPACE: Requesting global workspace from server...')
     const result = await socketRequest('workspace_get', 'workspace_data', {}) as any
     
-    // console.log('📋 WORKSPACE: Server response:', result)
+    // workspaceLogger.debug('📋 WORKSPACE: Server response:', result)
     
     if (result?.workspace) {
       const workspace = {
@@ -104,37 +105,35 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         })),
         isActive: true
       }
-      console.log('📋 WORKSPACE: Loaded workspace:', workspace)
+      workspaceLogger.debug('📋 WORKSPACE: Loaded workspace:', workspace)
       
       // Debug: Log session IDs from server
       workspace.tabs.forEach((tab: any) => {
-        console.log(`📋 WORKSPACE: Tab ${tab.id} has ${tab.panes?.length || 0} panes`)
+        workspaceLogger.debug(`📋 WORKSPACE: Tab ${tab.id} has ${tab.panes?.length || 0} panes`)
         tab.panes?.forEach((pane: any) => {
-          console.log(`📋 WORKSPACE: Pane ${pane.id} has sessionId: ${pane.sessionId}`)
+          workspaceLogger.debug(`📋 WORKSPACE: Pane ${pane.id} has sessionId: ${pane.sessionId}`)
         })
       })
       return workspace
     }
     
-    console.log('📋 WORKSPACE: No workspace returned from server')
+    workspaceLogger.debug('📋 WORKSPACE: No workspace returned from server')
     return null
   }
 
   // Actions
   const loadGlobalWorkspaceAsDefault = async (): Promise<WorkspaceState | null> => {
-    console.log('📋 WORKSPACE: Loading global shared workspace')
+    workspaceLogger.debug('📋 WORKSPACE: Loading global shared workspace')
     
     const workspace = await loadGlobalWorkspace()
     if (workspace) {
       // Set current workspace to the loaded global workspace
       currentWorkspace.value = workspace
-      console.log('📋 WORKSPACE: Set global workspace as current:', workspace)
+      workspaceLogger.debug('📋 WORKSPACE: Set global workspace as current:', workspace)
       return workspace
     }
     return null
   }
-
-
   const resumeWorkspace = async (workspaceId?: string): Promise<boolean> => {
     try {
       isResuming.value = true
@@ -151,8 +150,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
 
       // Update current workspace
-      console.log('📋 WORKSPACE: Setting current workspace:', targetWorkspace)
-      console.log('📋 WORKSPACE: Target workspace tabs:', targetWorkspace.tabs)
+      workspaceLogger.debug('📋 WORKSPACE: Setting current workspace:', targetWorkspace)
+      workspaceLogger.debug('📋 WORKSPACE: Target workspace tabs:', targetWorkspace.tabs)
       currentWorkspace.value = targetWorkspace
       targetWorkspace.isActive = true
       
@@ -165,7 +164,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       
       targetWorkspace.tabs.forEach(tab => {
         tab.panes?.forEach(pane => {
-          console.log(`📋 WORKSPACE: Adding server pane ${pane.id} to store with sessionId: ${pane.sessionId}`)
+          workspaceLogger.debug(`📋 WORKSPACE: Adding server pane ${pane.id} to store with sessionId: ${pane.sessionId}`)
           paneStore.panes.push({
             id: pane.id, // Use server pane ID
             title: pane.title || 'Terminal',
@@ -186,9 +185,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (socket && socket.connected) {
         const result = await WorkspaceSessionManager.resumeWorkspace(targetWorkspace, socket as any)
         if (result.success) {
-          console.log('📋 WORKSPACE: Resumed workspace successfully')
-          console.log('📋 WORKSPACE: Current workspace after resume:', currentWorkspace.value)
-          console.log('📋 WORKSPACE: Current workspace tabs after resume:', currentWorkspace.value?.tabs)
+          workspaceLogger.debug('📋 WORKSPACE: Resumed workspace successfully')
+          workspaceLogger.debug('📋 WORKSPACE: Current workspace after resume:', currentWorkspace.value)
+          workspaceLogger.debug('📋 WORKSPACE: Current workspace tabs after resume:', currentWorkspace.value?.tabs)
           
           // Persist terminal sessions after successful resume
           if (currentWorkspace.value) {
@@ -205,7 +204,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       isResuming.value = false
       return true
     } catch (error) {
-      console.error('📋 WORKSPACE: Failed to resume workspace:', error)
+      workspaceLogger.error('📋 WORKSPACE: Failed to resume workspace:', error)
       resumeError.value = error instanceof Error ? error.message : 'Unknown error'
       isResuming.value = false
       return false
@@ -213,7 +212,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   const initializeGlobalWorkspace = async () => {
-    console.log('📋 WORKSPACE: Initializing global workspace...')
+    workspaceLogger.debug('📋 WORKSPACE: Initializing global workspace...')
     
     // Create a default workspace structure locally
     const defaultWorkspace: WorkspaceState = {
@@ -231,13 +230,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     
     // Set as current workspace immediately
     currentWorkspace.value = defaultWorkspace
-    console.log('📋 WORKSPACE: Set default workspace as current')
+    workspaceLogger.debug('📋 WORKSPACE: Set default workspace as current')
 
     // Try to load from server
     const serverWorkspace = await loadGlobalWorkspace()
     if (serverWorkspace) {
       currentWorkspace.value = serverWorkspace
-      console.log('📋 WORKSPACE: Updated with server workspace')
+      workspaceLogger.debug('📋 WORKSPACE: Updated with server workspace')
     }
 
     // If no tabs exist, create default terminal tab
@@ -245,7 +244,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const tab = await createTabOnServer(currentWorkspace.value.id, 'Terminal 1', 'terminal', 'pure')
       if (tab) {
         currentWorkspace.value.tabs.push(tab)
-        console.log('📋 WORKSPACE: Created default terminal tab')
+        workspaceLogger.debug('📋 WORKSPACE: Created default terminal tab')
       }
     }
   }
@@ -257,13 +256,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const initializeWorkspace = async () => {
     // If already initializing, return the existing promise
     if (isInitializing && initializationPromise) {
-      console.log('📋 WORKSPACE: Already initializing, returning existing promise')
+      workspaceLogger.debug('📋 WORKSPACE: Already initializing, returning existing promise')
       return initializationPromise
     }
     
     // If already initialized and has workspace, just return
     if (currentWorkspace.value) {
-      console.log('📋 WORKSPACE: Already initialized with workspace')
+      workspaceLogger.debug('📋 WORKSPACE: Already initialized with workspace')
       return
     }
     
@@ -279,7 +278,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
   
   const doInitializeWorkspace = async () => {
-    console.log('📋 WORKSPACE: Initializing workspace system (server-only)...')
+    workspaceLogger.debug('📋 WORKSPACE: Initializing workspace system (server-only)...')
     
     // Wait for connection if needed
     let retries = 0
@@ -288,26 +287,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (socket && socket.connected) {
         break
       }
-      console.log(`📋 WORKSPACE: Waiting for connection... (retry ${retries + 1}/10)`)
+      workspaceLogger.debug(`📋 WORKSPACE: Waiting for connection... (retry ${retries + 1}/10)`)
       await new Promise(resolve => setTimeout(resolve, 500))
       retries++
     }
     
     const socket = terminalService.getSocket()
     if (!socket || !socket.connected) {
-      console.log('📋 WORKSPACE: Failed to establish connection after retries')
+      workspaceLogger.debug('📋 WORKSPACE: Failed to establish connection after retries')
       return
     }
     
     // Load global workspace from server
     try {
       const globalWorkspace = await loadGlobalWorkspace()
-      console.log('📋 WORKSPACE: Loaded global workspace from server:', globalWorkspace)
+      workspaceLogger.debug('📋 WORKSPACE: Loaded global workspace from server:', globalWorkspace)
       
       if (globalWorkspace) {
         // Set current workspace to the loaded global workspace
         
-        console.log('📋 WORKSPACE: Global workspace tabs:', globalWorkspace.tabs)
+        workspaceLogger.debug('📋 WORKSPACE: Global workspace tabs:', globalWorkspace.tabs)
         
         const resumed = await resumeWorkspace(globalWorkspace.id)
         if (!resumed) {
@@ -316,17 +315,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
       } else {
         // No global workspace found, initialize it
-        console.log('📋 WORKSPACE: No global workspace found, initializing')
+        workspaceLogger.debug('📋 WORKSPACE: No global workspace found, initializing')
         await initializeGlobalWorkspace()
       }
     } catch (error) {
-      console.error('📋 WORKSPACE: Failed to load global workspace:', error)
+      workspaceLogger.error('📋 WORKSPACE: Failed to load global workspace:', error)
       await initializeGlobalWorkspace()
     }
     
     // Cross-tab sync removed - server handles all sync
     
-    console.log('📋 WORKSPACE: Workspace system initialized (server-only)')
+    workspaceLogger.debug('📋 WORKSPACE: Workspace system initialized (server-only)')
   }
 
   // Public tab/pane creation methods that use server
@@ -335,7 +334,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     options?: { name?: string; terminalId?: string; subType?: string }
   ): Promise<TerminalTabWithPanes | null> => {
     if (!currentWorkspace.value) {
-      console.error('📋 WORKSPACE: No active workspace to add tab')
+      workspaceLogger.error('📋 WORKSPACE: No active workspace to add tab')
       return null
     }
 
@@ -361,7 +360,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       WorkspacePersistenceManager.persistTerminalSessions(currentWorkspace.value)
       
       
-      console.log('📋 WORKSPACE: Created tab:', tab)
+      workspaceLogger.debug('📋 WORKSPACE: Created tab:', tab)
     }
 
     return tab

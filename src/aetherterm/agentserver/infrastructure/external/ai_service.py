@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from .claude_usage_tracker import ClaudeUsageTracker
 
 log = logging.getLogger("aetherterm.infrastructure.ai")
-
-
 @dataclass
 class UsageCost:
     """Usage cost information."""
@@ -35,8 +33,6 @@ class UsageCost:
     timestamp: str
     model: str
     provider: str
-
-
 @dataclass
 class RetryState:
     """State for retry logic with exponential backoff."""
@@ -91,8 +87,6 @@ class RetryState:
             "last_attempt_time": self.last_attempt_time,
             "can_retry": self.should_retry(),
         }
-
-
 class ClaudeCostTracker:
     """Cost tracker that reads from Claude CLI usage database."""
 
@@ -276,8 +270,6 @@ class ClaudeCostTracker:
         except Exception as e:
             log.error(f"Error reading model breakdown: {e}")
             return []
-
-
 class AIService:
     """Simplified AI service for chat and log search."""
 

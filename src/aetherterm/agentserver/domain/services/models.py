@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-
-
 class OperationType(Enum):
     """オペレーションタイプ"""
 
@@ -19,8 +17,6 @@ class OperationType(Enum):
     INVESTIGATION = "investigation"
     SETUP = "setup"
     UNKNOWN = "unknown"
-
-
 class OperationStage(Enum):
     """オペレーション段階"""
 
@@ -30,8 +26,6 @@ class OperationStage(Enum):
     COMPLETING = "completing"
     FAILED = "failed"
     COMPLETED = "completed"
-
-
 @dataclass
 class CommandPattern:
     """コマンドパターン"""
@@ -42,8 +36,6 @@ class CommandPattern:
     success_rate: float
     typical_duration: float
     next_commands: List[str] = field(default_factory=list)
-
-
 @dataclass
 class OperationContext:
     """オペレーションコンテキスト"""
@@ -73,8 +65,6 @@ class OperationContext:
 
     # メタデータ
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-
 @dataclass
 class OperationPattern:
     """学習済みオペレーションパターン"""
@@ -103,8 +93,6 @@ class OperationPattern:
     embedding: Optional[List[float]] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-
-
 @dataclass
 class ContextInferenceResult:
     """コンテキスト推定結果"""
@@ -126,8 +114,6 @@ class ContextInferenceResult:
     # 推薦
     recommendations: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-
-
 @dataclass
 class TeamOperationContext:
     """チームオペレーションコンテキスト"""

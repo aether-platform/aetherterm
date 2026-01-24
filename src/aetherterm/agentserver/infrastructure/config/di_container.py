@@ -3,15 +3,11 @@
 import os
 from aetherterm.agentserver.infrastructure.external.ai_service import AIService
 from aetherterm.agentserver.infrastructure.common.memoization import memoize_method, cached_property
-
-
 class SimpleContainer:
     """Simple container for dependency management."""
 
     def __init__(self):
         self.infrastructure = SimpleInfrastructure()
-
-
 class SimpleInfrastructure:
     """Infrastructure services container."""
 
@@ -37,17 +33,11 @@ class SimpleInfrastructure:
                 provider=provider, api_key=api_key, model=model, lmstudio_url=lmstudio_url
             )
         return self._ai_service
-
-
 def setup_di_container():
     """Setup simplified DI container."""
     return SimpleContainer()
-
-
 # Global container instance
 _container = None
-
-
 def get_container():
     """Get the global container instance."""
     global _container

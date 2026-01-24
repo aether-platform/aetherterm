@@ -15,8 +15,6 @@ from ..langchain.storage.redis_adapter import RedisStorageAdapter
 from ..langchain.storage.sql_adapter import SQLStorageAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class LogProcessor:
     """ログ処理クラス"""
 

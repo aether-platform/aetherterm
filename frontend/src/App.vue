@@ -194,8 +194,6 @@
     })
   })
 
-
-
   onUnmounted(() => {
     document.removeEventListener('mousemove', onDrag)
     document.removeEventListener('mouseup', stopDrag)
@@ -396,8 +394,6 @@
       <div>Panel Floating: {{ isSupervisorPanelFloating }}</div>
       <div>Sidebar Should Show: {{ !isSupervisorPanelVisible }}</div>
     </div>
-
-
   </div>
 </template>
 
@@ -472,10 +468,6 @@
     /* AI Costsタブはパディングなし */
     padding: 0; /* AICostSidebarコンポーネントが独自のパディングを持つ */
   }
-
-
-
-
   .tab-navigation button.panel-close-btn {
     background-color: #1e1e1e;
     color: #999;

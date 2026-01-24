@@ -85,8 +85,6 @@
         <span class="tab-title">Log Monitor</span>
       </div>
     </div>
-
-
   </div>
 </template>
 
@@ -217,8 +215,6 @@ const isLogMonitorActive = computed(() => {
 const switchToLogMonitor = () => {
   tabStore.switchToLogMonitor()
 }
-
-
 const addNewTab = async (type: 'terminal' | 'ai-agent') => {
   console.log('🔥 ADD NEW TAB CALLED:', { type })
   console.log('🔥 Current workspace:', workspaceStore.currentWorkspace)
@@ -268,8 +264,6 @@ const addNewTab = async (type: 'terminal' | 'ai-agent') => {
     }
   }
 }
-
-
 // MutationObserverでDOM変更を監視
 let observer: MutationObserver | null = null
 
@@ -375,8 +369,6 @@ onUnmounted(() => {
 .terminal-tab.log-monitor {
   border-top: 2px solid #ff9800;
 }
-
-
 .terminal-tab.pure-terminal {
   border-top: 2px solid #2196f3;
 }
@@ -404,8 +396,6 @@ onUnmounted(() => {
 .terminal-tab.active.log-monitor {
   border-top: 2px solid #f57c00;
 }
-
-
 /* Fixed tab styling */
 .terminal-tab.fixed-tab {
   border-left: 2px solid #444;

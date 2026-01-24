@@ -12,8 +12,6 @@ import click
 # Configure logging for the launcher script
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("aetherterm.agentserver.launcher")
-
-
 def set_environment_variables(kwargs):
     """Set environment variables for the ASGI app factory."""
     env = os.environ.copy()
@@ -27,8 +25,6 @@ def set_environment_variables(kwargs):
     env["AETHERTERM_PAM_PROFILE"] = kwargs.get("pam_profile", "")
     env["AETHERTERM_AI_MODE"] = kwargs.get("ai_mode", "streaming")
     return env
-
-
 def get_ssl_args(kwargs):
     """Get SSL arguments for the server."""
     ssl_args = []
@@ -44,8 +40,6 @@ def get_ssl_args(kwargs):
         if os.path.exists(cert) and os.path.exists(cert_key):
             return {"cert": cert, "cert_key": cert_key, "ca": ca}
     return None
-
-
 def launch_uvicorn(kwargs):
     """Launch the application using uvicorn."""
     env = set_environment_variables(kwargs)
@@ -100,8 +94,6 @@ def launch_uvicorn(kwargs):
     except Exception as e:
         log.error(f"Error running uvicorn: {e}")
         sys.exit(1)
-
-
 def launch_hypercorn(kwargs):
     """Launch the application using hypercorn."""
     env = set_environment_variables(kwargs)
@@ -154,8 +146,6 @@ def launch_hypercorn(kwargs):
     except Exception as e:
         log.error(f"Error running hypercorn: {e}")
         sys.exit(1)
-
-
 @click.command()
 @click.option(
     "--server",
@@ -262,7 +252,5 @@ def main(**kwargs):
         launch_uvicorn(kwargs)
     else:
         launch_hypercorn(kwargs)
-
-
 if __name__ == "__main__":
     main()

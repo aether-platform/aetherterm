@@ -21,8 +21,6 @@ from ..storage.sql_adapter import SQLStorageAdapter
 from ..storage.vector_adapter import VectorStoreAdapter
 
 logger = logging.getLogger(__name__)
-
-
 class HierarchicalMemoryManager:
     """
     階層化メモリ管理クラス。

@@ -16,8 +16,6 @@ import uuid
 from typing import Dict, Optional, Tuple
 
 log = logging.getLogger("aetherterm.interfaces.web.ssl_manager")
-
-
 class SSLCertificateManager:
     """Manages SSL certificate generation, validation, and configuration."""
 
@@ -253,8 +251,6 @@ class SSLCertificateManager:
             if password == password2:
                 return password
             print("Passwords do not match.")
-
-
 class SSLCertificateOperations:
     """High-level SSL certificate operations for server startup."""
 

@@ -30,8 +30,6 @@ AetherTerm is a xterm compliant terminal built with python and javascript.
   {strong}[Alt] + [o]             : {reset}Open new terminal (As a popup)
   {strong}[Alt] + [z]             : {reset}Escape: don't catch the next pressed key.
                             Useful for using native search for example. ([Alt] + [z] then [Ctrl] + [f]).
-
-
 {title}AetherTerm programs:{reset}
   {strong}aether    : {reset}Alias for {strong}aetherterm{reset} executable. Takes a comand in parameter or launch an aetherterm server for one shot use (if outside aetherterm).
   {strong}aether cat     : {reset}A wrapper around cat allowing to display images as <img> instead of binary.
@@ -41,8 +39,6 @@ AetherTerm is a xterm compliant terminal built with python and javascript.
   {strong}aether html    : {reset}Output in html standard input.
 
   For more aetherterm programs check out: https://github.com/paradoxxxzero/aetherterm-demos
-
-
 {title}Styling AetherTerm:{reset}
   To style aetherterm in sass, you need to have the libsass python library installed.
 

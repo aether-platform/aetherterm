@@ -17,15 +17,11 @@ logger = logging.getLogger(__name__)
 
 # APIルーター
 router = APIRouter(prefix="/api/v1/insights", tags=["local-insights"])
-
-
 class SessionInsightRequest(BaseModel):
     """セッションインサイト要求"""
 
     session_id: str
     include_recommendations: bool = True
-
-
 class InsightResponse(BaseModel):
     """インサイト応答"""
 
@@ -37,8 +33,6 @@ class InsightResponse(BaseModel):
     timestamp: str
     related_sessions: List[str]
     data: Dict
-
-
 @router.get("/current")
 async def get_current_insights(
     limit: int = Query(10, ge=1, le=50),
@@ -91,8 +85,6 @@ async def get_current_insights(
     except Exception as e:
         logger.error(f"Error getting current insights: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get insights: {e!s}")
-
-
 @router.get("/patterns")
 async def get_detected_patterns(
     limit: int = Query(10, ge=1, le=30),
@@ -145,8 +137,6 @@ async def get_detected_patterns(
     except Exception as e:
         logger.error(f"Error getting detected patterns: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get patterns: {e!s}")
-
-
 @router.get("/session/{session_id}")
 async def get_session_insights(session_id: str):
     """
@@ -192,8 +182,6 @@ async def get_session_insights(session_id: str):
     except Exception as e:
         logger.error(f"Error getting session insights for {session_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get session insights: {e!s}")
-
-
 @router.get("/agent/summary")
 async def get_agent_summary():
     """
@@ -242,8 +230,6 @@ async def get_agent_summary():
     except Exception as e:
         logger.error(f"Error getting agent summary: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get agent summary: {e!s}")
-
-
 @router.get("/real-time/alerts")
 async def get_real_time_alerts(
     severity: Optional[str] = Query(None, regex="^(medium|high|urgent)$"),
@@ -297,8 +283,6 @@ async def get_real_time_alerts(
     except Exception as e:
         logger.error(f"Error getting real-time alerts: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get alerts: {e!s}")
-
-
 @router.post("/demo/generate_test_data")
 async def generate_test_data():
     """
@@ -414,8 +398,6 @@ async def generate_test_data():
     except Exception as e:
         logger.error(f"Error generating test data: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate test data: {e!s}")
-
-
 @router.get("/performance/metrics")
 async def get_performance_metrics():
     """
@@ -470,8 +452,6 @@ async def get_performance_metrics():
     except Exception as e:
         logger.error(f"Error getting performance metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {e!s}")
-
-
 def _generate_recommendations(
     agent_summary: Dict, insights: List[Dict], patterns: List[Dict]
 ) -> List[Dict]:
@@ -541,8 +521,6 @@ def _generate_recommendations(
         )
 
     return recommendations
-
-
 # 初期化関数
 async def initialize_local_analyzer(agent_id: str):
     """ローカル分析機能を初期化"""

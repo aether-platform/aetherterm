@@ -22,34 +22,24 @@ log = logging.getLogger("aetherterm.routes.theme")
 # Cache for compiled themes
 _theme_cache: Dict[str, Tuple[str, float]] = {}
 _THEME_CACHE_TTL = 3600  # 1 hour
-
-
 @memoize(maxsize=10)
 def _get_themes_directory() -> str:
     """Get themes directory path with caching."""
     return os.path.join(os.path.expanduser("~"), ".config", "aetherterm", "themes")
-
-
 @memoize(maxsize=10)
 def _get_builtin_themes_directory() -> str:
     """Get built-in themes directory with caching."""
     return os.path.join(os.path.dirname(__file__), "..", "themes")
-
-
 @memoize(maxsize=10)
 def _get_sass_path() -> str:
     """Get sass path with caching."""
     return os.path.join(os.path.dirname(__file__), "..", "sass")
-
-
 def _get_theme_cache_key(style_path: str, base_dir: str) -> str:
     """Generate cache key for theme."""
     # Include file modification time in cache key
     mtime = os.path.getmtime(style_path) if os.path.exists(style_path) else 0
     key_string = f"{style_path}:{base_dir}:{mtime}"
     return hashlib.md5(key_string.encode()).hexdigest()
-
-
 def _get_cached_theme(cache_key: str) -> Optional[str]:
     """Get theme from cache if not expired."""
     if cache_key in _theme_cache:
@@ -59,8 +49,6 @@ def _get_cached_theme(cache_key: str) -> Optional[str]:
         else:
             del _theme_cache[cache_key]
     return None
-
-
 def _cache_theme(cache_key: str, css: str) -> None:
     """Cache compiled theme CSS."""
     _theme_cache[cache_key] = (css, time.time())
@@ -70,16 +58,12 @@ def _cache_theme(cache_key: str, css: str) -> None:
         sorted_items = sorted(_theme_cache.items(), key=lambda x: x[1][1])
         for key, _ in sorted_items[:10]:
             del _theme_cache[key]
-
-
 @memoize(maxsize=100)
 def _has_style_file(theme_path: str) -> bool:
     """Check if theme has style file with caching."""
     return any(
         os.path.exists(os.path.join(theme_path, f"style.{ext}")) for ext in ["css", "scss", "sass"]
     )
-
-
 @router.get("/theme/{theme}/style.css")
 async def theme_style(theme: str):
     """Serve theme CSS files."""
@@ -132,8 +116,6 @@ async def theme_style(theme: str):
     except Exception as e:
         log.error(f"Unable to compile style: {e}")
         raise HTTPException(status_code=500, detail="Style compilation failed")
-
-
 @router.get("/theme/{theme}/{filename:path}")
 async def theme_static(theme: str, filename: str):
     """Serve static theme files."""
@@ -175,8 +157,6 @@ async def theme_static(theme: str, filename: str):
         }.get(ext, "text/plain")
 
     return FileResponse(file_path, media_type=content_type)
-
-
 @router.get("/themes/list.json")
 async def themes_list():
     """Get the list of available themes."""

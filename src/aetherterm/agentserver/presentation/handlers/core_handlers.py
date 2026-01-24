@@ -15,15 +15,11 @@ log = logging.getLogger("aetherterm.handlers.core")
 
 # Global storage for socket.io server instance
 sio_instance = None
-
-
 def set_sio_instance(sio):
     """Set the global socket.io server instance."""
     global sio_instance
     sio_instance = sio
     log.info("Socket.IO instance configured for core handlers")
-
-
 def broadcast_to_session(session_id, message):
     """Broadcast message to all clients connected to a session."""
     try:
@@ -41,9 +37,6 @@ def broadcast_to_session(session_id, message):
 
     except Exception as e:
         log.error(f"Failed to broadcast to session {session_id}: {e}")
-
-
-# @inject
 async def system_status(
     sid,
     data,
@@ -65,9 +58,6 @@ async def system_status(
     except Exception as e:
         log.error(f"Failed to get system status: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def ping(
     sid,
     data,
@@ -91,9 +81,6 @@ async def ping(
 
     except Exception as e:
         log.error(f"Failed to handle ping: {e}")
-
-
-# @inject
 async def get_session_info(
     sid,
     data,
@@ -121,9 +108,6 @@ async def get_session_info(
     except Exception as e:
         log.error(f"Failed to get session info: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def list_sessions(
     sid,
     data,
@@ -149,9 +133,6 @@ async def list_sessions(
     except Exception as e:
         log.error(f"Failed to list sessions: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def cleanup_session(
     sid,
     data,
@@ -184,9 +165,6 @@ async def cleanup_session(
     except Exception as e:
         log.error(f"Failed to cleanup session: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
-# @inject
 async def get_resource_usage(
     sid,
     data,
@@ -206,8 +184,6 @@ async def get_resource_usage(
     except Exception as e:
         log.error(f"Failed to get resource usage: {e}")
         await sio_instance.emit("error", {"message": str(e)}, room=sid)
-
-
 async def handle_client_error(sid, data, sio_instance):
     """Handle client-side error reports."""
     try:
@@ -228,8 +204,6 @@ async def handle_client_error(sid, data, sio_instance):
 
     except Exception as e:
         log.error(f"Failed to handle client error: {e}")
-
-
 async def broadcast_system_notification(notification_type, message, data=None):
     """Broadcast system-wide notifications."""
     try:

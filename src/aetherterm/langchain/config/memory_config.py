@@ -8,8 +8,6 @@ from enum import Enum
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
-
-
 class MemoryStrategy(Enum):
     """メモリ戦略"""
 
@@ -17,8 +15,6 @@ class MemoryStrategy(Enum):
     STRUCTURED = "structured"  # 構造化データのみ
     SEMANTIC = "semantic"  # セマンティック検索のみ
     HYBRID = "hybrid"  # ハイブリッド検索
-
-
 @dataclass
 class MemoryConfig:
     """メモリ管理設定"""

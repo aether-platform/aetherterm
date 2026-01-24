@@ -10,8 +10,6 @@ import ssl
 import sys
 
 log = logging.getLogger("aetherterm.agentserver.utils.ssl_certs")
-
-
 def prepare_ssl_certs(**kwargs):
     """Check SSL certificates and provide guidance if missing."""
     if kwargs.get("unsecure", False):
@@ -49,8 +47,6 @@ def prepare_ssl_certs(**kwargs):
         sys.exit(1)
 
     log.info(f"✅ SSL certificates found for host {host}")
-
-
 def _show_ssl_generation_help(host):
     """Show help for generating SSL certificates."""
     log.error("To generate SSL certificates, run:")
@@ -63,8 +59,6 @@ def _show_ssl_generation_help(host):
     log.error("  aetherterm-generate-ssl --generate-current-user")
     log.error("")
     log.error("For more information about SSL setup, see documentation.")
-
-
 def setup_ssl_context(**kwargs):
     """Setup SSL context for the server."""
     if kwargs.get("unsecure", False):

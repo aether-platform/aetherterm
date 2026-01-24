@@ -2,8 +2,6 @@
 Short-term memory management stub for AetherTerm terminals.
 TODO: Implement proper short-term memory functionality.
 """
-
-
 class ShortTermMemoryManager:
     """Stub implementation of short-term memory manager."""
 

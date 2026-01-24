@@ -17,8 +17,6 @@ const telemetryConfig = {
 }
 
 initializeTelemetry(telemetryConfig)
-
-
 const app = createApp(App)
 const pinia = createPinia()
 
