@@ -39,9 +39,27 @@ class MessageType(str, Enum):
     AGENT_UNREGISTER = "agent_unregister"
     AGENT_HEARTBEAT = "agent_heartbeat"
     
+    # コマンド実行
+    COMMAND_EXECUTE = "command_execute"
+    COMMAND_PROPOSE = "command_propose"
+    COMMAND_APPROVE = "command_approve"
+    COMMAND_REJECT = "command_reject"
+
     # データ同期
     SYNC_REQUEST = "sync_request"
     SYNC_RESPONSE = "sync_response"
+
+    # ターミナルI/O（ZMQ PTY Chaining用）
+    TERMINAL_OUTPUT = "terminal_output"
+    TERMINAL_INPUT = "terminal_input"
+
+    # コマンド注入（Agent → OS Shell）
+    COMMAND_INJECT = "command_inject"
+    OUTPUT_INJECT = "output_inject"
+
+    # Agent Discovery（ZMQブローカー経由）
+    AGENT_DISCOVERY = "agent_discovery"
+    AGENT_DISCOVERY_RESPONSE = "agent_discovery_response"
 
 
 class PaneType(str, Enum):

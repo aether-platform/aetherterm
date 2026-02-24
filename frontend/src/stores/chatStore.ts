@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+export interface AIChatMessage {
+  id: string
+  username: string
+  content: string
+  timestamp: Date
+  type: 'user' | 'system' | 'ai'
+  streaming?: boolean
+  messageId?: string
+}
+
 export interface ChatMessage {
   id: string
   content: string
@@ -302,6 +312,74 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // AI Chat Messages (persisted across component mount/unmount)
+  const aiMessages = ref<AIChatMessage[]>([])
+  const isAITyping = ref(false)
+  const currentAIMessageId = ref('')
+
+  const addAIMessage = (
+    username: string,
+    content: string,
+    type: 'user' | 'system' | 'ai' = 'user',
+    messageId?: string,
+  ): AIChatMessage => {
+    const message: AIChatMessage = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      username,
+      content,
+      timestamp: new Date(),
+      type,
+      streaming: false,
+      messageId,
+    }
+    aiMessages.value.push(message)
+    return message
+  }
+
+  const addStreamingAIMessage = (messageId: string): AIChatMessage => {
+    const message: AIChatMessage = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      username: 'Aether AI',
+      content: '',
+      timestamp: new Date(),
+      type: 'ai',
+      streaming: true,
+      messageId,
+    }
+    aiMessages.value.push(message)
+    currentAIMessageId.value = messageId
+    isAITyping.value = true
+    return message
+  }
+
+  const updateStreamingMessage = (messageId: string, chunk: string) => {
+    const msg = aiMessages.value.find((m) => m.messageId === messageId)
+    if (msg) {
+      msg.content += chunk
+    }
+  }
+
+  const completeStreamingMessage = (messageId: string, fullResponse: string) => {
+    const msg = aiMessages.value.find((m) => m.messageId === messageId)
+    if (msg) {
+      msg.content = fullResponse
+      msg.streaming = false
+    }
+    isAITyping.value = false
+    currentAIMessageId.value = ''
+  }
+
+  const failStreamingMessage = (messageId: string, error: string) => {
+    const msg = aiMessages.value.find((m) => m.messageId === messageId)
+    if (msg) {
+      msg.content = `Sorry, I encountered an error: ${error}`
+      msg.streaming = false
+      msg.type = 'system'
+    }
+    isAITyping.value = false
+    currentAIMessageId.value = ''
+  }
+
   return {
     // State
     currentUser,
@@ -336,5 +414,15 @@ export const useChatStore = defineStore('chat', () => {
     getTypingUsers,
     clearMessages,
     markAllAsRead,
+
+    // AI Chat Messages
+    aiMessages,
+    isAITyping,
+    currentAIMessageId,
+    addAIMessage,
+    addStreamingAIMessage,
+    updateStreamingMessage,
+    completeStreamingMessage,
+    failStreamingMessage,
   }
 })

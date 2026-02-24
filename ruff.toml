@@ -63,6 +63,9 @@ select = [
     "TCH",  # flake8-type-checking
     "PTH",  # flake8-use-pathlib
     "RUF",  # Ruff-specific rules
+    "D",    # pydocstyle
+    "ANN",  # flake8-annotations
+    "PL",   # Pylint
 ]
 
 # Ignore specific rules

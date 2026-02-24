@@ -93,7 +93,15 @@ class AnthropicService(AIService):
 - File system navigation
 - Development workflows
 
-Be concise, helpful, and practical in your responses. When suggesting commands, explain what they do."""
+Be concise, helpful, and practical in your responses. When suggesting commands, explain what they do.
+
+IMPORTANT: When you want to suggest a command for the user to run in their terminal, wrap it in a special command block like this:
+
+```command
+ls -la
+```
+
+This will render as an executable command proposal that the user can approve or reject directly from the chat interface. Only use this format for commands you want the user to execute. You can include multiple command blocks in a single response. Always explain what the command does before or after the block."""
 
             if terminal_context:
                 system_content += f"\n\nCurrent terminal context:\n```\n{terminal_context}\n```"

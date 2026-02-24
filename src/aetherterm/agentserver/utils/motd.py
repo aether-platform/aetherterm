@@ -101,7 +101,7 @@ def render_motd(
     context = {
         "colors": ansi_colors,
         "version": __version__,
-        "aetherterm": butterfly_obj,
+        "butterfly": butterfly_obj,
         "opts": opts,
         "uri": uri,
     }

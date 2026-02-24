@@ -364,6 +364,42 @@ class ServerConnector:
             self._is_enabled = False
             asyncio.create_task(self.stop())
 
+    @staticmethod
+    def create_connector(
+        transport: str = "socketio",
+        **kwargs,
+    ) -> "ServerConnector":
+        """
+        ファクトリメソッド: transport指定でコネクターを生成
+
+        Args:
+            transport: "socketio" (デフォルト) or "zmq"
+            **kwargs: コネクター固有の設定
+
+        Returns:
+            ServerConnector or ZMQAgentConnector
+        """
+        if transport == "zmq":
+            from ..zmq_agent_connector import ZMQAgentConnector
+            from ...common.zmq.zmq_config import ZMQConfig
+
+            agent_id = kwargs.get("agent_id", "agentshell_default")
+            zmq_config = kwargs.get("zmq_config") or ZMQConfig(enabled=True)
+            capabilities = kwargs.get("capabilities", [])
+
+            return ZMQAgentConnector(
+                agent_id=agent_id,
+                zmq_config=zmq_config,
+                capabilities=capabilities,
+            )
+        else:
+            return ServerConnector(
+                server_url=kwargs.get("server_url", "http://localhost:57575"),
+                auto_connect=kwargs.get("auto_connect", True),
+                retry_interval=kwargs.get("retry_interval", 5),
+                max_retries=kwargs.get("max_retries", 5),
+            )
+
     async def send_message(self, message: AgentMessage) -> Optional[AgentMessage]:
         """
         エージェントメッセージを送信

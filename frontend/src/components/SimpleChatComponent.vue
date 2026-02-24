@@ -9,11 +9,17 @@
             aiInfo.model
           }}</span>
         </div>
-        <div
-          class="connection-status"
-          :class="{ connected: terminalStore.connectionState.isConnected && aiInfo.available }"
-        >
-          {{ getConnectionStatus() }}
+        <div class="header-controls">
+          <label class="exec-mode-toggle" title="Auto-execute AI commands">
+            <input type="checkbox" v-model="isAutoMode" @change="toggleExecutionMode" />
+            <span class="toggle-label">Auto</span>
+          </label>
+          <div
+            class="connection-status"
+            :class="{ connected: terminalStore.connectionState.isConnected && aiInfo.available }"
+          >
+            {{ getConnectionStatus() }}
+          </div>
         </div>
       </div>
     </div>
@@ -25,15 +31,31 @@
           <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
         </div>
         <div class="message-content">
-          <span v-if="message.streaming" class="streaming-content"
-            >{{ message.content }}<span class="cursor">|</span></span
-          >
-          <span v-else>{{ message.content }}</span>
+          <!-- Parse and render message content with command blocks -->
+          <template v-if="message.type === 'ai' && hasCommandBlocks(message.content)">
+            <template v-for="(segment, idx) in parseContent(message.content)" :key="idx">
+              <span v-if="segment.type === 'text'" v-text="segment.text"></span>
+              <CommandApproval
+                v-if="segment.type === 'command'"
+                :command="segment.command!"
+                :command-id="message.id + '_cmd_' + idx"
+                @executed="onCommandExecuted"
+                @rejected="onCommandRejected"
+              />
+            </template>
+            <span v-if="message.streaming" class="cursor">|</span>
+          </template>
+          <template v-else>
+            <span v-if="message.streaming" class="streaming-content"
+              >{{ message.content }}<span class="cursor">|</span></span
+            >
+            <span v-else>{{ message.content }}</span>
+          </template>
         </div>
       </div>
 
       <!-- AI Typing Indicator -->
-      <div v-if="isAITyping" class="ai-typing">
+      <div v-if="chatStore.isAITyping" class="ai-typing">
         <div class="typing-indicator">
           <span class="username">Aether AI</span>
           <div class="typing-dots"><span></span><span></span><span></span></div>
@@ -73,24 +95,24 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+  import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
   import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+  import { useChatStore } from '../stores/chatStore'
+  import CommandApproval from './CommandApproval.vue'
 
-  interface ChatMessage {
-    id: string
-    username: string
-    content: string
-    timestamp: Date
-    type: 'user' | 'system' | 'ai'
-    streaming?: boolean
-    messageId?: string
+  interface ContentSegment {
+    type: 'text' | 'command'
+    text?: string
+    command?: string
   }
 
   const terminalStore = useAetherTerminalServiceStore()
-  const messages = ref<ChatMessage[]>([])
+  const chatStore = useChatStore()
+  const messages = chatStore.aiMessages
   const newMessage = ref('')
   const messagesContainer = ref<HTMLElement | null>(null)
   const messageTextarea = ref<HTMLTextAreaElement | null>(null)
+  const isAutoMode = ref(false)
 
   interface AIInfo {
     provider: string
@@ -107,22 +129,62 @@
     status: 'disconnected',
   })
 
+  // Command block parsing
+  const COMMAND_BLOCK_REGEX = /```command\n([\s\S]*?)```/g
+
+  function hasCommandBlocks(content: string): boolean {
+    return /```command\n/.test(content)
+  }
+
+  function parseContent(content: string): ContentSegment[] {
+    const segments: ContentSegment[] = []
+    let lastIndex = 0
+
+    // Reset regex
+    const regex = new RegExp(COMMAND_BLOCK_REGEX.source, 'g')
+    let match: RegExpExecArray | null
+
+    while ((match = regex.exec(content)) !== null) {
+      // Text before match
+      if (match.index > lastIndex) {
+        segments.push({ type: 'text', text: content.slice(lastIndex, match.index) })
+      }
+      // Command block
+      segments.push({ type: 'command', command: match[1].trim() })
+      lastIndex = match.index + match[0].length
+    }
+
+    // Remaining text
+    if (lastIndex < content.length) {
+      segments.push({ type: 'text', text: content.slice(lastIndex) })
+    }
+
+    return segments
+  }
+
+  function onCommandExecuted(commandId: string) {
+    // Optional: show toast
+  }
+
+  function onCommandRejected(commandId: string) {
+    // Optional: show toast
+  }
+
+  function toggleExecutionMode() {
+    if (terminalStore.socket) {
+      terminalStore.socket.emit('ai_set_execution_mode', {
+        mode: isAutoMode.value ? 'auto' : 'approval',
+      })
+    }
+  }
+
   const addMessage = (
     username: string,
     content: string,
-    type: 'user' | 'system' | 'ai' = 'user'
-  ): ChatMessage => {
-    const message: ChatMessage = {
-      id: Date.now().toString(),
-      username,
-      content,
-      timestamp: new Date(),
-      type,
-    }
+    type: 'user' | 'system' | 'ai' = 'user',
+  ) => {
+    const message = chatStore.addAIMessage(username, content, type)
 
-    messages.value.push(message)
-
-    // Auto-scroll to bottom
     nextTick(() => {
       if (messagesContainer.value) {
         messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
@@ -137,41 +199,24 @@
 
     const userMessage = newMessage.value.trim()
 
-    // Add user message to local display
     addMessage('You', userMessage, 'user')
-
-    // Send to AI for response
     sendAIMessage(userMessage)
 
     newMessage.value = ''
 
-    // Focus back to textarea
     nextTick(() => {
       messageTextarea.value?.focus()
     })
   }
 
-  const isAITyping = ref(false)
-  const currentAIMessageId = ref('')
-
   const sendAIMessage = async (userMessage: string) => {
     if (!terminalStore.socket || !terminalStore.connectionState.isConnected) {
-      console.warn('Socket not available for AI chat')
       return
     }
 
-    // Generate unique message ID
     const messageId = Date.now().toString() + Math.random().toString(36).substr(2, 9)
-    currentAIMessageId.value = messageId
+    chatStore.addStreamingAIMessage(messageId)
 
-    // Create placeholder AI message
-    const aiMessage = addMessage('Aether AI', '', 'ai')
-    aiMessage.streaming = true
-    aiMessage.messageId = messageId
-
-    isAITyping.value = true
-
-    // Send to AI service with terminal context
     terminalStore.socket.emit('ai_chat_message', {
       message: userMessage,
       message_id: messageId,
@@ -179,90 +224,62 @@
     })
   }
 
-  // Handle AI streaming responses
-  onMounted(() => {
-    // Add welcome message
-    addMessage(
-      'Aether AI',
-      'Welcome to Aether Assistant! I am your AI assistant for terminal operations, troubleshooting, and guidance.',
-      'system'
-    )
+  // Auto-scroll when messages change
+  watch(
+    () => messages.length,
+    () => {
+      nextTick(() => {
+        if (messagesContainer.value) {
+          messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        }
+      })
+    },
+  )
 
-    // Listen for chat messages from socket
+  onMounted(() => {
+    // Only add welcome message once (when store is empty)
+    if (messages.length === 0) {
+      addMessage(
+        'Aether AI',
+        'Welcome to Aether Assistant! I can help with terminal operations, troubleshooting, and code analysis. I can also propose commands for you to run.',
+        'system',
+      )
+    }
+
     terminalStore.onChatMessage((data: any) => {
-      console.log('Received chat message:', data)
       addMessage(data.username || 'Unknown User', data.message || data.content, 'user')
     })
 
-    // Set up AI Event Listeners when socket becomes available
     const setupAIListeners = () => {
       if (!terminalStore.socket) return
 
-      // Remove existing listeners first to prevent duplicates
       terminalStore.socket.off('ai_chat_typing')
       terminalStore.socket.off('ai_chat_chunk')
       terminalStore.socket.off('ai_chat_complete')
       terminalStore.socket.off('ai_chat_error')
       terminalStore.socket.off('ai_info_response')
 
-      // AI typing indicator
       terminalStore.socket.on('ai_chat_typing', (data: any) => {
-        isAITyping.value = data.typing
+        chatStore.isAITyping = data.typing
       })
 
-      // AI response chunks
       terminalStore.socket.on('ai_chat_chunk', (data: any) => {
-        const messageId = data.message_id
-        const chunk = data.chunk
-
-        // Find the AI message and append chunk
-        const aiMessage = messages.value.find((m) => m.messageId === messageId)
-        if (aiMessage) {
-          aiMessage.content += chunk
-
-          // Auto-scroll to bottom
-          nextTick(() => {
-            if (messagesContainer.value) {
-              messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-            }
-          })
-        }
+        chatStore.updateStreamingMessage(data.message_id, data.chunk)
+        nextTick(() => {
+          if (messagesContainer.value) {
+            messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+          }
+        })
       })
 
-      // AI response complete
       terminalStore.socket.on('ai_chat_complete', (data: any) => {
-        const messageId = data.message_id
-        const fullResponse = data.full_response
-
-        // Find the AI message and finalize
-        const aiMessage = messages.value.find((m) => m.messageId === messageId)
-        if (aiMessage) {
-          aiMessage.content = fullResponse
-          aiMessage.streaming = false
-        }
-
-        isAITyping.value = false
-        currentAIMessageId.value = ''
+        chatStore.completeStreamingMessage(data.message_id, data.full_response)
       })
 
-      // AI error handling
       terminalStore.socket.on('ai_chat_error', (data: any) => {
-        const messageId = data.message_id
-        const error = data.error
-
-        // Find the AI message and show error
-        const aiMessage = messages.value.find((m) => m.messageId === messageId)
-        if (aiMessage) {
-          aiMessage.content = `Sorry, I encountered an error: ${error}`
-          aiMessage.streaming = false
-          aiMessage.type = 'system' // Mark as system message for error styling
-        }
-
-        isAITyping.value = false
-        currentAIMessageId.value = ''
+        chatStore.failStreamingMessage(data.message_id, data.error)
       })
 
-      // AI info response
       terminalStore.socket.on('ai_info_response', (data: any) => {
         aiInfo.value = {
           provider: data.provider || 'unknown',
@@ -271,33 +288,26 @@
           status: data.status || 'disconnected',
           error: data.error,
         }
-
-        console.log('AI Info received:', aiInfo.value)
       })
     }
 
-    // Try to setup listeners immediately
     setupAIListeners()
 
-    // Watch for connection state changes without using $subscribe
     let isListenersSetup = false
     const watchConnection = () => {
       if (terminalStore.connectionState.isConnected && terminalStore.socket && !isListenersSetup) {
         setupAIListeners()
-        requestAIInfo() // Request AI info when connection is established
+        requestAIInfo()
         isListenersSetup = true
       }
     }
 
-    // Set up a simple interval check instead of reactive subscription
     const connectionWatcher = setInterval(watchConnection, 1000)
 
-    // Clean up on unmount
     onUnmounted(() => {
       clearInterval(connectionWatcher)
       terminalStore.offChatMessage()
 
-      // Clean up socket listeners
       if (terminalStore.socket) {
         terminalStore.socket.off('ai_chat_typing')
         terminalStore.socket.off('ai_chat_chunk')
@@ -313,12 +323,8 @@
   }
 
   const getConnectionStatus = () => {
-    if (!terminalStore.connectionState.isConnected) {
-      return 'Terminal Disconnected'
-    }
-    if (!aiInfo.value.available) {
-      return 'AI Unavailable'
-    }
+    if (!terminalStore.connectionState.isConnected) return 'Terminal Disconnected'
+    if (!aiInfo.value.available) return 'AI Unavailable'
     return 'Connected'
   }
 
@@ -382,6 +388,29 @@
     font-family: monospace;
   }
 
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .exec-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #888;
+  }
+
+  .exec-mode-toggle input {
+    accent-color: #4caf50;
+  }
+
+  .toggle-label {
+    font-size: 11px;
+  }
+
   .connection-status {
     padding: 4px 8px;
     border-radius: 4px;
@@ -399,7 +428,7 @@
     flex: 1;
     padding: 15px;
     overflow-y: auto;
-    min-height: 0; /* flexで縮小可能にする */
+    min-height: 0;
   }
 
   .message {
@@ -410,11 +439,13 @@
   }
 
   .message.system {
-    background-color: #1976d2;
+    background-color: #424242;
+    border-left: 4px solid #ff9800;
   }
 
   .message.ai {
-    background-color: #9c27b0;
+    background-color: #1976d2;
+    border-left: 4px solid #4caf50;
   }
 
   .message-header {
@@ -438,7 +469,12 @@
   .message-content {
     line-height: 1.4;
     color: #e0e0e0;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
+
+  .message.system .username { color: #ff9800; }
+  .message.ai .username { color: #4caf50; }
 
   .no-messages {
     text-align: center;
@@ -451,7 +487,7 @@
     border-top: 1px solid #444;
     background-color: #1e1e1e;
     box-sizing: border-box;
-    overflow-x: hidden; /* 横スクロールを防ぐ */
+    overflow-x: hidden;
   }
 
   .message-input {
@@ -467,7 +503,7 @@
     resize: vertical;
     min-height: 60px;
     max-height: 120px;
-    box-sizing: border-box; /* パディングとボーダーを幅に含める */
+    box-sizing: border-box;
   }
 
   .message-input:focus {
@@ -488,13 +524,8 @@
     margin-top: 10px;
   }
 
-  .input-help {
-    color: #666;
-  }
-
-  .input-help small {
-    font-size: 12px;
-  }
+  .input-help { color: #666; }
+  .input-help small { font-size: 12px; }
 
   .send-button {
     padding: 10px 24px;
@@ -519,120 +550,37 @@
     transform: none;
   }
 
-  /* Scrollbar styling */
-  .chat-messages::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .chat-messages::-webkit-scrollbar-track {
-    background: #2d2d2d;
-  }
-
-  .chat-messages::-webkit-scrollbar-thumb {
-    background: #666;
-    border-radius: 4px;
-  }
-
-  .chat-messages::-webkit-scrollbar-thumb:hover {
-    background: #888;
-  }
+  /* Scrollbar */
+  .chat-messages::-webkit-scrollbar { width: 8px; }
+  .chat-messages::-webkit-scrollbar-track { background: #2d2d2d; }
+  .chat-messages::-webkit-scrollbar-thumb { background: #666; border-radius: 4px; }
+  .chat-messages::-webkit-scrollbar-thumb:hover { background: #888; }
 
   /* AI Typing Indicator */
-  .ai-typing {
-    padding: 15px;
-    margin-bottom: 10px;
-  }
-
-  .typing-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .typing-indicator .username {
-    font-weight: bold;
-    color: #4caf50;
-    font-size: 14px;
-  }
-
-  .typing-dots {
-    display: flex;
-    gap: 4px;
-  }
-
+  .ai-typing { padding: 15px; margin-bottom: 10px; }
+  .typing-indicator { display: flex; align-items: center; gap: 10px; }
+  .typing-indicator .username { font-weight: bold; color: #4caf50; font-size: 14px; }
+  .typing-dots { display: flex; gap: 4px; }
   .typing-dots span {
-    width: 6px;
-    height: 6px;
-    background-color: #4caf50;
-    border-radius: 50%;
-    opacity: 0.4;
+    width: 6px; height: 6px; background-color: #4caf50; border-radius: 50%; opacity: 0.4;
     animation: typing 1.4s infinite;
   }
-
-  .typing-dots span:nth-child(1) {
-    animation-delay: 0s;
-  }
-
-  .typing-dots span:nth-child(2) {
-    animation-delay: 0.2s;
-  }
-
-  .typing-dots span:nth-child(3) {
-    animation-delay: 0.4s;
-  }
+  .typing-dots span:nth-child(1) { animation-delay: 0s; }
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
   @keyframes typing {
-    0%,
-    60%,
-    100% {
-      opacity: 0.4;
-      transform: translateY(0);
-    }
-    30% {
-      opacity: 1;
-      transform: translateY(-4px);
-    }
+    0%, 60%, 100% { opacity: 0.4; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-4px); }
   }
 
-  /* Streaming Content */
-  .streaming-content {
-    position: relative;
-  }
-
-  .streaming-content .cursor {
-    color: #4caf50;
-    animation: blink 1s infinite;
-    font-weight: bold;
+  .streaming-content { position: relative; }
+  .streaming-content .cursor, .cursor {
+    color: #4caf50; animation: blink 1s infinite; font-weight: bold;
   }
 
   @keyframes blink {
-    0%,
-    50% {
-      opacity: 1;
-    }
-    51%,
-    100% {
-      opacity: 0;
-    }
-  }
-
-  /* Enhanced AI message styling */
-  .message.ai {
-    background-color: #1976d2;
-    border-left: 4px solid #4caf50;
-  }
-
-  .message.ai .username {
-    color: #4caf50;
-  }
-
-  /* Enhanced system message styling */
-  .message.system {
-    background-color: #424242;
-    border-left: 4px solid #ff9800;
-  }
-
-  .message.system .username {
-    color: #ff9800;
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
   }
 </style>

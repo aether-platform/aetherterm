@@ -32,6 +32,7 @@ import uvicorn
 from aetherterm.agentserver import socket_handlers
 from aetherterm.agentserver.containers import ApplicationContainer
 from aetherterm.agentserver.routes import router
+from aetherterm.agentserver.utils.ssl_certs import prepare_ssl_certs
 
 # Default configuration values
 DEFAULT_CONFIG = {
@@ -137,7 +138,7 @@ def create_app(**kwargs):
 
 async def start_server(**kwargs):
     """Start the Butterfly server with dependency injection."""
-    container, config = create_app(**kwargs)
+    _asgi_app, _sio, container, config, _fastapi_app = create_app(**kwargs)
 
     host = config["host"]
     port = config["port"]
@@ -389,6 +390,14 @@ async def start_server(**kwargs):
     # Set the socket.io instance in handlers module
     socket_handlers.set_sio_instance(sio)
 
+    # Initialize AgentPaneManager and MessageRouter
+    from aetherterm.agentserver.agent_pane_manager import AgentPaneManager, MessageRouter
+
+    pane_manager = AgentPaneManager(broadcast_fn=socket_handlers.broadcast_to_session)
+    message_router = MessageRouter(pane_manager)
+    pane_manager.set_message_router(message_router)
+    socket_handlers.set_pane_manager(pane_manager)
+
     # Register Socket.IO event handlers
     sio.on("connect", socket_handlers.connect)
     sio.on("disconnect", socket_handlers.disconnect)
@@ -408,6 +417,19 @@ async def start_server(**kwargs):
     # Register Block/Unblock handlers
     sio.on("unblock_request", socket_handlers.unblock_request)
     sio.on("get_block_status", socket_handlers.get_block_status)
+
+    # Register Pane management handlers
+    sio.on("pane_create", socket_handlers.pane_create)
+    sio.on("pane_destroy", socket_handlers.pane_destroy)
+    sio.on("pane_resize", socket_handlers.pane_resize)
+    sio.on("pane_focus", socket_handlers.pane_focus)
+    sio.on("pane_list", socket_handlers.pane_list)
+    sio.on("pane_input", socket_handlers.pane_input)
+    sio.on("session_list", socket_handlers.session_list)
+
+    # Register AI command execution handlers
+    sio.on("ai_execute_command", socket_handlers.ai_execute_command)
+    sio.on("ai_set_execution_mode", socket_handlers.ai_set_execution_mode)
 
     # Mount the FastAPI router onto the main ASGI app
     app.other_asgi_app.include_router(router, prefix=uri_root_path)
@@ -438,6 +460,7 @@ async def start_server(**kwargs):
 
 
 # Factory functions for ASGI servers (uvicorn/hypercorn compatibility)
+
 
 def create_app(**kwargs):
     """Create the AetherTerm AgentServer ASGI application with dependency injection."""
@@ -476,6 +499,7 @@ def create_app(**kwargs):
 
     # Configure the dependency injection container
     from aetherterm.agentserver.containers import configure_container
+
     container = configure_container(config)
 
     # Create FastAPI application
@@ -486,6 +510,7 @@ def create_app(**kwargs):
 
     # Include router
     from aetherterm.agentserver.routes import router
+
     fastapi_app.include_router(router)
 
     # Create Socket.IO server
@@ -499,7 +524,7 @@ def create_app(**kwargs):
         socketio_server=sio, other_asgi_app=fastapi_app, socketio_path=socketio_path
     )
 
-    return asgi_app, sio, container, config
+    return asgi_app, sio, container, config, fastapi_app
 
 
 def setup_app(**kwargs):
@@ -508,11 +533,20 @@ def setup_app(**kwargs):
     prepare_ssl_certs(**kwargs)
 
     # Create and return the ASGI app
-    asgi_app, sio, container, config = create_app(**kwargs)
+    asgi_app, sio, container, config, fastapi_app = create_app(**kwargs)
 
     # Set the socket.io instance in handlers module
     from aetherterm.agentserver import socket_handlers
+
     socket_handlers.set_sio_instance(sio)
+
+    # Initialize AgentPaneManager and MessageRouter
+    from aetherterm.agentserver.agent_pane_manager import AgentPaneManager, MessageRouter
+
+    pane_manager = AgentPaneManager(broadcast_fn=socket_handlers.broadcast_to_session)
+    message_router = MessageRouter(pane_manager)
+    pane_manager.set_message_router(message_router)
+    socket_handlers.set_pane_manager(pane_manager)
 
     # Register Socket.IO event handlers
     sio.on("connect", socket_handlers.connect)
@@ -522,14 +556,69 @@ def setup_app(**kwargs):
     sio.on("terminal_resize", socket_handlers.terminal_resize)
 
     # Register AI-specific handlers
+    sio.on("ai_chat_message", socket_handlers.ai_chat_message)
+    sio.on("ai_terminal_analysis", socket_handlers.ai_terminal_analysis)
+    sio.on("ai_get_info", socket_handlers.ai_get_info)
+
+    # Register Wrapper session sync handlers
     sio.on("wrapper_session_sync", socket_handlers.wrapper_session_sync)
     sio.on("get_wrapper_sessions", socket_handlers.get_wrapper_sessions)
     sio.on("unblock_request", socket_handlers.unblock_request)
     sio.on("get_block_status", socket_handlers.get_block_status)
 
+    # Register Pane management handlers
+    sio.on("pane_create", socket_handlers.pane_create)
+    sio.on("pane_destroy", socket_handlers.pane_destroy)
+    sio.on("pane_resize", socket_handlers.pane_resize)
+    sio.on("pane_focus", socket_handlers.pane_focus)
+    sio.on("pane_list", socket_handlers.pane_list)
+    sio.on("pane_input", socket_handlers.pane_input)
+    sio.on("session_list", socket_handlers.session_list)
+
+    # Register AI command execution handlers
+    sio.on("ai_execute_command", socket_handlers.ai_execute_command)
+    sio.on("ai_set_execution_mode", socket_handlers.ai_set_execution_mode)
+
     # Set up auto-blocker integration
     from aetherterm.agentserver.auto_blocker import set_socket_io_instance
+
     set_socket_io_instance(sio)
+
+    # ZMQ Broker integration (feature flag: AETHERTERM_ZMQ_ENABLED)
+    zmq_enabled = os.getenv("AETHERTERM_ZMQ_ENABLED", "").lower() in ("true", "1", "yes")
+    if zmq_enabled:
+        from aetherterm.common.zmq.zmq_bridge import SocketIOZMQBridge
+        from aetherterm.common.zmq.zmq_broker import ZMQBroker
+        from aetherterm.common.zmq.zmq_config import ZMQConfig
+
+        zmq_config = ZMQConfig(
+            enabled=True,
+            broker_router_endpoint=os.getenv("AETHERTERM_ZMQ_ROUTER", "tcp://127.0.0.1:5560"),
+            broker_pub_endpoint=os.getenv("AETHERTERM_ZMQ_PUB", "tcp://127.0.0.1:5561"),
+            broker_push_endpoint=os.getenv("AETHERTERM_ZMQ_PUSH", "tcp://127.0.0.1:5562"),
+        )
+
+        zmq_broker = ZMQBroker(zmq_config)
+        zmq_bridge = SocketIOZMQBridge(sio, zmq_broker)
+
+        # Store references for access by handlers
+        socket_handlers.set_zmq_broker(zmq_broker)
+        socket_handlers.set_zmq_bridge(zmq_bridge)
+
+        # Wire up command handlers (AgentShell Observer Pattern)
+        zmq_bridge.set_command_inject_handler(socket_handlers.handle_zmq_command_inject)
+        zmq_bridge.set_command_propose_handler(socket_handlers.handle_zmq_command_propose)
+
+        # Start broker and bridge via FastAPI startup event
+        @fastapi_app.on_event("startup")
+        async def start_zmq():
+            await zmq_broker.start()
+            await zmq_bridge.start()
+            log.info("ZMQ Broker and Bridge started")
+
+        log.info("ZMQ integration enabled")
+    else:
+        log.info("ZMQ integration disabled (set AETHERTERM_ZMQ_ENABLED=true to enable)")
 
     log.info("AetherTerm AgentServer application setup complete")
 
@@ -537,8 +626,7 @@ def setup_app(**kwargs):
 
 
 def create_asgi_app():
-    """
-    Factory function for creating the ASGI application.
+    """Factory function for creating the ASGI application.
     This is called by uvicorn/hypercorn when using:
     uvicorn aetherterm.agentserver.server:create_asgi_app --factory
     """
@@ -557,7 +645,9 @@ def create_asgi_app():
     config["login"] = os.getenv("AETHERTERM_LOGIN", "").lower() in ("true", "1", "yes")
     config["pam_profile"] = os.getenv("AETHERTERM_PAM_PROFILE", "")
     config["ai_mode"] = os.getenv("AETHERTERM_AI_MODE", "streaming")
-    config["ai_provider"] = os.getenv("AETHERTERM_AI_PROVIDER", "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "mock")
+    config["ai_provider"] = os.getenv(
+        "AETHERTERM_AI_PROVIDER", "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "mock"
+    )
     config["ai_api_key"] = os.getenv("ANTHROPIC_API_KEY")
     config["ai_model"] = os.getenv("AETHERTERM_AI_MODEL", "claude-3-5-sonnet-20241022")
 

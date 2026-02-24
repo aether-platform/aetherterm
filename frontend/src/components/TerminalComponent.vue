@@ -1,5 +1,5 @@
 <template>
-  <div class="terminal-container">
+  <div class="terminal-container" :class="{ focused: isFocused }" @click="handleClick">
     <!-- Connection Status -->
     <div v-if="!terminalStore.connectionState.isConnected" class="connection-status">
       <div class="status-indicator" :class="connectionStatusClass">
@@ -15,14 +15,20 @@
 
     <!-- Terminal Lock Status -->
     <div v-if="terminalStore.isTerminalBlocked" class="lock-status">
-      <div class="lock-indicator">🔒 Terminal Locked</div>
+      <div class="lock-indicator">Terminal Locked</div>
     </div>
 
     <!-- Terminal Blocked Overlay -->
     <div v-if="terminalStore.isTerminalBlocked" class="terminal-overlay"></div>
 
+    <!-- Pane title bar -->
+    <div class="pane-title-bar" v-if="paneId">
+      <span class="pane-title">{{ paneTitle }}</span>
+      <span class="pane-session">{{ sessionId }}</span>
+    </div>
+
     <!-- Xterm.js Integration -->
-    <div id="terminal" class="xterm-container" @click="hideSelectionPopup"></div>
+    <div ref="terminalEl" class="xterm-container" @click="hideSelectionPopup"></div>
 
     <!-- Selection Action Popup -->
     <SelectionActionPopup
@@ -42,15 +48,36 @@
   import { WebLinksAddon } from '@xterm/addon-web-links'
   import { Terminal, type ITheme } from '@xterm/xterm'
   import '@xterm/xterm/css/xterm.css'
-  import { computed, onMounted, onUnmounted, ref } from 'vue'
+  import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
   import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
+  import { usePaneStore } from '../stores/paneStore'
   import SelectionActionPopup from './SelectionActionPopup.vue'
+
+  const props = withDefaults(
+    defineProps<{
+      paneId?: string
+      sessionId?: string
+      mode?: string
+      isFocused?: boolean
+    }>(),
+    {
+      paneId: '',
+      sessionId: '',
+      mode: 'terminal',
+      isFocused: false,
+    }
+  )
+
+  const emit = defineEmits<{
+    focus: []
+  }>()
 
   const terminalEl = ref<HTMLElement | null>(null)
   const terminal = ref<Terminal | null>(null)
   const fitAddon = ref<FitAddon | null>(null)
 
   const terminalStore = useAetherTerminalServiceStore()
+  const paneStore = usePaneStore()
 
   // Selection popup state
   const showSelectionPopup = ref(false)
@@ -59,6 +86,19 @@
 
   const isSupervisorLocked = computed(() => {
     return terminalStore.isSupervisorLocked
+  })
+
+  const paneTitle = computed(() => {
+    if (props.paneId) {
+      const pane = paneStore.panes.get(props.paneId)
+      return pane?.title || 'Terminal'
+    }
+    return 'Terminal'
+  })
+
+  // Determine the session ID to use (prop or store)
+  const effectiveSessionId = computed(() => {
+    return props.sessionId || terminalStore.session.id
   })
 
   // Connection status computed properties
@@ -113,180 +153,195 @@
     brightWhite: '#ffffff',
   }
 
+  // Shell output handler reference for cleanup
+  let shellOutputHandler: ((data: string) => void) | null = null
+
+  // Resize observer for container changes
+  let resizeObserver: ResizeObserver | null = null
+
+  function handleClick() {
+    emit('focus')
+  }
+
   onMounted(async () => {
-    console.log('TerminalComponent mounted')
-    terminalEl.value = document.getElementById('terminal')
-    console.log('Terminal element found:', terminalEl.value)
-    if (terminalEl.value) {
-      terminal.value = new Terminal({
-        convertEol: true,
-        cursorBlink: true,
-        disableStdin: false,
-        scrollback: 1000,
-        theme: theme,
-        allowProposedApi: true,
-      })
+    if (!terminalEl.value) return
 
-      fitAddon.value = new FitAddon()
-      terminal.value.loadAddon(fitAddon.value)
+    terminal.value = new Terminal({
+      convertEol: true,
+      cursorBlink: true,
+      disableStdin: false,
+      scrollback: 1000,
+      theme: theme,
+      allowProposedApi: true,
+    })
 
-      const webLinksAddon = new WebLinksAddon()
-      terminal.value.loadAddon(webLinksAddon)
+    fitAddon.value = new FitAddon()
+    terminal.value.loadAddon(fitAddon.value)
+    terminal.value.loadAddon(new WebLinksAddon())
+    terminal.value.loadAddon(new Unicode11Addon())
 
-      const unicode11Addon = new Unicode11Addon()
-      terminal.value.loadAddon(unicode11Addon)
-      //unicode11Addon.loadWebFont().then(() => {
-      terminal.value?.refresh(0, terminal.value.rows - 1)
-      //});
+    terminal.value.open(terminalEl.value)
+    fitAddon.value.fit()
 
-      terminal.value.open(terminalEl.value)
-      fitAddon.value.fit()
-
-      // Listen for terminal resize events and send to backend
-      terminal.value.onResize((dimensions) => {
-        console.log('Terminal resized:', dimensions)
-        // Send resize event to backend
-        if (terminalStore.socket && terminalStore.session.id) {
+    // Listen for terminal resize events and send to backend
+    terminal.value.onResize((dimensions) => {
+      if (terminalStore.socket && effectiveSessionId.value) {
+        if (props.paneId) {
+          // Multi-pane mode: use pane_resize
+          terminalStore.socket.emit('pane_resize', {
+            pane_id: props.paneId,
+            cols: dimensions.cols,
+            rows: dimensions.rows,
+          })
+        } else {
+          // Legacy single-pane mode
           terminalStore.socket.emit('terminal_resize', {
-            session: terminalStore.session.id,
+            session: effectiveSessionId.value,
             cols: dimensions.cols,
             rows: dimensions.rows,
           })
         }
-      })
+      }
+    })
 
-      // Connect to the socket and receive data
-      let motdContent = ''
-
-      terminalStore.onShellOutput((data: string) => {
-        // Detect MOTD content (contains multiple color sequences and text)
-        if (data.includes('\u001b[34;1m') && data.includes('\u001b[37;1m') && data.length > 100) {
-          motdContent = data
-          console.log('MOTD content detected and stored')
-        }
-
-        // Check for clear screen sequences that might clear MOTD
-        if (data.includes('\u001b[2J') || data.includes('\u001b[H')) {
-          // Re-display MOTD after clear screen
-          if (motdContent) {
-            setTimeout(() => {
-              terminal.value?.write(motdContent)
-              console.log('MOTD re-displayed after clear screen')
-            }, 100)
-          }
-        }
-
-        terminal.value?.write(data)
-      })
-
-      terminal.value.onKey((e) => {
-        const ev = e.domEvent
-
-        if (isSupervisorLocked.value) {
-          ev.preventDefault()
-          return
-        }
-
-        // Send all key inputs to backend (don't handle locally)
-        sendInput(e.key)
-      })
-
-      // Handle text selection events
-      terminal.value.onSelectionChange(() => {
-        const selection = terminal.value?.getSelection()
-        if (selection && selection.trim()) {
-          selectedText.value = selection
-          showSelectionPopup.value = false // Hide popup initially
-        } else {
-          hideSelectionPopup()
-        }
-      })
-
-      // Handle mouse events for selection popup
-      terminalEl.value.addEventListener('mouseup', (event: MouseEvent) => {
-        setTimeout(() => {
-          const selection = terminal.value?.getSelection()
-          if (selection && selection.trim()) {
-            selectedText.value = selection.trim()
-            
-            // Position popup near mouse cursor
-            const terminalRect = terminalEl.value?.getBoundingClientRect()
-            if (terminalRect) {
-              popupPosition.value = {
-                x: Math.min(event.clientX - terminalRect.left, terminalRect.width - 180),
-                y: Math.max(event.clientY - terminalRect.top - 40, 0)
-              }
-            }
-            
-            showSelectionPopup.value = true
-          }
-        }, 10) // Small delay to ensure selection is processed
-      })
-
-      window.addEventListener('resize', () => {
-        if (fitAddon.value && terminal.value) {
-          fitAddon.value.fit()
-          // Send new terminal size after fit
-          setTimeout(() => {
-            if (terminal.value && terminalStore.socket && terminalStore.session.id) {
-              terminalStore.socket.emit('terminal_resize', {
-                session: terminalStore.session.id,
-                cols: terminal.value.cols,
-                rows: terminal.value.rows,
-              })
-            }
-          }, 100)
-        }
-      })
+    // Set up shell output listener filtered by session
+    shellOutputHandler = (data: string) => {
+      terminal.value?.write(data)
     }
 
-    // Initialize connection after terminal is setup
-    terminalStore.connect()
+    if (props.paneId) {
+      // Multi-pane: listen for pane-specific output via backend routing
+      // The backend broadcasts terminal_output with session ID;
+      // we filter by our session
+      const handler = (rawData: any) => {
+        if (rawData && rawData.data && rawData.session === effectiveSessionId.value) {
+          terminal.value?.write(rawData.data)
+        }
+      }
+      if (terminalStore.socket) {
+        terminalStore.socket.on('terminal_output', handler)
+      }
+      // Store handler ref for cleanup
+      shellOutputHandler = handler as any
+    } else {
+      // Legacy single-pane: use store callback
+      terminalStore.onShellOutput(shellOutputHandler)
+    }
+
+    // Handle key input
+    terminal.value.onKey((e) => {
+      const ev = e.domEvent
+
+      if (isSupervisorLocked.value) {
+        ev.preventDefault()
+        return
+      }
+
+      sendInput(e.key)
+    })
+
+    // Handle text selection events
+    terminal.value.onSelectionChange(() => {
+      const selection = terminal.value?.getSelection()
+      if (selection && selection.trim()) {
+        selectedText.value = selection
+        showSelectionPopup.value = false
+      } else {
+        hideSelectionPopup()
+      }
+    })
+
+    // Handle mouse events for selection popup
+    terminalEl.value.addEventListener('mouseup', (event: MouseEvent) => {
+      setTimeout(() => {
+        const selection = terminal.value?.getSelection()
+        if (selection && selection.trim()) {
+          selectedText.value = selection.trim()
+
+          const terminalRect = terminalEl.value?.getBoundingClientRect()
+          if (terminalRect) {
+            popupPosition.value = {
+              x: Math.min(event.clientX - terminalRect.left, terminalRect.width - 180),
+              y: Math.max(event.clientY - terminalRect.top - 40, 0),
+            }
+          }
+
+          showSelectionPopup.value = true
+        }
+      }, 10)
+    })
+
+    // Use ResizeObserver instead of window resize for container-level resize
+    resizeObserver = new ResizeObserver(() => {
+      if (fitAddon.value && terminal.value) {
+        fitAddon.value.fit()
+      }
+    })
+    resizeObserver.observe(terminalEl.value)
+
+    // If in multi-pane mode, create terminal via pane_create is handled by paneStore
+    // For legacy single-pane, the store handles create_terminal on connect
+    if (!props.paneId) {
+      terminalStore.connect()
+    }
   })
 
   onUnmounted(() => {
-    terminalStore.offShellOutput()
+    if (shellOutputHandler) {
+      if (props.paneId && terminalStore.socket) {
+        terminalStore.socket.off('terminal_output', shellOutputHandler as any)
+      } else {
+        terminalStore.offShellOutput(shellOutputHandler)
+      }
+    }
+    resizeObserver?.disconnect()
     terminal.value?.dispose()
-    window.removeEventListener('resize', () => {
-      fitAddon.value?.fit()
-    })
   })
 
-  // Send input to backend for real-time processing
+  // Re-fit when focus changes
+  watch(
+    () => props.isFocused,
+    (focused) => {
+      if (focused && fitAddon.value) {
+        // Small delay to let layout settle
+        setTimeout(() => fitAddon.value?.fit(), 50)
+      }
+    }
+  )
+
   const sendInput = (input: string) => {
-    console.log('Sending input to backend:', input)
-    terminalStore.sendInput(input)
+    if (props.paneId) {
+      // Multi-pane: send to specific pane
+      if (terminalStore.socket) {
+        terminalStore.socket.emit('pane_input', {
+          pane_id: props.paneId,
+          data: input,
+        })
+      }
+    } else {
+      // Legacy: send to store
+      terminalStore.sendInput(input)
+    }
   }
 
-  // Selection popup event handlers
   const hideSelectionPopup = () => {
     showSelectionPopup.value = false
     selectedText.value = ''
   }
 
   const onCopyAction = () => {
-    console.log('Text copied successfully')
-    // Optional: Show a toast notification
+    // Toast notification could go here
   }
 
   const onSendToAI = (text: string) => {
-    console.log('Sending text to AI:', text)
-    // Send text to AI chat component with selected terminal text
     const chatMessage = {
       type: 'user',
       message: `Please analyze this terminal output: ${text}`,
       timestamp: new Date(),
-      source: 'terminal_selection'
+      source: 'terminal_selection',
     }
     terminalStore.sendChatMessage(chatMessage)
   }
-
-  // Override WebSocket.send to log data
-  // const originalSend = WebSocket.prototype.send
-  // const originalSend = function(data) {
-  //   console.log('Sending data:', data) // Debug log
-  //   originalSend.apply(this, [
-  // }
 </script>
 
 <style scoped>
@@ -295,56 +350,90 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    background-color: #1e1e1e;
-    color: #ffffff;
-    font-family: 'Courier New', monospace;
+    background-color: var(--bg-secondary);
+    color: var(--text-main);
+    font-family: 'Inter', system-ui, sans-serif;
     position: relative;
-    min-height: 400px; /* 最小高さを設定 */
+    min-height: 80px;
+    border: 2px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+
+  .terminal-container.focused {
+    border-color: var(--accent-color);
+    box-shadow: inset 0 0 10px var(--accent-glow);
+  }
+
+  .pane-title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .pane-title {
+    color: var(--text-main);
+  }
+
+  .pane-session {
+    opacity: 0.5;
+    font-family: monospace;
+    font-size: 9px;
   }
 
   .connection-status {
-    padding: 8px 12px;
-    background-color: #2d2d2d;
-    border-bottom: 1px solid #444;
+    padding: 10px 16px;
+    background-color: var(--bg-glass);
+    border-bottom: 1px solid var(--border-color);
+    backdrop-filter: blur(8px);
   }
 
   .status-indicator {
-    font-size: 12px;
-    font-weight: bold;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
   }
 
   .status-connected {
-    color: #4caf50;
+    color: var(--accent-color);
   }
-
-  .status-connecting {
-    color: #ff9800;
-  }
-
+  .status-connecting,
   .status-reconnecting {
     color: #ff9800;
   }
-
   .status-disconnected {
     color: #f44336;
   }
 
   .reconnect-info {
-    font-size: 11px;
-    color: #ccc;
+    font-size: 10px;
+    color: var(--text-muted);
     margin-top: 4px;
   }
 
   .lock-status {
-    padding: 8px 12px;
-    background-color: #d32f2f;
-    border-bottom: 1px solid #444;
+    padding: 12px;
+    background-color: #f44336;
+    border-bottom: 1px solid var(--border-color);
     text-align: center;
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
   }
 
   .lock-indicator {
-    font-size: 14px;
-    font-weight: bold;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     color: #ffffff;
   }
 
@@ -354,85 +443,25 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    pointer-events: none;
     z-index: 10;
-  }
-
-  .overlay-content {
-    background-color: #2d2d2d;
-    padding: 20px;
-    border-radius: 8px;
-    text-align: center;
-    max-width: 400px;
-  }
-
-  .block-reason h3 {
-    margin: 0 0 10px 0;
-    color: #ff9800;
-  }
-
-  .pending-commands {
-    margin-top: 15px;
-    text-align: left;
-  }
-
-  .pending-command {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px;
-    background-color: #1e1e1e;
-    margin: 4px 0;
-    border-radius: 4px;
-  }
-
-  .pending-command code {
-    color: #4caf50;
-  }
-
-  .risk-level {
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: bold;
-  }
-
-  .risk-level.low {
-    background-color: #4caf50;
-  }
-
-  .risk-level.medium {
-    background-color: #ff9800;
-  }
-
-  .risk-level.high {
-    background-color: #ff5722;
-  }
-
-  .risk-level.critical {
-    background-color: #f44336;
+    backdrop-filter: grayscale(0.5) blur(1px);
   }
 
   .xterm-container {
     flex: 1;
-    /* Take up remaining space */
-    border-top: 1px solid #444;
-    min-height: 300px; /* 最小高さを設定 */
-    background-color: #1e1e1e; /* 背景色を明示 */
+    min-height: 0;
+    background-color: var(--bg-secondary);
+    padding: 4px;
   }
 
-  .admin-lock-warning {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background-color: red;
-    color: white;
-    padding: 5px;
-    border-radius: 5px;
-    font-weight: bold;
-    z-index: 20;
+  /* Customize xterm scrollbar if possible or just use overflow */
+  :deep(.xterm-viewport::-webkit-scrollbar) {
+    width: 6px;
+  }
+  :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+    background: var(--border-color);
+    border-radius: 10px;
   }
 </style>

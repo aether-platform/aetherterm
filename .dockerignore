@@ -1,100 +1,62 @@
-# Git files
+# Git
 .git/
 .gitignore
 .gitattributes
 
-# Development files
-.github/
+# IDE & Editor
 .vscode/
 .idea/
+.claude/
+.roo/
 *.swp
 *.swo
 *~
 .DS_Store
 
-# Python files
+# Python build artifacts
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+build/
+dist/
+.venv/
+venv/
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
-.tox/
 .mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
 .ruff_cache/
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv/
+# Environment & Secrets
+.env
+.env.*
+!.env.example
 
-# Node.js files
+# Node.js (frontend rebuilt in Docker)
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+**/node_modules/
 frontend/dist/
-frontend/.nuxt/
-frontend/.output/
 
-# IDE files
-.idea/
-.vscode/
-*.iml
-
-# Test files
+# Tests & Docs (not needed in image)
 tests/
-test/
-
-# Documentation
 docs/
-*.md
-!README.md
 
-# CI/CD files
+# CI/CD & Linting config
 .pre-commit-config.yaml
 .yamllint.yaml
 .markdownlint.json
 ruff.toml
 
-# Temporary files
-*.tmp
-*.temp
+# Runtime & Logs
+run/
+logs/
 *.log
+*.tmp
 
-# OS files
-Thumbs.db
-
-# Docker files
-.dockerignore
-Dockerfile*
-
-# Images
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.ico
+# Large files
+models/
+*.psd
+*.ai

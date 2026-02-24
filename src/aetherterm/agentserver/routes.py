@@ -39,6 +39,12 @@ if os.path.exists(static_dir) and os.listdir(static_dir):
     router.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
+@router.get("/health")
+async def health():
+    """Health check endpoint for Docker/Kubernetes."""
+    return JSONResponse({"status": "ok"})
+
+
 @router.get("/", response_class=HTMLResponse)
 @inject
 async def index(
@@ -169,6 +175,8 @@ async def sessions_list(
     config=Provide[ApplicationContainer.config],
 ):
     """Get the list of active sessions."""
+    from aetherterm.agentserver.terminals.asyncio_terminal import AsyncioTerminal
+
     # Check if remote authentication is being used
     is_remote_authentication = bool(
         request.headers.get("authorization")
@@ -185,9 +193,22 @@ async def sessions_list(
             status_code=403, detail="Not available in unsecure mode without remote authentication"
         )
 
-    # TODO: Implement proper session listing when terminal sessions are implemented
-    # For now, return empty list
-    return JSONResponse({"sessions": [], "user": "unknown"})
+    sessions = []
+    for session_id, terminal in AsyncioTerminal.sessions.items():
+        if not terminal.closed:
+            sessions.append({
+                "id": session_id,
+                "is_active": not terminal.closed,
+                "client_count": len(terminal.client_sids) if hasattr(terminal, 'client_sids') else 0,
+                "user": terminal.user.name if hasattr(terminal, 'user') and terminal.user else "unknown",
+            })
+
+    user = "unknown"
+    remote_user = request.headers.get("x-remote-user")
+    if remote_user:
+        user = remote_user
+
+    return JSONResponse({"sessions": sessions, "user": user})
 
 
 @router.get("/themes/list.json")

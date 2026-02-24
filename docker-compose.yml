@@ -1,0 +1,95 @@
+# AetherTerm - Docker Compose
+#
+# Usage:
+#   docker compose up --build                          # Terminal server (ZMQ enabled)
+#   docker compose --profile agent up --build          # Terminal + AgentShell observer
+#   docker compose logs -f                             # Follow logs
+#   docker compose down                                # Stop and remove
+#
+# Multi-arch build (requires: docker buildx create --use):
+#   docker buildx bake --push                          # Build & push all platforms
+#
+# Access: http://localhost:57575
+
+services:
+  # ============================================================
+  # AetherTerm Server
+  #   - Web terminal on :57575
+  #   - ZMQ broker for agent communication
+  #   - Publishes terminal I/O via PUB/SUB
+  # ============================================================
+  aetherterm:
+    image: ghcr.io/aether-platform/aetherterm:latest
+    container_name: aetherterm
+    build:
+      context: .
+      dockerfile: Dockerfile
+      x-bake:
+        platforms:
+          - linux/amd64
+          - linux/arm64
+    ports:
+      - "57575:57575" # Web UI + Socket.IO
+      - "5560:5560" # ZMQ ROUTER (Agent RPC)
+      - "5561:5561" # ZMQ PUB (Agent Events)
+      - "5562:5562" # ZMQ PUSH (Agent Tasks)
+    environment:
+      AETHERTERM_HOST: "0.0.0.0"
+      AETHERTERM_PORT: "57575"
+      AETHERTERM_UNSECURE: "true"
+      AETHERTERM_DEBUG: "true"
+      AETHERTERM_ZMQ_ENABLED: "true"
+      AETHERTERM_ZMQ_ROUTER: "tcp://0.0.0.0:5560"
+      AETHERTERM_ZMQ_PUB: "tcp://0.0.0.0:5561"
+      AETHERTERM_ZMQ_PUSH: "tcp://0.0.0.0:5562"
+    command:
+      [
+        "aetherterm-agentserver",
+        "--host=0.0.0.0",
+        "--port=57575",
+        "--unsecure",
+        "--debug",
+      ]
+    volumes:
+      - aetherterm-logs:/var/log/aetherterm
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:57575/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # ============================================================
+  # AgentShell - Independent ZMQ Observer
+  #   - Subscribes to terminal I/O via ZMQ PUB/SUB
+  #   - Injects commands via COMMAND_INJECT / COMMAND_PROPOSE
+  #   - Can crash/restart without affecting the terminal
+  # ============================================================
+  aetherterm-agentshell:
+    image: ghcr.io/aether-platform/aetherterm:latest
+    container_name: aetherterm-agentshell
+    profiles: ["agent"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["tini", "--"]
+    command:
+      - "aetherterm-agentshell-zmq"
+      - "--session"
+      - "default"
+      - "--log-level"
+      - "INFO"
+    environment:
+      AETHERTERM_ZMQ_BROKER: "tcp://aetherterm:5560"
+      AETHERTERM_ZMQ_PUB: "tcp://aetherterm:5561"
+      AETHERTERM_ZMQ_PUSH: "tcp://aetherterm:5562"
+      # AI (optional)
+      # ANTHROPIC_API_KEY: ""
+    depends_on:
+      aetherterm:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  aetherterm-logs:

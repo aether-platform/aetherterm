@@ -1,10 +1,11 @@
+import asyncio
 import logging
 from uuid import uuid4
-import asyncio
 
 from dependency_injector.wiring import Provide, inject
 
 from aetherterm.agentserver import utils
+from aetherterm.agentserver.ai_services import get_ai_service
 from aetherterm.agentserver.auto_blocker import (
     BlockReason,
     get_auto_blocker,
@@ -14,12 +15,17 @@ from aetherterm.agentserver.containers import ApplicationContainer
 from aetherterm.agentserver.log_analyzer import SeverityLevel, get_log_analyzer
 from aetherterm.agentserver.terminals.asyncio_terminal import AsyncioTerminal
 from aetherterm.agentserver.utils import User
-from aetherterm.agentserver.ai_services import AIService, get_ai_service
+from aetherterm.common.agent_protocol import PaneConfig, PaneType
 
 log = logging.getLogger("aetherterm.socket_handlers")
 
 # Global storage for socket.io server instance
 sio_instance = None
+# Global pane manager instance
+_pane_manager = None
+# ZMQ instances (None when ZMQ disabled)
+_zmq_broker = None
+_zmq_bridge = None
 
 
 def set_sio_instance(sio):
@@ -28,6 +34,24 @@ def set_sio_instance(sio):
     sio_instance = sio
     # 自動ブロッカーにSocket.IOインスタンスを設定
     set_socket_io_instance(sio)
+
+
+def set_pane_manager(pane_manager):
+    """Set the global pane manager instance."""
+    global _pane_manager
+    _pane_manager = pane_manager
+
+
+def set_zmq_broker(broker):
+    """Set the global ZMQ broker instance (None when ZMQ disabled)."""
+    global _zmq_broker
+    _zmq_broker = broker
+
+
+def set_zmq_bridge(bridge):
+    """Set the global ZMQ bridge instance (None when ZMQ disabled)."""
+    global _zmq_bridge
+    _zmq_bridge = bridge
 
 
 def get_user_info_from_environ(environ):
@@ -81,7 +105,7 @@ async def connect(
     await sio_instance.emit("connected", {"data": "Connected to Butterfly"}, room=sid)
 
     try:
-        with open(config_motd, "r") as f:
+        with open(config_motd) as f:
             motd_content = f.read()
 
         # Jinja2 rendering
@@ -151,24 +175,23 @@ async def create_terminal(
                     "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
                 )
                 return
-            else:
-                # Session exists but is closed - check ownership and notify client
-                log.info(f"Attempted to connect to closed session {session_id}")
-                # Get environ for user info checking
-                environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
-                current_user_info = get_user_info_from_environ(environ)
-                is_owner = check_session_ownership(session_id, current_user_info)
+            # Session exists but is closed - check ownership and notify client
+            log.info(f"Attempted to connect to closed session {session_id}")
+            # Get environ for user info checking
+            environ = getattr(sio_instance, "environ", {}) if sio_instance else {}
+            current_user_info = get_user_info_from_environ(environ)
+            is_owner = check_session_ownership(session_id, current_user_info)
 
-                await sio_instance.emit(
-                    "terminal_closed",
-                    {
-                        "session": session_id,
-                        "reason": "session_already_closed",
-                        "is_owner": is_owner,
-                    },
-                    room=sid,
-                )
-                return
+            await sio_instance.emit(
+                "terminal_closed",
+                {
+                    "session": session_id,
+                    "reason": "session_already_closed",
+                    "is_owner": is_owner,
+                },
+                room=sid,
+            )
+            return
 
         # Check if this is a request for a specific session that was previously closed
         if is_specific_session_request and session_id in AsyncioTerminal.closed_sessions:
@@ -265,6 +288,12 @@ async def terminal_input(sid, data):
         if session_id in AsyncioTerminal.sessions:
             terminal = AsyncioTerminal.sessions[session_id]
             await terminal.write(input_data)
+
+            # ZMQ: Forward terminal input to ZMQ PUB/SUB for agent monitoring
+            if _zmq_bridge and _zmq_bridge.is_running:
+                asyncio.create_task(
+                    _zmq_bridge.forward_terminal_input_to_zmq(session_id, input_data)
+                )
         else:
             log.warning(f"Terminal session {session_id} not found")
 
@@ -331,7 +360,7 @@ def broadcast_to_session(session_id, message):
 
             # Terminal output - broadcast to all clients in this session
             log.debug(
-                f"Broadcasting terminal output for session {session_id} to {len(client_sids)} clients: {repr(message)}"
+                f"Broadcasting terminal output for session {session_id} to {len(client_sids)} clients: {message!r}"
             )
             for client_sid in client_sids:
                 asyncio.create_task(
@@ -339,6 +368,10 @@ def broadcast_to_session(session_id, message):
                         "terminal_output", {"session": session_id, "data": message}, room=client_sid
                     )
                 )
+
+            # ZMQ: Forward terminal output to ZMQ PUB/SUB for agent monitoring
+            if _zmq_bridge and _zmq_bridge.is_running:
+                asyncio.create_task(_zmq_bridge.forward_terminal_output_to_zmq(session_id, message))
         else:
             # Terminal closed - notify all clients in this session
             log.info(
@@ -516,17 +549,19 @@ def get_terminal_context(session_id):
         context_parts = []
 
         # Add terminal history if available
-        if hasattr(terminal, 'history') and terminal.history:
+        if hasattr(terminal, "history") and terminal.history:
             # Get last 1000 characters of terminal history to avoid overwhelming the AI
-            recent_history = terminal.history[-1000:] if len(terminal.history) > 1000 else terminal.history
+            recent_history = (
+                terminal.history[-1000:] if len(terminal.history) > 1000 else terminal.history
+            )
             context_parts.append(f"Recent terminal output:\n{recent_history}")
 
         # Add current working directory if available
-        if hasattr(terminal, 'path') and terminal.path:
+        if hasattr(terminal, "path") and terminal.path:
             context_parts.append(f"Current directory: {terminal.path}")
 
         # Add user information if available
-        if hasattr(terminal, 'user') and terminal.user:
+        if hasattr(terminal, "user") and terminal.user:
             context_parts.append(f"User: {terminal.user.name}")
 
         return "\n\n".join(context_parts) if context_parts else None
@@ -537,9 +572,9 @@ def get_terminal_context(session_id):
 async def ai_chat_message(sid, data):
     """Handle AI chat messages with terminal context."""
     try:
-        message = data.get('message', '')
-        message_id = data.get('message_id', '')
-        terminal_session = data.get('terminal_session')
+        message = data.get("message", "")
+        message_id = data.get("message_id", "")
+        terminal_session = data.get("terminal_session")
 
         if not message:
             log.warning("Empty message received for AI chat")
@@ -551,10 +586,11 @@ async def ai_chat_message(sid, data):
         ai_service = get_ai_service()
 
         if not await ai_service.is_available():
-            await sio_instance.emit('ai_chat_error', {
-                'message_id': message_id,
-                'error': 'AI service is not available'
-            }, room=sid)
+            await sio_instance.emit(
+                "ai_chat_error",
+                {"message_id": message_id, "error": "AI service is not available"},
+                room=sid,
+            )
             return
 
         # Get terminal context if session is provided
@@ -569,46 +605,44 @@ async def ai_chat_message(sid, data):
         try:
             response_chunks = []
             async for chunk in ai_service.chat_completion(
-                messages=messages,
-                terminal_context=terminal_context,
-                stream=True
+                messages=messages, terminal_context=terminal_context, stream=True
             ):
                 response_chunks.append(chunk)
-                await sio_instance.emit('ai_chat_chunk', {
-                    'message_id': message_id,
-                    'chunk': chunk
-                }, room=sid)
+                await sio_instance.emit(
+                    "ai_chat_chunk", {"message_id": message_id, "chunk": chunk}, room=sid
+                )
 
             # Send completion signal
-            full_response = ''.join(response_chunks)
-            await sio_instance.emit('ai_chat_complete', {
-                'message_id': message_id,
-                'full_response': full_response
-            }, room=sid)
+            full_response = "".join(response_chunks)
+            await sio_instance.emit(
+                "ai_chat_complete",
+                {"message_id": message_id, "full_response": full_response},
+                room=sid,
+            )
 
             log.info(f"AI chat completed for message_id: {message_id}")
 
         except Exception as e:
             log.error(f"Error during AI streaming: {e}")
-            await sio_instance.emit('ai_chat_error', {
-                'message_id': message_id,
-                'error': str(e)
-            }, room=sid)
+            await sio_instance.emit(
+                "ai_chat_error", {"message_id": message_id, "error": str(e)}, room=sid
+            )
 
     except Exception as e:
         log.error(f"Error handling AI chat message: {e}")
-        await sio_instance.emit('ai_chat_error', {
-            'message_id': data.get('message_id', ''),
-            'error': 'Internal server error'
-        }, room=sid)
+        await sio_instance.emit(
+            "ai_chat_error",
+            {"message_id": data.get("message_id", ""), "error": "Internal server error"},
+            room=sid,
+        )
 
 
 async def ai_terminal_analysis(sid, data):
     """Analyze terminal commands and provide AI suggestions."""
     try:
-        command = data.get('command', '')
-        terminal_session = data.get('terminal_session')
-        analysis_id = data.get('analysis_id', '')
+        command = data.get("command", "")
+        terminal_session = data.get("terminal_session")
+        analysis_id = data.get("analysis_id", "")
 
         if not command:
             log.warning("Empty command received for AI analysis")
@@ -620,10 +654,11 @@ async def ai_terminal_analysis(sid, data):
         ai_service = get_ai_service()
 
         if not await ai_service.is_available():
-            await sio_instance.emit('ai_analysis_error', {
-                'analysis_id': analysis_id,
-                'error': 'AI service is not available'
-            }, room=sid)
+            await sio_instance.emit(
+                "ai_analysis_error",
+                {"analysis_id": analysis_id, "error": "AI service is not available"},
+                room=sid,
+            )
             return
 
         # Get terminal context
@@ -648,39 +683,36 @@ Keep the response concise and practical."""
         try:
             response_chunks = []
             async for chunk in ai_service.chat_completion(
-                messages=messages,
-                terminal_context=terminal_context,
-                stream=True
+                messages=messages, terminal_context=terminal_context, stream=True
             ):
                 response_chunks.append(chunk)
-                await sio_instance.emit('ai_analysis_chunk', {
-                    'analysis_id': analysis_id,
-                    'chunk': chunk
-                }, room=sid)
+                await sio_instance.emit(
+                    "ai_analysis_chunk", {"analysis_id": analysis_id, "chunk": chunk}, room=sid
+                )
 
             # Send completion signal
-            full_analysis = ''.join(response_chunks)
-            await sio_instance.emit('ai_analysis_complete', {
-                'analysis_id': analysis_id,
-                'command': command,
-                'analysis': full_analysis
-            }, room=sid)
+            full_analysis = "".join(response_chunks)
+            await sio_instance.emit(
+                "ai_analysis_complete",
+                {"analysis_id": analysis_id, "command": command, "analysis": full_analysis},
+                room=sid,
+            )
 
             log.info(f"AI command analysis completed for analysis_id: {analysis_id}")
 
         except Exception as e:
             log.error(f"Error during AI analysis: {e}")
-            await sio_instance.emit('ai_analysis_error', {
-                'analysis_id': analysis_id,
-                'error': str(e)
-            }, room=sid)
+            await sio_instance.emit(
+                "ai_analysis_error", {"analysis_id": analysis_id, "error": str(e)}, room=sid
+            )
 
     except Exception as e:
         log.error(f"Error handling AI terminal analysis: {e}")
-        await sio_instance.emit('ai_analysis_error', {
-            'analysis_id': data.get('analysis_id', ''),
-            'error': 'Internal server error'
-        }, room=sid)
+        await sio_instance.emit(
+            "ai_analysis_error",
+            {"analysis_id": data.get("analysis_id", ""), "error": "Internal server error"},
+            room=sid,
+        )
 
 
 async def ai_get_info(sid, data):
@@ -692,28 +724,392 @@ async def ai_get_info(sid, data):
         provider = "unknown"
         model = "unknown"
 
-        if hasattr(ai_service, 'model'):
+        if hasattr(ai_service, "model"):
             model = ai_service.model
-        if hasattr(ai_service, '__class__'):
-            provider = ai_service.__class__.__name__.lower().replace('service', '')
+        if hasattr(ai_service, "__class__"):
+            provider = ai_service.__class__.__name__.lower().replace("service", "")
 
         is_available = await ai_service.is_available()
 
-        await sio_instance.emit('ai_info_response', {
-            'provider': provider,
-            'model': model,
-            'available': is_available,
-            'status': 'connected' if is_available else 'disconnected'
-        }, room=sid)
+        await sio_instance.emit(
+            "ai_info_response",
+            {
+                "provider": provider,
+                "model": model,
+                "available": is_available,
+                "status": "connected" if is_available else "disconnected",
+            },
+            room=sid,
+        )
 
-        log.info(f"AI info requested from {sid}: provider={provider}, model={model}, available={is_available}")
+        log.info(
+            f"AI info requested from {sid}: provider={provider}, model={model}, available={is_available}"
+        )
 
     except Exception as e:
         log.error(f"Error getting AI info: {e}")
-        await sio_instance.emit('ai_info_response', {
-            'provider': 'error',
-            'model': 'error',
-            'available': False,
-            'status': 'error',
-            'error': str(e)
-        }, room=sid)
+        await sio_instance.emit(
+            "ai_info_response",
+            {
+                "provider": "error",
+                "model": "error",
+                "available": False,
+                "status": "error",
+                "error": str(e),
+            },
+            room=sid,
+        )
+
+
+# ============================================================
+# Pane Management Handlers
+# ============================================================
+
+
+async def pane_create(sid, data):
+    """新しいペーンを作成します。"""
+    try:
+        if not _pane_manager:
+            await sio_instance.emit(
+                "pane_error", {"error": "Pane manager not initialized"}, room=sid
+            )
+            return
+
+        session_id = data.get("session_id", f"session_{uuid4().hex[:8]}")
+        mode = data.get("mode", "terminal")  # 3-mode system: code-server, tmux, pilot-chat
+        title = data.get("title", "")
+        size = data.get("size", {"rows": 24, "cols": 80})
+
+        config = PaneConfig(
+            pane_type=PaneType.TERMINAL,
+            title=title,
+            size=size,
+        )
+
+        pane = await _pane_manager.create_agent_pane(
+            parent_session_id=session_id, agent_type="default", config=config, mode=mode
+        )
+
+        _pane_manager.update_socket_mapping(pane.id, sid)
+
+        await sio_instance.emit("pane_created", pane.to_dict(), room=sid)
+        log.info(f"Pane created: {pane.id} in session {session_id} (Mode: {mode})")
+
+    except Exception as e:
+        log.error(f"Error creating pane: {e}", exc_info=True)
+        await sio_instance.emit("pane_error", {"error": str(e)}, room=sid)
+
+
+async def pane_destroy(sid, data):
+    """Destroy a pane."""
+    try:
+        if not _pane_manager:
+            await sio_instance.emit(
+                "pane_error", {"error": "Pane manager not initialized"}, room=sid
+            )
+            return
+
+        pane_id = data.get("pane_id")
+        if not pane_id:
+            await sio_instance.emit("pane_error", {"error": "pane_id required"}, room=sid)
+            return
+
+        success = await _pane_manager.destroy_pane(pane_id)
+
+        if success:
+            await sio_instance.emit("pane_destroyed", {"pane_id": pane_id}, room=sid)
+            log.info(f"Pane destroyed: {pane_id}")
+        else:
+            await sio_instance.emit("pane_error", {"error": f"Pane {pane_id} not found"}, room=sid)
+
+    except Exception as e:
+        log.error(f"Error destroying pane: {e}")
+        await sio_instance.emit("pane_error", {"error": str(e)}, room=sid)
+
+
+async def pane_resize(sid, data):
+    """Resize a pane terminal."""
+    try:
+        pane_id = data.get("pane_id")
+        cols = data.get("cols", 80)
+        rows = data.get("rows", 24)
+
+        if not _pane_manager:
+            return
+
+        pane = _pane_manager.get_pane(pane_id)
+        if pane and pane.terminal_id and pane.terminal_id in AsyncioTerminal.sessions:
+            terminal = AsyncioTerminal.sessions[pane.terminal_id]
+            await terminal.resize(cols, rows)
+
+    except Exception as e:
+        log.error(f"Error resizing pane: {e}")
+
+
+async def pane_focus(sid, data):
+    """Focus a pane."""
+    try:
+        pane_id = data.get("pane_id")
+        if not _pane_manager:
+            return
+
+        pane = _pane_manager.get_pane(pane_id)
+        if pane:
+            await sio_instance.emit("pane_focused", {"pane_id": pane_id}, room=sid)
+            log.debug(f"Pane focused: {pane_id}")
+
+    except Exception as e:
+        log.error(f"Error focusing pane: {e}")
+
+
+async def pane_list(sid, data):
+    """ペーン一覧を取得します。"""
+    try:
+        if not _pane_manager:
+            await sio_instance.emit("pane_list_response", {"panes": []}, room=sid)
+            return
+
+        session_id = data.get("session_id")
+        panes = _pane_manager.list_panes(parent_session_id=session_id)
+
+        await sio_instance.emit(
+            "pane_list_response", {"panes": [p.to_dict() for p in panes]}, room=sid
+        )
+
+    except Exception as e:
+        log.error(f"Error listing panes: {e}")
+        await sio_instance.emit("pane_list_response", {"panes": [], "error": str(e)}, room=sid)
+
+
+async def session_list(sid, data):
+    """セッション一覧を取得します。"""
+    try:
+        if not _pane_manager:
+            await sio_instance.emit("session_list_response", {"sessions": []}, room=sid)
+            return
+
+        sessions = _pane_manager.list_sessions()
+        await sio_instance.emit(
+            "session_list_response", {"sessions": [s.to_dict() for s in sessions]}, room=sid
+        )
+
+    except Exception as e:
+        log.error(f"Error listing sessions: {e}")
+        await sio_instance.emit(
+            "session_list_response", {"sessions": [], "error": str(e)}, room=sid
+        )
+
+
+# ============================================================
+# AI Command Execution Handlers
+# ============================================================
+
+# Execution mode per socket: "approval" (default) or "auto"
+_execution_modes: dict = {}
+
+
+async def ai_execute_command(sid, data):
+    """Execute a command proposed by AI in a target pane/terminal."""
+    try:
+        pane_id = data.get("pane_id")
+        command = data.get("command", "")
+        command_id = data.get("command_id", "")
+
+        if not command:
+            await sio_instance.emit(
+                "command_blocked",
+                {
+                    "command_id": command_id,
+                    "reason": "Empty command",
+                },
+                room=sid,
+            )
+            return
+
+        # Check with AutoBlocker
+        auto_blocker = get_auto_blocker()
+
+        # Determine the target session
+        target_session_id = None
+        if pane_id and _pane_manager:
+            pane = _pane_manager.get_pane(pane_id)
+            if pane and pane.terminal_id:
+                target_session_id = pane.terminal_id
+        else:
+            # Fallback: use first available session
+            for session_id, terminal in AsyncioTerminal.sessions.items():
+                if not terminal.closed:
+                    target_session_id = session_id
+                    break
+
+        if not target_session_id or target_session_id not in AsyncioTerminal.sessions:
+            await sio_instance.emit(
+                "command_blocked",
+                {
+                    "command_id": command_id,
+                    "reason": "No active terminal session",
+                },
+                room=sid,
+            )
+            return
+
+        # Check if command is blocked
+        if auto_blocker.is_session_blocked(target_session_id):
+            await sio_instance.emit(
+                "command_blocked",
+                {
+                    "command_id": command_id,
+                    "reason": "Session is currently blocked",
+                },
+                room=sid,
+            )
+            return
+
+        # Write command to terminal (append newline to execute)
+        terminal = AsyncioTerminal.sessions[target_session_id]
+        await terminal.write(command + "\n")
+
+        await sio_instance.emit(
+            "command_executed",
+            {
+                "command_id": command_id,
+                "pane_id": pane_id,
+            },
+            room=sid,
+        )
+
+        log.info(f"AI command executed: '{command}' in session {target_session_id}")
+
+    except Exception as e:
+        log.error(f"Error executing AI command: {e}")
+        await sio_instance.emit(
+            "command_blocked",
+            {
+                "command_id": data.get("command_id", ""),
+                "reason": str(e),
+            },
+            room=sid,
+        )
+
+
+async def ai_set_execution_mode(sid, data):
+    """Set AI command execution mode (approval or auto)."""
+    try:
+        mode = data.get("mode", "approval")
+        if mode not in ("approval", "auto"):
+            mode = "approval"
+
+        _execution_modes[sid] = mode
+
+        await sio_instance.emit(
+            "execution_mode_changed",
+            {
+                "mode": mode,
+            },
+            room=sid,
+        )
+
+        log.info(f"Execution mode set to '{mode}' for client {sid}")
+
+    except Exception as e:
+        log.error(f"Error setting execution mode: {e}")
+
+
+async def pane_input(sid, data):
+    """Handle input to a specific pane's terminal."""
+    try:
+        pane_id = data.get("pane_id")
+        input_data = data.get("data", "")
+
+        if not _pane_manager:
+            return
+
+        pane = _pane_manager.get_pane(pane_id)
+        if pane and pane.terminal_id and pane.terminal_id in AsyncioTerminal.sessions:
+            terminal = AsyncioTerminal.sessions[pane.terminal_id]
+            await terminal.write(input_data)
+        else:
+            log.warning(f"Pane {pane_id} terminal not found")
+
+    except Exception as e:
+        log.error(f"Error handling pane input: {e}")
+
+
+# ============================================================
+# ZMQ Command Handlers (AgentShell Observer Pattern)
+# ============================================================
+
+
+async def handle_zmq_command_inject(message):
+    """Handle COMMAND_INJECT from ZMQ (AgentShell → PTY).
+
+    Writes the command directly to the target terminal's PTY.
+    """
+    try:
+        session_id = message.payload.get("session_id")
+        command = message.payload.get("command", "")
+
+        if not session_id or not command:
+            log.warning("COMMAND_INJECT missing session_id or command")
+            return
+
+        if session_id not in AsyncioTerminal.sessions:
+            log.warning(f"COMMAND_INJECT: session {session_id} not found")
+            return
+
+        terminal = AsyncioTerminal.sessions[session_id]
+        if terminal.closed:
+            log.warning(f"COMMAND_INJECT: session {session_id} is closed")
+            return
+
+        await terminal.write(command + "\n")
+        log.info(f"COMMAND_INJECT executed in session {session_id}: {command[:80]}")
+
+        # Notify frontend that a command was injected
+        if sio_instance:
+            await sio_instance.emit(
+                "agent_command_injected",
+                {
+                    "session_id": session_id,
+                    "command": command,
+                    "agent_id": message.from_agent,
+                },
+            )
+
+    except Exception as e:
+        log.error(f"Error handling COMMAND_INJECT: {e}")
+
+
+async def handle_zmq_command_propose(message):
+    """Handle COMMAND_PROPOSE from ZMQ (AgentShell → Frontend).
+
+    Forwards the command proposal to the frontend via Socket.IO
+    for user approval ([Run]/[Skip]).
+    """
+    try:
+        session_id = message.payload.get("session_id", "")
+        command = message.payload.get("command", "")
+        description = message.payload.get("description", "")
+
+        if not command:
+            log.warning("COMMAND_PROPOSE missing command")
+            return
+
+        if sio_instance:
+            await sio_instance.emit(
+                "command_proposed",
+                {
+                    "session_id": session_id,
+                    "from_agent": message.from_agent,
+                    "command": command,
+                    "description": description,
+                    "require_approval": message.payload.get("require_approval", True),
+                    "message_id": str(message.message_id),
+                },
+            )
+            log.info(
+                f"COMMAND_PROPOSE forwarded to frontend: {command[:80]} (from {message.from_agent})"
+            )
+
+    except Exception as e:
+        log.error(f"Error handling COMMAND_PROPOSE: {e}")

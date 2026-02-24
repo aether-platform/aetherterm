@@ -27,6 +27,7 @@ from ...common.report_models import ActivityType, WorkActivity
 from ..agents.base import AgentTask, UserIntervention
 from .agent_coordinator import AgentCoordinator, ConflictType, CoordinationStrategy
 from .server_connector import ServerConnector
+# ZMQAgentConnector is also accepted (duck typing via same interface)
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,16 @@ class ChildAgentHandle:
 class AgentOrchestrator:
     """
     エージェントオーケストレーター
-    
+
     エージェント間の連携を管理し、タスクの委譲、
     進捗監視、ユーザー介入の調整を行います。
+
+    server_connectorはServerConnectorまたはZMQAgentConnectorの
+    いずれかを受け取ります（同じインターフェースを実装）。
     """
-    
-    def __init__(self, server_connector: ServerConnector):
+
+    def __init__(self, server_connector):
+        # ServerConnector or ZMQAgentConnector (duck typing)
         self.server_connector = server_connector
         self._agent_id = f"agentshell_{uuid4().hex[:8]}"
         self._child_agents: Dict[str, ChildAgentHandle] = {}

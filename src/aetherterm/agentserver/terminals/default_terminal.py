@@ -31,7 +31,8 @@ import tornado.process
 import tornado.web
 import tornado.websocket
 
-from aetherterm import __version__, utils
+from aetherterm import __version__
+from aetherterm.agentserver import utils
 
 from .base_terminal import BaseTerminal
 

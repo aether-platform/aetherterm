@@ -35,6 +35,13 @@ export interface ConnectionState {
   latency: number
 }
 
+export interface AgentInfo {
+  agentId: string
+  status: string
+  capabilities: string[]
+  lastUpdate: Date
+}
+
 export interface AIMonitoringState {
   isActive: boolean
   monitoringRules: string[]
@@ -95,6 +102,9 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
 
   // Dynamic dangerous commands (managed by AI)
   const dangerousCommands = ref<string[]>([])
+
+  // ZMQ Agent Registry
+  const agentRegistry = ref<Map<string, AgentInfo>>(new Map())
 
   // Event Callbacks
   const eventCallbacks = ref<{
@@ -356,6 +366,38 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
     socketInstance.on('chat_message', (data: any) => {
       eventCallbacks.value.onChatMessage.forEach((callback) => callback(data))
     })
+
+    // ZMQ Agent events (when ZMQ broker is enabled)
+    socketInstance.on('agent_status_update', (data: any) => {
+      console.log('Agent status update:', data)
+      agentRegistry.value.set(data.agent_id, {
+        agentId: data.agent_id,
+        status: data.status,
+        capabilities: data.capabilities || [],
+        lastUpdate: new Date(),
+      })
+    })
+
+    socketInstance.on('command_proposed', (data: any) => {
+      console.log('Command proposed by agent:', data)
+      // Reuse existing command approval flow
+      const cmd: TerminalCommand = {
+        id: data.message_id,
+        command: data.command,
+        timestamp: new Date(),
+        status: 'pending',
+        riskLevel: 'high',
+        aiSuggestion: `Proposed by agent ${data.from_agent}: ${data.description || ''}`,
+        source: 'ai',
+      }
+      pendingCommands.value.push(cmd)
+      addToOutput(`[AGENT] Command proposed: ${data.command} (from ${data.from_agent})`)
+    })
+
+    socketInstance.on('agent_command_injected', (data: any) => {
+      console.log('Agent command injected:', data)
+      addToOutput(`[AGENT] Command injected by ${data.agent_id}: ${data.command}`)
+    })
   }
 
   const startReconnection = () => {
@@ -589,6 +631,7 @@ export const useAetherTerminalServiceStore = defineStore('aetherTerminalService'
     isSupervisorLocked,
     dangerousCommands,
     aiMonitoring,
+    agentRegistry,
 
     // Getters
     hasPendingCommands,

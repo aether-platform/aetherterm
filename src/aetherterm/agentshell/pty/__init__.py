@@ -4,9 +4,10 @@ PTY通信パッケージ
 util-linux-ngのscriptコマンドと同じアーキテクチャを使用して
 PTYマスター/スレーブペアでターミナル通信を管理します。
 
-2つのPTY実装を提供:
+3つのPTY実装を提供:
 - TerminalPTY: 非同期PTY通信（既存）
 - SyncTerminalPTY: 同期PTY通信 + 非同期バックエンド（test.pyから統合）
+- PTYChain: PTY二重チェーン（Agent中間層、ZMQ連携）
 """
 
 from .sync_terminal_pty import (
@@ -17,6 +18,7 @@ from .sync_terminal_pty import (
     run_shell_with_async_backend,
 )
 from .terminal_pty import TerminalBuffer, TerminalPTY
+from .pty_chain import PTYChain
 
 __all__ = [
     # 非同期PTY
@@ -28,4 +30,6 @@ __all__ = [
     "TerminalUtils",
     "run_shell_with_async_backend",
     "default_async_log",
+    # PTYチェーン（ZMQ Agent中間層）
+    "PTYChain",
 ]

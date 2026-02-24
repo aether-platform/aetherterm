@@ -105,6 +105,18 @@ class ServerConnectionConfig:
 
 
 @dataclass
+class ZMQConnectionConfig:
+    """ZMQ Agent間通信設定"""
+
+    enabled: bool = False
+    broker_router_endpoint: str = "tcp://127.0.0.1:5560"
+    broker_pub_endpoint: str = "tcp://127.0.0.1:5561"
+    broker_push_endpoint: str = "tcp://127.0.0.1:5562"
+    heartbeat_interval: int = 5
+    heartbeat_timeout: int = 15
+
+
+@dataclass
 class WrapperConfig:
     """ラッパープログラム全体設定（独立化対応）"""
 
@@ -118,6 +130,9 @@ class WrapperConfig:
 
     # サーバー連携設定（オプショナル）
     server_connection: ServerConnectionConfig = field(default_factory=ServerConnectionConfig)
+
+    # ZMQ Agent間通信設定
+    zmq: ZMQConnectionConfig = field(default_factory=ZMQConnectionConfig)
 
     # その他のサービス設定
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
@@ -285,6 +300,28 @@ class WrapperConfig:
                 ),
             )
 
+        # ZMQ設定
+        if "zmq" in data:
+            zmq_data = data["zmq"]
+            config.zmq = ZMQConnectionConfig(
+                enabled=zmq_data.get("enabled", config.zmq.enabled),
+                broker_router_endpoint=zmq_data.get(
+                    "broker_router_endpoint", config.zmq.broker_router_endpoint
+                ),
+                broker_pub_endpoint=zmq_data.get(
+                    "broker_pub_endpoint", config.zmq.broker_pub_endpoint
+                ),
+                broker_push_endpoint=zmq_data.get(
+                    "broker_push_endpoint", config.zmq.broker_push_endpoint
+                ),
+                heartbeat_interval=zmq_data.get(
+                    "heartbeat_interval", config.zmq.heartbeat_interval
+                ),
+                heartbeat_timeout=zmq_data.get(
+                    "heartbeat_timeout", config.zmq.heartbeat_timeout
+                ),
+            )
+
         # レガシー互換性: aetherterm_sync設定
         if "aetherterm_sync" in data:
             sync_data = data["aetherterm_sync"]
@@ -368,6 +405,20 @@ class WrapperConfig:
                 "1",
                 "yes",
             )
+
+        # ZMQ設定
+        if os.getenv("AETHERTERM_ZMQ_ENABLED"):
+            self.zmq.enabled = os.getenv("AETHERTERM_ZMQ_ENABLED").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        if os.getenv("AETHERTERM_ZMQ_ROUTER"):
+            self.zmq.broker_router_endpoint = os.getenv("AETHERTERM_ZMQ_ROUTER")
+        if os.getenv("AETHERTERM_ZMQ_PUB"):
+            self.zmq.broker_pub_endpoint = os.getenv("AETHERTERM_ZMQ_PUB")
+        if os.getenv("AETHERTERM_ZMQ_PUSH"):
+            self.zmq.broker_push_endpoint = os.getenv("AETHERTERM_ZMQ_PUSH")
 
         # モード設定の自動調整
         if self.server_connection.enabled and self.mode == "standalone":

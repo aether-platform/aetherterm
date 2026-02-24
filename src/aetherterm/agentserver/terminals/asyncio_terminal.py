@@ -22,11 +22,11 @@ import random
 import signal
 import string
 import struct
-import sys  # Import sys
+import sys
 import termios
 from logging import getLogger
 
-from aetherterm import utils
+from aetherterm.agentserver import utils
 
 from .base_terminal import BaseTerminal
 
@@ -196,7 +196,11 @@ class AsyncioTerminal(BaseTerminal):
         return env
 
     async def _get_shell_command(self):
-        """Get the shell command to execute."""
+        """Get the shell command to execute.
+
+        Always launches the OS shell directly.
+        AgentShell connects as an independent ZMQ observer (not in the PTY chain).
+        """
         if self.login:
             # If login is enabled, we need to handle PAM authentication
             if self.pam_profile:

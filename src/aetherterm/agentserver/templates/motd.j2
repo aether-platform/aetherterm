@@ -10,15 +10,20 @@
       j888888bd8gf"'   ':'   `"?g8bd888888k
         {{ colors.white }}'Y'{{ colors.blue }}   .8'     d' 'b     '8.   {{ colors.white }}'Y'{{ colors.reset }}
          {{ colors.white }}!{{ colors.blue }}   .8' {{ colors.white }}db{{ colors.blue }}  d'; ;`b  {{ colors.white }}db{{ colors.blue }} '8.   {{ colors.white }}!{{ colors.blue }}
-            d88  {{ colors.white }}`'{{ colors.blue }}  8 ; ; 8  {{ colors.white }}`'{{ colors.blue }}  88b             {{ colors.white }}butterfly {{ colors.yellow }}v {{ version }}{{ colors.blue }}
+            d88  {{ colors.white }}`'{{ colors.blue }}  8 ; ; 8  {{ colors.white }}`'{{ colors.blue }}  88b
            d888b   .g8 ',' 8g.   d888b
-          :888888888Y'     'Y888888888:           {{ colors.light_white }}Connecting to:{{ colors.blue }}
-          '! 8888888'       `8888888 !'              {{ colors.red if opts.unsecure else colors.green }}{{ butterfly.socket.local_addr }}:{{ butterfly.socket.local_port }}{{ colors.blue }}
+          :888888888Y'     'Y888888888:
+          '! 8888888'       `8888888 !'
             '8Y  {{ colors.white }}`Y         Y'{{ colors.blue }}  Y8'
-{{ colors.white }}              Y                   Y               {{ colors.light_white }}From:{{ colors.white }}
-             !                   !                  {{ colors.red if opts.unsecure else colors.green }}{{ butterfly.socket.remote_addr }}:{{ butterfly.socket.remote_port }}{{ colors.reset }}
-{% if butterfly.socket.proxy_addr %}                                 {{ colors.light_white }}Proxy:{{ colors.white }}
-                                                    {{ colors.cyan }}{{ butterfly.socket.proxy_addr }}{{ colors.reset }}
+{{ colors.white }}              Y                   Y
+
+{{ colors.white }}butterfly {{ colors.yellow }}v {{ version }}{{ colors.reset }}
+
+{{ colors.light_white }}Connecting to: {{ colors.red if opts.unsecure else colors.green }}{{ butterfly.socket.local_addr }}:{{ butterfly.socket.local_port }}{{ colors.reset }}
+{{ colors.light_white }}From:          {{ colors.red if opts.unsecure else colors.green }}{{ butterfly.socket.remote_addr }}:{{ butterfly.socket.remote_port }}{{ colors.reset }}
+
+{% if butterfly.socket.proxy_addr %}
+{{ colors.light_white }}Proxy:         {{ colors.cyan }}{{ butterfly.socket.proxy_addr }}{{ colors.reset }}
 {% endif %}
 
 For more information type: {{ colors.white }}$ {{ colors.green }}butterfly help{{ colors.reset }}
@@ -26,5 +31,13 @@ For more information type: {{ colors.white }}$ {{ colors.green }}butterfly help{
 {% else %}{{ colors.white }}Terminal session started{{ colors.reset }}
 {% endif %}
 
-{{ colors.light_white }}Share this session:{{ colors.white }}
-{{ uri }}{{ colors.reset }}
+{{ colors.light_white }}Share this session: {{ colors.white }}{{ uri }}{{ colors.reset }}
+
+{{ colors.cyan }}AetherTerm AI-Powered Environment{{ colors.reset }}
+--------------------------------------------------
+{{ colors.white }}Available Modes:{{ colors.reset }}
+  - {{ colors.green }}Terminal / Tmux{{ colors.reset }}: Standard shell environment
+  - {{ colors.green }}code-server{{ colors.reset }}: Visual Studio Code in the browser
+  - {{ colors.green }}Pilot Chat{{ colors.reset }}: Floating AI assistant overlay
+
+{{ colors.yellow }}💡 Tip: Type 'help' or click the Pilot icon to start.{{ colors.reset }}
