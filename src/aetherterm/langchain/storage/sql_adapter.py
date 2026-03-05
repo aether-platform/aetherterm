@@ -1,5 +1,5 @@
 """
-SQLストレージアダプター（中期メモリ用）
+SQL storage adapter (for medium-term memory).
 """
 
 import logging
@@ -7,32 +7,11 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
-    import sqlalchemy as sa
-    from sqlalchemy import (
-        JSON,
-        Boolean,
-        Column,
-        DateTime,
-        Float,
-        Index,
-        Integer,
-        String,
-        Text,
-        and_,
-        delete,
-        func,
-        or_,
-        select,
-        update,
-    )
-    from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+    from sqlalchemy import and_, delete, func, select, update
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-    from sqlalchemy.orm import declarative_base, sessionmaker
-    from sqlalchemy.types import CHAR, TypeDecorator
 except ImportError:
     create_async_engine = None
     AsyncSession = None
-    declarative_base = None
 
 from ..config.storage_config import StorageConfig
 from ..models.conversation import ConversationEntry, ConversationType, MessageRole
@@ -43,162 +22,93 @@ from .base_storage import (
     SessionStorageAdapter,
     SummaryStorageAdapter,
 )
+from .sql_models import Base, ConversationModel, SessionModel, SummaryModel
 
 logger = logging.getLogger(__name__)
 
-# SQLAlchemy Base
-Base = declarative_base()
 
-
-class GUID(TypeDecorator):
-    """プラットフォーム独立のGUID型"""
-
-    impl = CHAR
-    cache_ok = True
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(PG_UUID())
-        return dialect.type_descriptor(CHAR(36))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-        if dialect.name == "postgresql":
-            return str(value)
-        if not isinstance(value, str):
-            return str(value)
-        return value
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-        return str(value)
-
-
-class ConversationModel(Base):
-    """会話テーブルモデル"""
-
-    __tablename__ = "conversations"
-
-    id = Column(GUID(), primary_key=True)
-    session_id = Column(String(255), nullable=False, index=True)
-    conversation_type = Column(String(50), nullable=False)
-    role = Column(String(20), nullable=False)
-    content = Column(Text, nullable=False)
-    metadata = Column(JSON, default={})
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    # 追加フィールド
-    parent_id = Column(GUID(), nullable=True)
-    thread_id = Column(String(255), nullable=True, index=True)
-    tokens = Column(Integer, nullable=True)
-    model_name = Column(String(100), nullable=True)
-    processing_time_ms = Column(Integer, nullable=True)
-    confidence_score = Column(Float, nullable=True)
-
-    # インデックス
-    __table_args__ = (
-        Index("idx_conversations_session_timestamp", "session_id", "timestamp"),
-        Index("idx_conversations_type_role", "conversation_type", "role"),
-        Index("idx_conversations_thread_id", "thread_id"),
+def _conversation_model_to_entry(conv: ConversationModel) -> ConversationEntry:
+    """Convert a ConversationModel to a ConversationEntry domain object."""
+    return ConversationEntry(
+        id=conv.id,
+        session_id=conv.session_id,
+        conversation_type=ConversationType(conv.conversation_type),
+        role=MessageRole(conv.role),
+        content=conv.content,
+        metadata=conv.metadata or {},
+        timestamp=conv.timestamp,
+        parent_id=conv.parent_id if conv.parent_id else None,
+        thread_id=conv.thread_id,
+        tokens=conv.tokens,
+        model_name=conv.model_name,
+        processing_time_ms=conv.processing_time_ms,
+        confidence_score=conv.confidence_score,
     )
 
 
-class SessionModel(Base):
-    """セッションテーブルモデル"""
-
-    __tablename__ = "sessions"
-
-    session_id = Column(String(255), primary_key=True)
-    user_id = Column(String(255), nullable=True, index=True)
-    session_type = Column(String(50), nullable=False, default="terminal")
-    status = Column(String(20), nullable=False, default="active")
-
-    # 時間情報
-    start_time = Column(DateTime, nullable=False, default=datetime.utcnow)
-    last_activity = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    end_time = Column(DateTime, nullable=True)
-
-    # 統計情報
-    conversation_count = Column(Integer, nullable=False, default=0)
-    command_count = Column(Integer, nullable=False, default=0)
-    error_count = Column(Integer, nullable=False, default=0)
-    total_tokens = Column(Integer, nullable=False, default=0)
-
-    # メタデータ
-    metadata = Column(JSON, default={})
-    tags = Column(JSON, default=[])
-    settings = Column(JSON, default={})
-    environment_info = Column(JSON, default={})
-
-    # インデックス
-    __table_args__ = (
-        Index("idx_sessions_user_status", "user_id", "status"),
-        Index("idx_sessions_last_activity", "last_activity"),
-        Index("idx_sessions_start_time", "start_time"),
+def _session_model_to_context(session_model: SessionModel) -> SessionContext:
+    """Convert a SessionModel to a SessionContext domain object."""
+    return SessionContext(
+        session_id=session_model.session_id,
+        user_id=session_model.user_id,
+        session_type=SessionType(session_model.session_type),
+        status=SessionStatus(session_model.status),
+        start_time=session_model.start_time,
+        last_activity=session_model.last_activity,
+        end_time=session_model.end_time,
+        conversation_count=session_model.conversation_count,
+        command_count=session_model.command_count,
+        error_count=session_model.error_count,
+        total_tokens=session_model.total_tokens,
+        metadata=session_model.metadata or {},
+        tags=session_model.tags or [],
+        settings=session_model.settings or {},
+        environment_info=session_model.environment_info or {},
     )
 
 
-class SummaryModel(Base):
-    """要約テーブルモデル"""
-
-    __tablename__ = "summaries"
-
-    id = Column(GUID(), primary_key=True)
-    session_id = Column(String(255), nullable=False, index=True)
-    summary_type = Column(String(20), nullable=False, default="session")
-    content = Column(Text, nullable=False)
-
-    # 統計情報
-    total_conversations = Column(Integer, nullable=False, default=0)
-    total_commands = Column(Integer, nullable=False, default=0)
-    total_errors = Column(Integer, nullable=False, default=0)
-    total_tokens = Column(Integer, nullable=False, default=0)
-    duration_minutes = Column(Float, nullable=False, default=0.0)
-
-    # 時間情報
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    # メタデータ
-    metadata = Column(JSON, default={})
-
-    # インデックス
-    __table_args__ = (
-        Index("idx_summaries_session_type", "session_id", "summary_type"),
-        Index("idx_summaries_created_at", "created_at"),
+def _summary_model_to_domain(summary_model: SummaryModel) -> SessionSummary:
+    """Convert a SummaryModel to a SessionSummary domain object."""
+    return SessionSummary(
+        session_id=summary_model.session_id,
+        summary_type=summary_model.summary_type,
+        content=summary_model.content,
+        total_conversations=summary_model.total_conversations,
+        total_commands=summary_model.total_commands,
+        total_errors=summary_model.total_errors,
+        total_tokens=summary_model.total_tokens,
+        duration_minutes=summary_model.duration_minutes,
+        start_time=summary_model.start_time,
+        end_time=summary_model.end_time,
+        created_at=summary_model.created_at,
+        metadata=summary_model.metadata or {},
     )
 
 
 class SQLStorageAdapter(
     BaseStorageAdapter, MemoryStorageAdapter, SessionStorageAdapter, SummaryStorageAdapter
 ):
-    """SQLストレージアダプター"""
+    """SQL storage adapter."""
 
     def __init__(self, config: StorageConfig):
-        """
-        初期化
-
-        Args:
-            config: ストレージ設定
-        """
         if create_async_engine is None:
-            raise ImportError("sqlalchemy パッケージがインストールされていません")
+            raise ImportError("sqlalchemy package is not installed")
 
         super().__init__(config.to_dict())
         self.config = config
         self._engine = None
         self._session_factory = None
 
+    async def _ensure_connected(self):
+        """Ensure database connection is established."""
+        if not self._engine:
+            await self.connect()
+
     async def _connect_impl(self) -> None:
-        """SQL接続実装"""
+        """SQL connection implementation."""
         try:
             database_url = self.config.get_database_url()
 
-            # SQLiteの場合は非同期URLに変換
             if database_url.startswith("sqlite:///"):
                 database_url = database_url.replace("sqlite:///", "sqlite+aiosqlite:///")
             elif database_url.startswith("postgresql://"):
@@ -217,30 +127,26 @@ class SQLStorageAdapter(
                 self._engine, class_=AsyncSession, expire_on_commit=False
             )
 
-            # テーブル作成
             async with self._engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
-            self._logger.info("SQLデータベースに接続しました")
+            self._logger.info("Connected to SQL database")
 
         except Exception as e:
-            self._logger.error(f"SQL接続エラー: {e}")
+            self._logger.error(f"SQL connection error: {e}")
             raise
 
     async def _disconnect_impl(self) -> None:
-        """SQL切断実装"""
         if self._engine:
             await self._engine.dispose()
             self._engine = None
             self._session_factory = None
 
     async def _health_check_impl(self) -> Dict[str, Any]:
-        """SQLヘルスチェック実装"""
         if not self._engine:
-            raise RuntimeError("SQL接続が確立されていません")
+            raise RuntimeError("SQL connection not established")
 
         async with self._session_factory() as session:
-            # 簡単なクエリでヘルスチェック
             result = await session.execute(select(func.count()).select_from(ConversationModel))
             conversation_count = result.scalar()
 
@@ -255,12 +161,10 @@ class SQLStorageAdapter(
                 "engine_pool_checked_out": self._engine.pool.checkedout(),
             }
 
-    # MemoryStorageAdapter実装
+    # --- MemoryStorageAdapter ---
 
     async def store_conversation(self, entry: ConversationEntry) -> str:
-        """会話エントリを保存"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -284,19 +188,17 @@ class SQLStorageAdapter(
                 session.add(conversation)
                 await session.commit()
 
-                self._logger.debug(f"会話を保存しました: {entry.id}")
+                self._logger.debug(f"Stored conversation: {entry.id}")
                 return str(entry.id)
 
         except Exception as e:
-            self._logger.error(f"会話保存エラー: {e}")
+            self._logger.error(f"Store conversation error: {e}")
             raise
 
     async def retrieve_conversations(
         self, session_id: str, limit: int = 10, offset: int = 0
     ) -> List[ConversationEntry]:
-        """会話履歴を取得"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -311,38 +213,18 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 conversations = result.scalars().all()
 
-                entries = []
-                for conv in conversations:
-                    entry = ConversationEntry(
-                        id=conv.id,
-                        session_id=conv.session_id,
-                        conversation_type=ConversationType(conv.conversation_type),
-                        role=MessageRole(conv.role),
-                        content=conv.content,
-                        metadata=conv.metadata or {},
-                        timestamp=conv.timestamp,
-                        parent_id=conv.parent_id if conv.parent_id else None,
-                        thread_id=conv.thread_id,
-                        tokens=conv.tokens,
-                        model_name=conv.model_name,
-                        processing_time_ms=conv.processing_time_ms,
-                        confidence_score=conv.confidence_score,
-                    )
-                    entries.append(entry)
-
-                self._logger.debug(f"会話履歴を取得しました: {len(entries)}件")
+                entries = [_conversation_model_to_entry(conv) for conv in conversations]
+                self._logger.debug(f"Retrieved conversations: {len(entries)}")
                 return entries
 
         except Exception as e:
-            self._logger.error(f"会話履歴取得エラー: {e}")
+            self._logger.error(f"Retrieve conversations error: {e}")
             return []
 
     async def search_conversations(
         self, query: str, session_id: Optional[str] = None, limit: int = 10, threshold: float = 0.7
     ) -> List[ConversationEntry]:
-        """会話を検索（テキスト検索）"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -356,36 +238,16 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 conversations = result.scalars().all()
 
-                entries = []
-                for conv in conversations:
-                    entry = ConversationEntry(
-                        id=conv.id,
-                        session_id=conv.session_id,
-                        conversation_type=ConversationType(conv.conversation_type),
-                        role=MessageRole(conv.role),
-                        content=conv.content,
-                        metadata=conv.metadata or {},
-                        timestamp=conv.timestamp,
-                        parent_id=conv.parent_id if conv.parent_id else None,
-                        thread_id=conv.thread_id,
-                        tokens=conv.tokens,
-                        model_name=conv.model_name,
-                        processing_time_ms=conv.processing_time_ms,
-                        confidence_score=conv.confidence_score,
-                    )
-                    entries.append(entry)
-
-                self._logger.debug(f"会話検索結果: {len(entries)}件")
+                entries = [_conversation_model_to_entry(conv) for conv in conversations]
+                self._logger.debug(f"Search results: {len(entries)}")
                 return entries
 
         except Exception as e:
-            self._logger.error(f"会話検索エラー: {e}")
+            self._logger.error(f"Search conversations error: {e}")
             return []
 
     async def delete_old_conversations(self, days: int) -> int:
-        """古い会話を削除"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -397,21 +259,18 @@ class SQLStorageAdapter(
                 await session.commit()
 
                 deleted_count = result.rowcount
-                self._logger.info(f"古い会話を削除しました: {deleted_count}件")
+                self._logger.info(f"Deleted old conversations: {deleted_count}")
                 return deleted_count
 
         except Exception as e:
-            self._logger.error(f"会話削除エラー: {e}")
+            self._logger.error(f"Delete conversations error: {e}")
             return 0
 
     async def get_conversation_statistics(self, session_id: str) -> Dict[str, Any]:
-        """会話統計情報を取得"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
-                # 基本統計
                 stmt = select(
                     func.count(ConversationModel.id).label("total_count"),
                     func.min(ConversationModel.timestamp).label("first_conversation"),
@@ -422,7 +281,6 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 stats = result.first()
 
-                # タイプ別統計
                 stmt = (
                     select(
                         ConversationModel.conversation_type,
@@ -448,25 +306,21 @@ class SQLStorageAdapter(
                 }
 
         except Exception as e:
-            self._logger.error(f"統計情報取得エラー: {e}")
+            self._logger.error(f"Get statistics error: {e}")
             return {}
 
-    # SessionStorageAdapter実装
+    # --- SessionStorageAdapter ---
 
     async def store_session_context(self, context: SessionContext) -> None:
-        """セッションコンテキストを保存"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
-                # 既存セッションをチェック
                 stmt = select(SessionModel).where(SessionModel.session_id == context.session_id)
                 result = await session.execute(stmt)
                 existing_session = result.scalar_one_or_none()
 
                 if existing_session:
-                    # 更新
                     stmt = (
                         update(SessionModel)
                         .where(SessionModel.session_id == context.session_id)
@@ -488,7 +342,6 @@ class SQLStorageAdapter(
                     )
                     await session.execute(stmt)
                 else:
-                    # 新規作成
                     session_model = SessionModel(
                         session_id=context.session_id,
                         user_id=context.user_id,
@@ -509,16 +362,14 @@ class SQLStorageAdapter(
                     session.add(session_model)
 
                 await session.commit()
-                self._logger.debug(f"セッションコンテキストを保存しました: {context.session_id}")
+                self._logger.debug(f"Stored session context: {context.session_id}")
 
         except Exception as e:
-            self._logger.error(f"セッション保存エラー: {e}")
+            self._logger.error(f"Store session error: {e}")
             raise
 
     async def retrieve_session_context(self, session_id: str) -> Optional[SessionContext]:
-        """セッションコンテキストを取得"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -529,34 +380,14 @@ class SQLStorageAdapter(
                 if not session_model:
                     return None
 
-                context = SessionContext(
-                    session_id=session_model.session_id,
-                    user_id=session_model.user_id,
-                    session_type=SessionType(session_model.session_type),
-                    status=SessionStatus(session_model.status),
-                    start_time=session_model.start_time,
-                    last_activity=session_model.last_activity,
-                    end_time=session_model.end_time,
-                    conversation_count=session_model.conversation_count,
-                    command_count=session_model.command_count,
-                    error_count=session_model.error_count,
-                    total_tokens=session_model.total_tokens,
-                    metadata=session_model.metadata or {},
-                    tags=session_model.tags or [],
-                    settings=session_model.settings or {},
-                    environment_info=session_model.environment_info or {},
-                )
-
-                return context
+                return _session_model_to_context(session_model)
 
         except Exception as e:
-            self._logger.error(f"セッション取得エラー: {e}")
+            self._logger.error(f"Retrieve session error: {e}")
             return None
 
     async def update_session_activity(self, session_id: str) -> None:
-        """セッションアクティビティを更新"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -570,12 +401,10 @@ class SQLStorageAdapter(
                 await session.commit()
 
         except Exception as e:
-            self._logger.error(f"セッションアクティビティ更新エラー: {e}")
+            self._logger.error(f"Update session activity error: {e}")
 
     async def list_active_sessions(self) -> List[SessionContext]:
-        """アクティブセッション一覧を取得"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -588,37 +417,14 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 session_models = result.scalars().all()
 
-                contexts = []
-                for session_model in session_models:
-                    context = SessionContext(
-                        session_id=session_model.session_id,
-                        user_id=session_model.user_id,
-                        session_type=SessionType(session_model.session_type),
-                        status=SessionStatus(session_model.status),
-                        start_time=session_model.start_time,
-                        last_activity=session_model.last_activity,
-                        end_time=session_model.end_time,
-                        conversation_count=session_model.conversation_count,
-                        command_count=session_model.command_count,
-                        error_count=session_model.error_count,
-                        total_tokens=session_model.total_tokens,
-                        metadata=session_model.metadata or {},
-                        tags=session_model.tags or [],
-                        settings=session_model.settings or {},
-                        environment_info=session_model.environment_info or {},
-                    )
-                    contexts.append(context)
-
-                return contexts
+                return [_session_model_to_context(m) for m in session_models]
 
         except Exception as e:
-            self._logger.error(f"アクティブセッション取得エラー: {e}")
+            self._logger.error(f"List active sessions error: {e}")
             return []
 
     async def cleanup_expired_sessions(self, timeout_minutes: int = 60) -> int:
-        """期限切れセッションをクリーンアップ"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
@@ -639,19 +445,17 @@ class SQLStorageAdapter(
                 await session.commit()
 
                 expired_count = result.rowcount
-                self._logger.info(f"期限切れセッションをクリーンアップしました: {expired_count}件")
+                self._logger.info(f"Cleaned up expired sessions: {expired_count}")
                 return expired_count
 
         except Exception as e:
-            self._logger.error(f"セッションクリーンアップエラー: {e}")
+            self._logger.error(f"Session cleanup error: {e}")
             return 0
 
-    # SummaryStorageAdapter実装
+    # --- SummaryStorageAdapter ---
 
     async def store_summary(self, summary: SessionSummary) -> str:
-        """要約を保存"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -680,19 +484,17 @@ class SQLStorageAdapter(
                 session.add(summary_model)
                 await session.commit()
 
-                self._logger.debug(f"要約を保存しました: {summary_model.id}")
+                self._logger.debug(f"Stored summary: {summary_model.id}")
                 return summary_model.id
 
         except Exception as e:
-            self._logger.error(f"要約保存エラー: {e}")
+            self._logger.error(f"Store summary error: {e}")
             raise
 
     async def retrieve_summaries(
         self, session_id: str, summary_type: Optional[str] = None
     ) -> List[SessionSummary]:
-        """要約を取得"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -706,34 +508,14 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 summary_models = result.scalars().all()
 
-                summaries = []
-                for summary_model in summary_models:
-                    summary = SessionSummary(
-                        session_id=summary_model.session_id,
-                        summary_type=summary_model.summary_type,
-                        content=summary_model.content,
-                        total_conversations=summary_model.total_conversations,
-                        total_commands=summary_model.total_commands,
-                        total_errors=summary_model.total_errors,
-                        total_tokens=summary_model.total_tokens,
-                        duration_minutes=summary_model.duration_minutes,
-                        start_time=summary_model.start_time,
-                        end_time=summary_model.end_time,
-                        created_at=summary_model.created_at,
-                        metadata=summary_model.metadata or {},
-                    )
-                    summaries.append(summary)
-
-                return summaries
+                return [_summary_model_to_domain(m) for m in summary_models]
 
         except Exception as e:
-            self._logger.error(f"要約取得エラー: {e}")
+            self._logger.error(f"Retrieve summaries error: {e}")
             return []
 
     async def search_summaries(self, query: str, limit: int = 10) -> List[SessionSummary]:
-        """要約を検索"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             async with self._session_factory() as session:
@@ -747,34 +529,14 @@ class SQLStorageAdapter(
                 result = await session.execute(stmt)
                 summary_models = result.scalars().all()
 
-                summaries = []
-                for summary_model in summary_models:
-                    summary = SessionSummary(
-                        session_id=summary_model.session_id,
-                        summary_type=summary_model.summary_type,
-                        content=summary_model.content,
-                        total_conversations=summary_model.total_conversations,
-                        total_commands=summary_model.total_commands,
-                        total_errors=summary_model.total_errors,
-                        total_tokens=summary_model.total_tokens,
-                        duration_minutes=summary_model.duration_minutes,
-                        start_time=summary_model.start_time,
-                        end_time=summary_model.end_time,
-                        created_at=summary_model.created_at,
-                        metadata=summary_model.metadata or {},
-                    )
-                    summaries.append(summary)
-
-                return summaries
+                return [_summary_model_to_domain(m) for m in summary_models]
 
         except Exception as e:
-            self._logger.error(f"要約検索エラー: {e}")
+            self._logger.error(f"Search summaries error: {e}")
             return []
 
     async def delete_old_summaries(self, days: int) -> int:
-        """古い要約を削除"""
-        if not self._engine:
-            await self.connect()
+        await self._ensure_connected()
 
         try:
             cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -786,9 +548,9 @@ class SQLStorageAdapter(
                 await session.commit()
 
                 deleted_count = result.rowcount
-                self._logger.info(f"古い要約を削除しました: {deleted_count}件")
+                self._logger.info(f"Deleted old summaries: {deleted_count}")
                 return deleted_count
 
         except Exception as e:
-            self._logger.error(f"要約削除エラー: {e}")
+            self._logger.error(f"Delete summaries error: {e}")
             return 0
