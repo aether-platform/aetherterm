@@ -73,7 +73,7 @@ WORKDIR /app
 # Mise stores python at /opt/mise/installs/python/3.12
 COPY --from=builder /opt/mise/installs/python/3.12/lib/python3.12/site-packages /opt/mise/installs/python/3.12/lib/python3.12/site-packages
 COPY --from=builder /opt/mise/installs/python/3.12/bin/aetherterm* /usr/local/bin/
-COPY --from=builder /app/frontend/dist /opt/mise/installs/python/3.12/lib/python3.12/site-packages/aetherterm/agentserver/static/
+COPY --from=builder /app/frontend/dist /opt/mise/installs/python/3.12/lib/python3.12/site-packages/aetherterm/agentserver/web/static/
 
 # Config & Entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/

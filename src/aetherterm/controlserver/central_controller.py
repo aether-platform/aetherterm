@@ -1,78 +1,126 @@
-"""
-CentralController - 中央制御システム
+"""CentralController - 中央制御システム
 
-管理者からの制御指示を受信し、全AgentServerに一括指示を送信
+管理者からの制御指示を受信し、全AgentServerに一括指示を送信。
+ログパターン圧縮 + LLM分析による異常検知・要約機能を統合。
 """
 
 import asyncio
 import json
 import logging
-import uuid
-from dataclasses import asdict, dataclass
+import time
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import websockets
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from websockets.server import WebSocketServerProtocol
 
+from aetherterm.common.models import BlockCommand, LogAnalysisResult, SessionInfo
+
+from .blocking_manager import BlockingManager
+from .llm_analyzer import LLMLogAnalyzer
+from .log_analysis_config import LogAnalysisConfig
+from .log_analysis_pipeline import LogAnalysisPipeline
+from .log_buffer import LogBufferManager
+from .log_pattern_compressor import LogPatternCompressor
+from .zmq_controller import ZMQController
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BlockCommand:
-    """ブロックコマンド"""
-
-    block_id: str
-    block_type: str  # "admin_initiated", "auto_detected", "emergency"
-    reason: str
-    admin_user: Optional[str]
-    affected_sessions: List[str]
-    timestamp: str
-    expires_at: Optional[str] = None
-
-
-@dataclass
-class SessionInfo:
-    """セッション情報"""
-
-    session_id: str
-    agent_server_id: str
-    user_info: Dict
-    created_at: str
-    last_activity: str
-    is_blocked: bool = False
-    block_reason: Optional[str] = None
 
 
 class CentralController:
     """中央制御システム"""
 
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 8765,
+        log_analysis_config: LogAnalysisConfig | None = None,
+    ):
         self.host = host
         self.port = port
 
-        # 接続管理
-        self.agent_servers: Dict[str, WebSocketServerProtocol] = {}
+        # 接続管理 — ZMQ agents + WebSocket admin clients
+        self.agent_servers: Dict[str, WebSocketServerProtocol] = {}  # legacy WS agents
+        self.zmq_agents: Dict[str, str] = {}  # agent_id → status (ZMQ-registered)
         self.admin_clients: Set[WebSocketServerProtocol] = set()
+
+        # ZMQ transport (created in start())
+        self._zmq_controller: Optional[ZMQController] = None
 
         # 状態管理
         self.active_sessions: Dict[str, SessionInfo] = {}
-        self.active_blocks: Dict[str, BlockCommand] = {}
-        self.block_history: List[BlockCommand] = []
+
+        # Blocking manager (owns active_blocks + block_history)
+        self._blocking_manager = BlockingManager(self)
+
+        # AgentShell integration
+        self._ai_cli_usage: Dict[str, Dict] = {}  # session_id -> {pane_id: info}
+
+        # ログ分析パイプライン
+        self._log_config = log_analysis_config or LogAnalysisConfig.from_env()
+        self._log_compressor = LogPatternCompressor(self._log_config)
+        self._llm_analyzer = LLMLogAnalyzer(self._log_config)
+
+        # Log analysis pipeline (owns _analysis_history)
+        self._log_pipeline = LogAnalysisPipeline(
+            config=self._log_config,
+            compressor=self._log_compressor,
+            analyzer=self._llm_analyzer,
+            controller=self,
+        )
+
+        self._log_buffer_manager = LogBufferManager(
+            config=self._log_config,
+            on_flush=self._log_pipeline.on_log_flush,
+        )
 
         # WebSocketサーバー
         self.server = None
+
+    # ------------------------------------------------------------------
+    # Backward-compatible properties (state now in managers)
+    # ------------------------------------------------------------------
+
+    @property
+    def active_blocks(self) -> Dict[str, BlockCommand]:
+        return self._blocking_manager.active_blocks
+
+    @property
+    def block_history(self) -> List[BlockCommand]:
+        return self._blocking_manager.block_history
+
+    @property
+    def _analysis_history(self) -> dict[str, list[LogAnalysisResult]]:
+        return self._log_pipeline.analysis_history
 
     async def start(self):
         """中央制御サーバー開始"""
         logger.info(f"Starting CentralController on {self.host}:{self.port}")
 
+        # Start ZMQ controller (ROUTER + PUB + PULL sockets)
+        self._zmq_controller = ZMQController()
+        self._zmq_controller.on_log_received(self._handle_log_from_zmq)
+        self._zmq_controller.on_session_report(self._handle_session_report_from_zmq)
+        await self._zmq_controller.start()
+        logger.info("ZMQ controller started")
+
+        # Start WebSocket server for admin UI
         self.server = await websockets.serve(self.handle_connection, self.host, self.port)
+        await self._log_buffer_manager.start_timer()
 
         logger.info(f"CentralController started on ws://{self.host}:{self.port}")
 
     async def stop(self):
         """中央制御サーバー停止"""
+        await self._log_buffer_manager.stop()
+
+        # Stop ZMQ controller
+        if self._zmq_controller:
+            await self._zmq_controller.stop()
+
         if self.server:
             self.server.close()
             await self.server.wait_closed()
@@ -171,6 +219,8 @@ class CentralController:
                 await self.send_current_status(websocket)
             elif message_type == "get_block_history":
                 await self.send_block_history(websocket)
+            elif message_type == "get_log_analysis":
+                await self.handle_get_log_analysis(websocket, data)
             else:
                 logger.warning(f"Unknown admin message type: {message_type}")
 
@@ -191,125 +241,30 @@ class CentralController:
             await self.handle_block_confirmation(data, agent_id)
         elif message_type == "unblock_request":
             await self.handle_unblock_request(data, agent_id)
+        elif message_type == "ai_cli_detected":
+            await self.handle_ai_cli_detected(data, agent_id)
+        elif message_type == "log_aggregate":
+            await self.handle_log_aggregate(data, agent_id)
+        elif message_type == "input_block":
+            await self.handle_pane_block(data, agent_id, block=True)
+        elif message_type == "input_allow":
+            await self.handle_pane_block(data, agent_id, block=False)
+        elif message_type == "intervention_request":
+            await self.handle_intervention_from_shell(data, agent_id)
         else:
             logger.debug(f"Received message from {agent_id}: {message_type}")
 
     async def execute_block_all(self, data: Dict):
         """全セッション一括ブロック実行"""
-        block_id = str(uuid.uuid4())
-        reason = data.get("reason", "管理者による緊急ブロック")
-        admin_user = data.get("admin_user")
-
-        block_command = BlockCommand(
-            block_id=block_id,
-            block_type="admin_initiated",
-            reason=reason,
-            admin_user=admin_user,
-            affected_sessions=list(self.active_sessions.keys()),
-            timestamp=datetime.now().isoformat(),
-        )
-
-        # ブロックコマンドを記録
-        self.active_blocks[block_id] = block_command
-        self.block_history.append(block_command)
-
-        logger.warning(f"Executing block all sessions: {reason} (ID: {block_id})")
-
-        # 全AgentServerに一括ブロック指示を送信
-        block_message = {
-            "type": "emergency_block",
-            "block_id": block_id,
-            "severity": "admin_initiated",
-            "message": f"管理者による緊急ブロック: {reason}",
-            "action": "block_all_sessions",
-            "affected_sessions": block_command.affected_sessions,
-            "timestamp": block_command.timestamp,
-        }
-
-        await self.broadcast_to_agents(block_message)
-
-        # 管理者クライアントに実行確認を送信
-        await self.broadcast_to_admins(
-            {"type": "block_executed", "block_command": asdict(block_command)}
-        )
+        await self._blocking_manager.execute_block_all(data)
 
     async def execute_block_session(self, data: Dict):
         """個別セッションブロック実行"""
-        session_id = data.get("session_id")
-        reason = data.get("reason", "管理者による個別ブロック")
-        admin_user = data.get("admin_user")
-
-        if session_id not in self.active_sessions:
-            logger.warning(f"Session not found for blocking: {session_id}")
-            return
-
-        block_id = str(uuid.uuid4())
-        block_command = BlockCommand(
-            block_id=block_id,
-            block_type="admin_initiated",
-            reason=reason,
-            admin_user=admin_user,
-            affected_sessions=[session_id],
-            timestamp=datetime.now().isoformat(),
-        )
-
-        self.active_blocks[block_id] = block_command
-        self.block_history.append(block_command)
-
-        # 該当AgentServerに個別ブロック指示を送信
-        session_info = self.active_sessions[session_id]
-        agent_id = session_info.agent_server_id
-
-        if agent_id in self.agent_servers:
-            block_message = {
-                "type": "emergency_block",
-                "block_id": block_id,
-                "severity": "admin_initiated",
-                "message": f"管理者による個別ブロック: {reason}",
-                "action": "block_session",
-                "affected_sessions": [session_id],
-                "timestamp": block_command.timestamp,
-            }
-
-            await self.agent_servers[agent_id].send(json.dumps(block_message))
-
-        logger.info(f"Executed block session {session_id}: {reason}")
+        await self._blocking_manager.execute_block_session(data)
 
     async def execute_unblock_session(self, data: Dict):
         """セッションブロック解除実行"""
-        session_id = data.get("session_id")
-        admin_user = data.get("admin_user")
-
-        # アクティブなブロックを検索
-        block_to_remove = None
-        for block_id, block_cmd in self.active_blocks.items():
-            if session_id in block_cmd.affected_sessions:
-                block_to_remove = block_id
-                break
-
-        if not block_to_remove:
-            logger.warning(f"No active block found for session: {session_id}")
-            return
-
-        # ブロックを削除
-        del self.active_blocks[block_to_remove]
-
-        # 該当AgentServerにブロック解除指示を送信
-        if session_id in self.active_sessions:
-            session_info = self.active_sessions[session_id]
-            agent_id = session_info.agent_server_id
-
-            if agent_id in self.agent_servers:
-                unblock_message = {
-                    "type": "unblock_session",
-                    "session_id": session_id,
-                    "admin_user": admin_user,
-                    "timestamp": datetime.now().isoformat(),
-                }
-
-                await self.agent_servers[agent_id].send(json.dumps(unblock_message))
-
-        logger.info(f"Executed unblock session {session_id} by {admin_user}")
+        await self._blocking_manager.execute_unblock_session(data)
 
     async def update_session_info(self, data: Dict, agent_id: str):
         """セッション情報更新"""
@@ -329,24 +284,95 @@ class CentralController:
 
         self.active_sessions[session_id] = session_info
 
-    async def broadcast_to_agents(self, message: Dict):
-        """全AgentServerに一括送信"""
-        if not self.agent_servers:
-            logger.warning("No AgentServers connected for broadcast")
+    async def _handle_log_from_zmq(self, agent_server_id: str, log_entries: list) -> None:
+        """Handle log data received via ZMQ (SUB or PULL) from AgentServer/AgentShell.
+
+        log_entries may contain raw bytes (from PTY output) or structured dicts.
+        Raw bytes are converted to structured entries for the analysis pipeline.
+        """
+        # Track ZMQ agents
+        if agent_server_id and agent_server_id not in self.zmq_agents:
+            self.zmq_agents[agent_server_id] = "active"
+
+        # Normalize entries: raw bytes → structured dicts for LogPatternCompressor
+        structured_entries = []
+        now_ts = time.time()
+        for entry in log_entries:
+            if isinstance(entry, (bytes, bytearray)):
+                try:
+                    text = entry.decode("utf-8", errors="replace")
+                except Exception:
+                    text = str(entry)
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line:
+                        structured_entries.append({
+                            "text": line,
+                            "timestamp": now_ts,
+                            "source": agent_server_id,
+                        })
+            elif isinstance(entry, dict):
+                structured_entries.append(entry)
+            elif isinstance(entry, str):
+                if entry.strip():
+                    structured_entries.append({
+                        "text": entry.strip(),
+                        "timestamp": now_ts,
+                        "source": agent_server_id,
+                    })
+
+        if not structured_entries:
             return
 
-        message_json = json.dumps(message)
+        await self.handle_log_aggregate(
+            {"session_id": agent_server_id, "entries": structured_entries},
+            agent_server_id,
+        )
 
-        # 全AgentServerに並行送信
-        tasks = []
-        for agent_id, websocket in self.agent_servers.items():
-            tasks.append(self.safe_send(websocket, message_json, agent_id))
+    async def _handle_session_report_from_zmq(self, agent_server_id: str, report: dict) -> None:
+        """Handle session report received via ZMQ from AgentServer."""
+        # Track ZMQ agents
+        if agent_server_id and agent_server_id not in self.zmq_agents:
+            self.zmq_agents[agent_server_id] = "active"
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        await self.update_session_info(report, agent_server_id)
 
-        # 送信結果をログ出力
-        success_count = sum(1 for r in results if r is True)
-        logger.info(f"Broadcast sent to {success_count}/{len(tasks)} AgentServers")
+    async def broadcast_to_agents(self, message: Dict):
+        """全AgentServerに一括送信（ZMQ + WebSocket）"""
+        sent_count = 0
+
+        # ZMQ broadcast via ZMQController
+        if self._zmq_controller:
+            msg_type_str = message.get("type", "")
+            try:
+                if msg_type_str == "emergency_block":
+                    await self._zmq_controller.send_emergency_stop()
+                    sent_count += len(self.zmq_agents)
+                elif msg_type_str == "unblock_session":
+                    await self._zmq_controller.send_unblock_input()
+                    sent_count += len(self.zmq_agents)
+                elif msg_type_str == "input_block":
+                    await self._zmq_controller.send_block_input()
+                    sent_count += len(self.zmq_agents)
+                elif msg_type_str == "input_allow":
+                    await self._zmq_controller.send_unblock_input()
+                    sent_count += len(self.zmq_agents)
+            except Exception:
+                logger.exception("Failed to broadcast via ZMQ controller")
+
+        # Legacy WebSocket broadcast
+        if self.agent_servers:
+            message_json = json.dumps(message)
+            tasks = []
+            for agent_id, websocket in self.agent_servers.items():
+                tasks.append(self.safe_send(websocket, message_json, agent_id))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            sent_count += sum(1 for r in results if r is True)
+
+        if sent_count == 0 and not self.agent_servers and not self.zmq_agents:
+            logger.warning("No AgentServers connected for broadcast")
+        else:
+            logger.info(f"Broadcast sent to {sent_count} AgentServers")
 
     async def broadcast_to_admins(self, message: Dict):
         """全管理者クライアントに一括送信"""
@@ -396,8 +422,8 @@ class CentralController:
             "agent_servers": len(self.agent_servers),
             "active_sessions": len(self.active_sessions),
             "active_blocks": len(self.active_blocks),
-            "sessions": [asdict(session) for session in self.active_sessions.values()],
-            "blocks": [asdict(block) for block in self.active_blocks.values()],
+            "sessions": [session.model_dump() for session in self.active_sessions.values()],
+            "blocks": [block.model_dump() for block in self.active_blocks.values()],
         }
 
         await websocket.send(json.dumps(status))
@@ -408,62 +434,304 @@ class CentralController:
             "type": "block_history",
             "timestamp": datetime.now().isoformat(),
             "total_blocks": len(self.block_history),
-            "history": [asdict(block) for block in self.block_history[-50:]],  # 最新50件
+            "history": [block.model_dump() for block in self.block_history[-50:]],  # 最新50件
         }
 
         await websocket.send(json.dumps(history))
 
     async def handle_block_confirmation(self, data: Dict, agent_id: str):
         """ブロック確認処理"""
-        block_id = data.get("block_id")
-        confirmed_sessions = data.get("confirmed_sessions", [])
+        await self._blocking_manager.handle_block_confirmation(data, agent_id)
 
-        logger.info(
-            f"Block confirmation from {agent_id}: {block_id}, sessions: {len(confirmed_sessions)}"
-        )
+    async def handle_unblock_request(self, data: Dict, agent_id: str):
+        """ブロック解除要求処理"""
+        await self._blocking_manager.handle_unblock_request(data, agent_id)
 
-        # 管理者クライアントに確認を通知
+    # --- AgentShell integration handlers ---
+
+    async def handle_ai_cli_detected(self, data: Dict, agent_id: str):
+        """AI CLI検出の処理"""
+        pane_id = data.get("pane_id", "")
+        cli_name = data.get("cli_name", "unknown")
+        session_id = data.get("session_id", "")
+
+        # Track AI CLI usage
+        if session_id not in self._ai_cli_usage:
+            self._ai_cli_usage[session_id] = {}
+        self._ai_cli_usage[session_id][pane_id] = {
+            "cli_name": cli_name,
+            "detected_at": datetime.now().isoformat(),
+            "agent_id": agent_id,
+        }
+
+        logger.info(f"AI CLI detected: {cli_name} in pane {pane_id} (session={session_id})")
+
+        # Notify admins
         await self.broadcast_to_admins(
             {
-                "type": "block_confirmation",
-                "block_id": block_id,
+                "type": "ai_cli_detected",
+                "session_id": session_id,
+                "pane_id": pane_id,
+                "cli_name": cli_name,
                 "agent_id": agent_id,
-                "confirmed_sessions": confirmed_sessions,
                 "timestamp": datetime.now().isoformat(),
             }
         )
 
-    async def handle_unblock_request(self, data: Dict, agent_id: str):
-        """ブロック解除要求処理"""
-        session_id = data.get("session_id")
-        user_action = data.get("user_action", "unknown")
+    async def handle_log_aggregate(self, data: Dict, agent_id: str):
+        """ログ集約の処理 → バッファに委譲"""
+        session_id = data.get("session_id", "")
+        log_entries = data.get("entries", [])
 
-        logger.info(f"Unblock request from {agent_id}: session {session_id}, action: {user_action}")
-
-        # Ctrl+Dによる解除の場合は自動承認
-        if user_action == "ctrl_d":
-            await self.execute_unblock_session(
-                {"session_id": session_id, "admin_user": "system_auto_unblock"}
-            )
-
-        # 管理者クライアントに解除要求を通知
+        # リアルタイム生ログは引き続き管理者にブロードキャスト
         await self.broadcast_to_admins(
             {
-                "type": "unblock_request",
+                "type": "log_aggregate",
                 "session_id": session_id,
+                "entries": log_entries,
                 "agent_id": agent_id,
-                "user_action": user_action,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
+        # バッファに追加（閾値到達時に自動フラッシュ → 圧縮 → 分析）
+        await self._log_buffer_manager.add(session_id, log_entries)
+
+    async def handle_get_log_analysis(self, websocket, data: dict) -> None:
+        """オンデマンドのログ分析結果取得"""
+        await self._log_pipeline.handle_get_log_analysis(websocket, data)
+
+    async def handle_pane_block(self, data: Dict, agent_id: str, block: bool):
+        """ペインレベルのブロック/アンブロック"""
+        pane_id = data.get("pane_id", "")
+        session_id = data.get("session_id", "")
+        reason = data.get("reason", "")
+
+        action = "blocked" if block else "unblocked"
+        logger.info(f"Pane {pane_id} {action} in session {session_id}: {reason}")
+
+        # Forward to the appropriate AgentServer
+        if session_id in self.active_sessions:
+            session_info = self.active_sessions[session_id]
+            target_agent = session_info.agent_server_id
+            if target_agent in self.agent_servers:
+                msg = {
+                    "type": "input_block" if block else "input_allow",
+                    "pane_id": pane_id,
+                    "session_id": session_id,
+                    "reason": reason,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                await self.safe_send(
+                    self.agent_servers[target_agent], json.dumps(msg), target_agent
+                )
+
+        await self.broadcast_to_admins(
+            {
+                "type": "pane_block_update",
+                "pane_id": pane_id,
+                "session_id": session_id,
+                "blocked": block,
+                "reason": reason,
+                "agent_id": agent_id,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
+    async def handle_intervention_from_shell(self, data: Dict, agent_id: str):
+        """AgentShellからの介入リクエスト処理"""
+        session_id = data.get("session_id", "")
+        threat_level = data.get("threat_level", "unknown")
+        message = data.get("message", "")
+
+        logger.warning(
+            f"Intervention request from {agent_id}: "
+            f"session={session_id}, threat={threat_level}, msg={message}"
+        )
+
+        await self.broadcast_to_admins(
+            {
+                "type": "intervention_request",
+                "session_id": session_id,
+                "threat_level": threat_level,
+                "message": message,
+                "agent_id": agent_id,
+                "payload": data,
                 "timestamp": datetime.now().isoformat(),
             }
         )
 
     def get_status_summary(self) -> Dict:
         """状態サマリーを取得"""
+        zmq_status = {
+            "connected": self._zmq_controller is not None,
+            "transport": "zmq-direct",
+        }
+        zmq_detail = {}
+        if self._zmq_controller:
+            zmq_detail = self._zmq_controller.get_status()
+
         return {
-            "agent_servers_count": len(self.agent_servers),
+            "agent_servers_count": len(self.agent_servers) + len(self.zmq_agents),
+            "ws_agent_servers_count": len(self.agent_servers),
+            "zmq_agent_servers_count": len(self.zmq_agents),
             "admin_clients_count": len(self.admin_clients),
             "active_sessions_count": len(self.active_sessions),
             "active_blocks_count": len(self.active_blocks),
             "total_block_history": len(self.block_history),
+            "zmq": {**zmq_status, **zmq_detail},
             "last_activity": datetime.now().isoformat(),
         }
+
+    # ------------------------------------------------------------------
+    # REST API
+    # ------------------------------------------------------------------
+
+    def create_rest_app(self) -> FastAPI:
+        """Create a FastAPI app exposing REST admin endpoints.
+
+        Intended to be run alongside the WebSocket server (on a separate port).
+        """
+        app = FastAPI(title="ControlServer Admin API")
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+        controller = self  # capture for closures
+
+        @app.get("/api/status")
+        async def api_status():
+            return JSONResponse(controller.get_status_summary())
+
+        @app.get("/api/sessions")
+        async def api_sessions():
+            if controller._zmq_controller:
+                sessions = controller._zmq_controller.list_sessions()
+                return JSONResponse([
+                    {
+                        "session_id": s.session_id,
+                        "agent_server_id": s.agent_server_id,
+                        "pane_ids": s.pane_ids,
+                        "shell_ids": s.shell_ids,
+                        "age_seconds": round(s.age_seconds, 1),
+                    }
+                    for s in sessions
+                ])
+            # Fallback to legacy active_sessions
+            return JSONResponse([
+                s.model_dump() for s in controller.active_sessions.values()
+            ])
+
+        @app.get("/api/shells")
+        async def api_shells():
+            if controller._zmq_controller:
+                shells = controller._zmq_controller.list_shells()
+                return JSONResponse([
+                    {
+                        "shell_id": s.shell_id,
+                        "session_id": s.session_id,
+                        "agent_server_id": s.agent_server_id,
+                    }
+                    for s in shells
+                ])
+            return JSONResponse([])
+
+        @app.post("/api/sessions/{session_id}/block")
+        async def api_block_session(session_id: str, request: Request):
+            body: dict[str, Any] = {}
+            if request.headers.get("content-type", "").startswith("application/json"):
+                body = await request.json()
+
+            reason = body.get("reason", "Admin-initiated block via REST API")
+
+            # Use ZMQ targeted block if available
+            if controller._zmq_controller:
+                await controller._zmq_controller.send_block_input(
+                    session_id=session_id, reason=reason
+                )
+
+            # Also record the block in legacy tracking
+            await controller.execute_block_session({
+                "session_id": session_id,
+                "reason": reason,
+                "admin_user": body.get("admin_user", "rest_api"),
+            })
+            return JSONResponse({"status": "blocked", "session_id": session_id})
+
+        @app.post("/api/sessions/{session_id}/unblock")
+        async def api_unblock_session(session_id: str, request: Request):
+            body: dict[str, Any] = {}
+            if request.headers.get("content-type", "").startswith("application/json"):
+                body = await request.json()
+
+            if controller._zmq_controller:
+                await controller._zmq_controller.send_unblock_input(
+                    session_id=session_id,
+                    admin_user=body.get("admin_user", "rest_api"),
+                )
+
+            await controller.execute_unblock_session({
+                "session_id": session_id,
+                "admin_user": body.get("admin_user", "rest_api"),
+            })
+            return JSONResponse({"status": "unblocked", "session_id": session_id})
+
+        @app.post("/api/sessions/{session_id}/kill")
+        async def api_kill_session(session_id: str):
+            if controller._zmq_controller:
+                info = controller._zmq_controller.get_session(session_id)
+                if info:
+                    await controller._zmq_controller.send_to_agent(
+                        info.agent_server_id,
+                        "kill_session",
+                        {"session_id": session_id},
+                    )
+                    return JSONResponse({"status": "kill_sent", "session_id": session_id})
+
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+        @app.post("/api/emergency-stop")
+        async def api_emergency_stop(request: Request):
+            body: dict[str, Any] = {}
+            if request.headers.get("content-type", "").startswith("application/json"):
+                body = await request.json()
+
+            reason = body.get("reason", "Emergency stop via REST API")
+
+            if controller._zmq_controller:
+                await controller._zmq_controller.send_emergency_stop(reason=reason)
+
+            await controller.execute_block_all({
+                "reason": reason,
+                "admin_user": body.get("admin_user", "rest_api"),
+            })
+            return JSONResponse({"status": "emergency_stop_triggered"})
+
+        @app.get("/api/analysis/{session_id}")
+        async def api_analysis_history(session_id: str):
+            history = controller._analysis_history.get(session_id, [])
+            return JSONResponse([
+                {
+                    "analysis_type": r.analysis_type,
+                    "anomalies": r.anomalies,
+                    "summary": r.summary,
+                    "risk_level": r.risk_level,
+                    "timestamp": r.timestamp,
+                    "model_used": r.model_used,
+                    "token_usage": r.token_usage,
+                }
+                for r in history
+            ])
+
+        @app.get("/api/blocks")
+        async def api_active_blocks():
+            return JSONResponse([b.model_dump() for b in controller.active_blocks.values()])
+
+        @app.get("/api/blocks/history")
+        async def api_block_history():
+            return JSONResponse([b.model_dump() for b in controller.block_history[-50:]])
+
+        return app

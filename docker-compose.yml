@@ -10,13 +10,29 @@
 #   docker buildx bake --push                          # Build & push all platforms
 #
 # Access: http://localhost:57575
-
 services:
   # ============================================================
-  # AetherTerm Server
+  # ControlServer - System Management & Coordination
+  #   - Resides on :8765
+  #   - Manages inter-agent communication and session reports
+  # ============================================================
+  controlserver:
+    image: ghcr.io/aether-platform/aetherterm:latest
+    container_name: controlserver
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - CONTROL_SERVER_HOST=0.0.0.0
+      - CONTROL_SERVER_PORT=8765
+    command:
+      ["aetherterm-controlserver", "--host=0.0.0.0", "--port=8765", "--debug"]
+    restart: unless-stopped
+
+  # ============================================================
+  # AetherTerm AgentServer
   #   - Web terminal on :57575
-  #   - ZMQ broker for agent communication
-  #   - Publishes terminal I/O via PUB/SUB
+  #   - Simplified FastAPI + WebSocket architecture
   # ============================================================
   aetherterm:
     image: ghcr.io/aether-platform/aetherterm:latest
@@ -29,19 +45,16 @@ services:
           - linux/amd64
           - linux/arm64
     ports:
-      - "57575:57575" # Web UI + Socket.IO
-      - "5560:5560" # ZMQ ROUTER (Agent RPC)
-      - "5561:5561" # ZMQ PUB (Agent Events)
-      - "5562:5562" # ZMQ PUSH (Agent Tasks)
+      - "57575:57575"
     environment:
       AETHERTERM_HOST: "0.0.0.0"
       AETHERTERM_PORT: "57575"
       AETHERTERM_UNSECURE: "true"
       AETHERTERM_DEBUG: "true"
-      AETHERTERM_ZMQ_ENABLED: "true"
-      AETHERTERM_ZMQ_ROUTER: "tcp://0.0.0.0:5560"
-      AETHERTERM_ZMQ_PUB: "tcp://0.0.0.0:5561"
-      AETHERTERM_ZMQ_PUSH: "tcp://0.0.0.0:5562"
+      # ControlBridge configuration (points to controlserver container)
+      CONTROL_SERVER_ROUTER: "tcp://controlserver:8766"
+      CONTROL_SERVER_PUB: "tcp://controlserver:8767"
+      CONTROL_SERVER_SUB: "tcp://controlserver:8769"
     command:
       [
         "aetherterm-agentserver",
@@ -61,35 +74,20 @@ services:
       retries: 3
 
   # ============================================================
-  # AgentShell - Independent ZMQ Observer
-  #   - Subscribes to terminal I/O via ZMQ PUB/SUB
-  #   - Injects commands via COMMAND_INJECT / COMMAND_PROPOSE
-  #   - Can crash/restart without affecting the terminal
+  # OpenWeb UI - Advanced Chat Interface
   # ============================================================
-  aetherterm-agentshell:
-    image: ghcr.io/aether-platform/aetherterm:latest
-    container_name: aetherterm-agentshell
-    profiles: ["agent"]
-    build:
-      context: .
-      dockerfile: Dockerfile
-    entrypoint: ["tini", "--"]
-    command:
-      - "aetherterm-agentshell-zmq"
-      - "--session"
-      - "default"
-      - "--log-level"
-      - "INFO"
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: open-webui
     environment:
-      AETHERTERM_ZMQ_BROKER: "tcp://aetherterm:5560"
-      AETHERTERM_ZMQ_PUB: "tcp://aetherterm:5561"
-      AETHERTERM_ZMQ_PUSH: "tcp://aetherterm:5562"
-      # AI (optional)
-      # ANTHROPIC_API_KEY: ""
-    depends_on:
-      aetherterm:
-        condition: service_healthy
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - WEBUI_AUTH=False
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui:/app/backend/data
     restart: unless-stopped
 
 volumes:
   aetherterm-logs:
+  open-webui:

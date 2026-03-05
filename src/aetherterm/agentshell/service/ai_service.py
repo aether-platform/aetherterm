@@ -1,5 +1,4 @@
-"""
-独立したAI連携サービス
+"""独立したAI連携サービス
 
 直接AIプロバイダー（OpenAI、Anthropic等）と通信し、
 AetherTermサーバーに依存しない独立したAI機能を提供します。
@@ -12,14 +11,12 @@ from typing import Any, Callable, Dict, List, Optional
 from ..config import AIServiceConfig
 from ..domain.models import ErrorNotification, Severity, WarningNotification
 from .ai_providers import AIProvider, create_ai_provider
-from .server_connector import ServerConnector
 
 logger = logging.getLogger(__name__)
 
 
 class IndependentAIService:
-    """
-    独立したAI連携サービス
+    """独立したAI連携サービス
 
     AIプロバイダーと直接通信し、サーバーに依存しない
     AI機能を提供します。サーバー連携はオプショナルです。
@@ -29,11 +26,9 @@ class IndependentAIService:
         self,
         config: AIServiceConfig,
         provider_type: str = "openai",
-        server_connector: Optional[ServerConnector] = None,
     ):
         self.config = config
         self.provider_type = provider_type
-        self.server_connector = server_connector
 
         self._is_running = False
         self._notification_callbacks: List[Callable] = []
@@ -86,8 +81,7 @@ class IndependentAIService:
     async def analyze_command_with_ai(
         self, command: str, output: str, exit_code: int, execution_time: float
     ) -> Dict[str, Any]:
-        """
-        AIを使用してコマンドを解析
+        """AIを使用してコマンドを解析
 
         Args:
             command: 実行されたコマンド
@@ -128,8 +122,7 @@ class IndependentAIService:
     def _analyze_command_locally(
         self, command: str, output: str, exit_code: int, execution_time: float
     ) -> Dict[str, Any]:
-        """
-        コマンドをローカルで簡易解析（フォールバック）
+        """コマンドをローカルで簡易解析（フォールバック）
 
         Args:
             command: 実行されたコマンド
@@ -154,8 +147,7 @@ class IndependentAIService:
     async def suggest_error_fix(
         self, command: str, error_output: str, context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """
-        エラーの修正提案を取得
+        """エラーの修正提案を取得
 
         Args:
             command: 実行されたコマンド
@@ -181,8 +173,7 @@ class IndependentAIService:
             return {"error": str(e), "suggestions": []}
 
     async def suggest_next_commands(self, current_context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        次のコマンドを提案
+        """次のコマンドを提案
 
         Args:
             current_context: 現在のコンテキスト
@@ -205,8 +196,7 @@ class IndependentAIService:
             return {"error": str(e), "suggestions": []}
 
     async def is_command_dangerous(self, command: str) -> bool:
-        """
-        AIを使用してコマンドが危険かどうかを判定します。
+        """AIを使用してコマンドが危険かどうかを判定します。
 
         Args:
             command: 実行されたコマンド
@@ -239,8 +229,7 @@ class IndependentAIService:
         severity: Severity = Severity.MEDIUM,
         context: Dict[str, Any] = None,
     ) -> None:
-        """
-        エラー通知を送信
+        """エラー通知を送信
 
         Args:
             session_id: セッションID
@@ -277,8 +266,7 @@ class IndependentAIService:
         suggestions: List[str] = None,
         context: Dict[str, Any] = None,
     ) -> None:
-        """
-        警告通知を送信
+        """警告通知を送信
 
         Args:
             session_id: セッションID
@@ -308,8 +296,7 @@ class IndependentAIService:
         logger.info(f"警告通知: {warning_type} - {message} (セッション: {session_id})")
 
     def register_notification_callback(self, callback: Callable) -> None:
-        """
-        通知コールバックを登録
+        """通知コールバックを登録
 
         Args:
             callback: 通知を受信するコールバック関数
@@ -318,8 +305,7 @@ class IndependentAIService:
             self._notification_callbacks.append(callback)
 
     def unregister_notification_callback(self, callback: Callable) -> None:
-        """
-        通知コールバックを解除
+        """通知コールバックを解除
 
         Args:
             callback: 解除するコールバック関数
@@ -351,8 +337,7 @@ class IndependentAIService:
     async def report_command_execution(
         self, session_id: str, command: str, output: str, exit_code: int, execution_time: float
     ) -> None:
-        """
-        コマンド実行結果を報告し、AI解析と通知を実行
+        """コマンド実行結果を報告し、AI解析と通知を実行
 
         Args:
             session_id: セッションID
@@ -406,17 +391,6 @@ class IndependentAIService:
                     },
                 )
 
-        # サーバー連携が有効な場合はAI通知を送信
-        if self.server_connector and self.server_connector.is_connected():
-            await self.server_connector.send_ai_notification(
-                session_id=session_id,
-                notification_type="analysis",
-                data={
-                    "command": command,
-                    "analysis": analysis,
-                    "execution_time": execution_time,
-                },
-            )
 
     def is_running(self) -> bool:
         """AI連携が実行中かどうかを確認"""
@@ -444,9 +418,6 @@ class IndependentAIService:
             "is_running": self._is_running,
             "provider_type": self.provider_type,
             "has_ai_provider": self.has_ai_provider(),
-            "server_connected": self.server_connector.is_connected()
-            if self.server_connector
-            else False,
             "command_history_count": len(self._command_history),
             "notification_callbacks": len(self._notification_callbacks),
             "config": {

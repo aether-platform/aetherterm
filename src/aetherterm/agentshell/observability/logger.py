@@ -1,5 +1,4 @@
-"""
-構造化ログ出力クラス
+"""構造化ログ出力クラス
 
 OpenTelemetryと統合された構造化ログ出力を提供し、
 トレーシング情報と連携したログ記録を行います。
@@ -15,8 +14,7 @@ from opentelemetry import trace
 
 
 class StructuredLogger:
-    """
-    構造化ログ出力クラス
+    """構造化ログ出力クラス
 
     JSON形式での構造化ログ出力と、OpenTelemetryトレーシング情報の
     自動付与を行います。
@@ -175,8 +173,7 @@ class StructuredLogger:
 
 
 class StructuredFormatter(logging.Formatter):
-    """
-    構造化ログフォーマッター
+    """構造化ログフォーマッター
 
     ログレコードをJSON形式で出力します。
     """
@@ -239,8 +236,7 @@ class StructuredFormatter(logging.Formatter):
 
 
 class LoggerFactory:
-    """
-    ロガーファクトリー
+    """ロガーファクトリー
 
     統一された設定でStructuredLoggerインスタンスを作成します。
     """

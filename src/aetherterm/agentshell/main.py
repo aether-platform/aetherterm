@@ -1,5 +1,4 @@
-"""
-Wrapperプログラムメインエントリーポイント
+"""Wrapperプログラムメインエントリーポイント
 
 新しいパッケージ構成に対応したメイン実行ファイル
 """
@@ -128,9 +127,12 @@ class WrapperMain:
 )
 @click.option("--debug", "-d", is_flag=True, help="デバッグモードを有効にする")
 @click.option("--command", help="実行するコマンド（デフォルト: シェル）")
-def cli_main(config: Optional[Path], debug: bool, command: Optional[str]) -> None:
-    """
-    AetherTerm Wrapper - ターミナル監視とAI連携プログラム
+@click.option("--agent-id", default=None, help="NATS agent ID（NATS bridge有効化）")
+@click.option("--nats-url", default=None, help="NATS server URL")
+@click.option("--agent-role", default="shell", help="Agent role for NATS registration")
+def cli_main(config: Optional[Path], debug: bool, command: Optional[str],
+             agent_id: Optional[str], nats_url: Optional[str], agent_role: str) -> None:
+    """AetherTerm Wrapper - ターミナル監視とAI連携プログラム
 
     scriptコマンドライクなターミナル監視機能に加えて、
     AI連携とセッション管理機能を提供します。
@@ -144,6 +146,16 @@ def cli_main(config: Optional[Path], debug: bool, command: Optional[str]) -> Non
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
+
+    # NATS bridge 環境変数を設定（containers.pyが参照）
+    import os
+    if agent_id:
+        os.environ["AGENT_ID"] = agent_id
+        if nats_url:
+            os.environ["NATS_URL"] = nats_url
+        elif "NATS_URL" not in os.environ:
+            os.environ["NATS_URL"] = "nats://localhost:4222"
+        os.environ["AGENT_ROLE"] = agent_role
 
     # コマンドを解析
     cmd_list = None

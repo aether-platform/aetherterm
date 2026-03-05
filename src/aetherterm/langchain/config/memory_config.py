@@ -1,6 +1,4 @@
-"""
-メモリ管理設定クラス
-"""
+"""メモリ管理設定クラス"""
 
 import logging
 from dataclasses import dataclass

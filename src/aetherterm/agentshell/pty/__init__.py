@@ -1,5 +1,4 @@
-"""
-PTY通信パッケージ
+"""PTY通信パッケージ
 
 util-linux-ngのscriptコマンドと同じアーキテクチャを使用して
 PTYマスター/スレーブペアでターミナル通信を管理します。
@@ -10,6 +9,7 @@ PTYマスター/スレーブペアでターミナル通信を管理します。
 - PTYChain: PTY二重チェーン（Agent中間層、ZMQ連携）
 """
 
+from .pty_chain import PTYChain
 from .sync_terminal_pty import (
     AsyncWorker,
     SyncTerminalPTY,
@@ -18,7 +18,6 @@ from .sync_terminal_pty import (
     run_shell_with_async_backend,
 )
 from .terminal_pty import TerminalBuffer, TerminalPTY
-from .pty_chain import PTYChain
 
 __all__ = [
     # 非同期PTY

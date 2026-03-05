@@ -1,5 +1,4 @@
-"""
-PTY Chaining ミドルウェア
+"""PTY Chaining ミドルウェア
 
 AsyncioTerminalとOS Shellの間にAgentShellをPTYミドルウェアとして挟みます。
 
@@ -40,8 +39,7 @@ FilterFn = Callable[[bytes], Optional[bytes]]
 
 
 class PTYChain:
-    """
-    PTY二重チェーン
+    """PTY二重チェーン
 
     stdin/stdout がPTY1 slaveに接続された状態で起動される。
     PTY2を作成してOS Shellを起動し、両者の間でI/Oを中継する。
@@ -64,8 +62,7 @@ class PTYChain:
         self._relay_tasks: List[asyncio.Task] = []
 
     async def start(self, shell_cmd: Optional[List[str]] = None) -> None:
-        """
-        PTYチェーンを開始
+        """PTYチェーンを開始
 
         Args:
             shell_cmd: OS Shellコマンド (デフォルト: [$SHELL, "-il"])
@@ -175,8 +172,7 @@ class PTYChain:
         logger.info("PTY Chain stopped")
 
     async def inject_command(self, command: str) -> None:
-        """
-        Agent → OS Shell にコマンドを注入
+        """Agent → OS Shell にコマンドを注入
 
         Args:
             command: 実行するコマンド（改行は自動付加）
@@ -189,16 +185,13 @@ class PTYChain:
             data += b"\n"
 
         try:
-            await asyncio.get_event_loop().run_in_executor(
-                None, os.write, self._pty2_master, data
-            )
+            await asyncio.get_event_loop().run_in_executor(None, os.write, self._pty2_master, data)
             logger.debug(f"Command injected: {command.strip()}")
         except OSError as e:
             logger.error(f"Command inject error: {e}")
 
     async def inject_output(self, output: str) -> None:
-        """
-        Agent → ユーザー表示（PTY1 stdout経由）
+        """Agent → ユーザー表示（PTY1 stdout経由）
 
         Args:
             output: ユーザーに表示する文字列
@@ -208,9 +201,7 @@ class PTYChain:
 
         data = output.encode("utf-8")
         try:
-            await asyncio.get_event_loop().run_in_executor(
-                None, sys.stdout.buffer.write, data
-            )
+            await asyncio.get_event_loop().run_in_executor(None, sys.stdout.buffer.write, data)
             sys.stdout.buffer.flush()
         except OSError as e:
             logger.error(f"Output inject error: {e}")
@@ -242,8 +233,7 @@ class PTYChain:
     # ---- Internal relay ----
 
     async def _relay_user_to_shell(self) -> None:
-        """
-        ユーザー入力をOS Shellに中継
+        """ユーザー入力をOS Shellに中継
         stdin (PTY1 slave) → filter → PTY2 master
         """
         loop = asyncio.get_event_loop()
@@ -275,9 +265,7 @@ class PTYChain:
                         data = filtered
 
                     # PTY2 masterに書き込み
-                    await loop.run_in_executor(
-                        None, os.write, self._pty2_master, data
-                    )
+                    await loop.run_in_executor(None, os.write, self._pty2_master, data)
 
                 except asyncio.TimeoutError:
                     continue
@@ -287,8 +275,7 @@ class PTYChain:
             pass
 
     async def _relay_shell_to_user(self) -> None:
-        """
-        OS Shell出力をユーザーに中継
+        """OS Shell出力をユーザーに中継
         PTY2 master → filter → stdout (PTY1 slave)
         """
         loop = asyncio.get_event_loop()
@@ -320,9 +307,7 @@ class PTYChain:
                         data = filtered
 
                     # stdout (PTY1 slave) に書き込み
-                    await loop.run_in_executor(
-                        None, self._write_stdout, data
-                    )
+                    await loop.run_in_executor(None, self._write_stdout, data)
 
                 except asyncio.TimeoutError:
                     continue
@@ -338,10 +323,7 @@ class PTYChain:
                 try:
                     pid, status = os.waitpid(self._child_pid, os.WNOHANG)
                     if pid != 0:
-                        logger.info(
-                            f"Child process {self._child_pid} exited "
-                            f"(status={status})"
-                        )
+                        logger.info(f"Child process {self._child_pid} exited (status={status})")
                         self._running = False
                         break
                 except OSError:

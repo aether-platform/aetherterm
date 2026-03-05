@@ -1,5 +1,4 @@
-"""
-PTY通信コア機能
+"""PTY通信コア機能
 
 util-linux-ngのscriptコマンドと同じアーキテクチャを使用して
 PTYマスター/スレーブペアでターミナル通信を管理します。
@@ -64,8 +63,7 @@ class TerminalBuffer:
 
 
 class TerminalPTY:
-    """
-    PTY通信クラス - scriptコマンドライクなアーキテクチャ
+    """PTY通信クラス - scriptコマンドライクなアーキテクチャ
 
     scriptコマンドとの共通点:
     1. PTYマスター/スレーブペアを使用
@@ -112,8 +110,7 @@ class TerminalPTY:
             self._event_callbacks.remove(callback)
 
     async def start_monitoring(self, command: Optional[List[str]] = None) -> None:
-        """
-        監視を開始 - scriptコマンドライクな動作
+        """監視を開始 - scriptコマンドライクな動作
 
         Args:
             command: 実行するコマンド（Noneの場合はシェルを起動）
@@ -201,8 +198,7 @@ class TerminalPTY:
         await self._process_event(exit_event)
 
     async def _spawn_child_process(self, command: List[str]) -> int:
-        """
-        子プロセスを起動 - scriptコマンドと同じ方式
+        """子プロセスを起動 - scriptコマンドと同じ方式
 
         Args:
             command: 実行するコマンド
@@ -358,8 +354,7 @@ class TerminalPTY:
             logger.debug("入力監視ループを終了します")
 
     async def _process_event(self, event: TerminalEvent) -> None:
-        """
-        ターミナルに入力を送信
+        """ターミナルに入力を送信
 
         Args:
             data: 送信するデータ
@@ -391,8 +386,7 @@ class TerminalPTY:
             return False
 
     async def resize_terminal(self, rows: int, cols: int) -> bool:
-        """
-        ターミナルサイズを変更
+        """ターミナルサイズを変更
 
         Args:
             rows: 行数

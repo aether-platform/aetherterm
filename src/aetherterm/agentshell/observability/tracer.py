@@ -1,5 +1,4 @@
-"""
-分散トレーシング機能
+"""分散トレーシング機能
 
 OpenTelemetryを使用した分散トレーシングの実装と、
 AetherTermシェル操作のトレース記録を提供します。
@@ -22,8 +21,7 @@ logger = LoggerFactory.create_telemetry_logger()
 
 
 class DistributedTracer:
-    """
-    分散トレーシングクラス
+    """分散トレーシングクラス
 
     OpenTelemetryトレーサーのラッパーとして機能し、
     AetherTermシェル操作の詳細なトレーシングを提供します。
@@ -177,8 +175,7 @@ def trace_method(
     attributes: Optional[Dict[str, Union[str, int, float, bool]]] = None,
     record_exception: bool = True,
 ) -> Callable[[F], F]:
-    """
-    メソッドをトレースするデコレーター
+    """メソッドをトレースするデコレーター
 
     Args:
         operation_name: 操作名（指定しない場合はメソッド名を使用）
@@ -214,8 +211,7 @@ def trace_async_method(
     attributes: Optional[Dict[str, Union[str, int, float, bool]]] = None,
     record_exception: bool = True,
 ) -> Callable[[F], F]:
-    """
-    非同期メソッドをトレースするデコレーター
+    """非同期メソッドをトレースするデコレーター
 
     Args:
         operation_name: 操作名（指定しない場合はメソッド名を使用）
@@ -248,8 +244,7 @@ def trace_async_method(
 
 
 class TracingContext:
-    """
-    トレーシングコンテキスト管理
+    """トレーシングコンテキスト管理
 
     複数の操作にわたってトレーシング情報を共有するための
     コンテキスト管理クラスです。

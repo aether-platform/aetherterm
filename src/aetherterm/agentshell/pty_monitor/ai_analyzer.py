@@ -1,5 +1,4 @@
-"""
-AI Analyzer
+"""AI Analyzer
 
 ログデータを解析して危険度を判定するAI解析機能
 簡易キーワードベースの危険度判定とWebSocket通信によるAIサーバー連携
@@ -43,8 +42,7 @@ class AIAnalyzer:
     """AI解析クラス"""
 
     def __init__(self, ai_server_url: str = "ws://localhost:8765"):
-        """
-        初期化
+        """初期化
 
         Args:
             ai_server_url: AIサーバーのWebSocket URL
@@ -91,8 +89,7 @@ class AIAnalyzer:
         }
 
     async def connect_to_ai_server(self) -> bool:
-        """
-        AIサーバーに接続
+        """AIサーバーに接続
 
         Returns:
             接続成功の場合True
@@ -119,8 +116,7 @@ class AIAnalyzer:
                 self.connected = False
 
     async def analyze_log_line(self, log_line: str) -> AnalysisResult:
-        """
-        ログ行を解析
+        """ログ行を解析
 
         Args:
             log_line: 解析するログ行
@@ -143,8 +139,7 @@ class AIAnalyzer:
         return local_result
 
     def _analyze_with_keywords(self, log_line: str) -> AnalysisResult:
-        """
-        キーワードベースの簡易解析
+        """キーワードベースの簡易解析
 
         Args:
             log_line: 解析するログ行
@@ -205,8 +200,7 @@ class AIAnalyzer:
         )
 
     async def _analyze_with_ai_server(self, log_line: str) -> AnalysisResult:
-        """
-        AIサーバーによる解析
+        """AIサーバーによる解析
 
         Args:
             log_line: 解析するログ行
@@ -245,8 +239,7 @@ class AIAnalyzer:
     def _merge_results(
         self, local_result: AnalysisResult, ai_result: AnalysisResult
     ) -> AnalysisResult:
-        """
-        簡易解析結果とAI解析結果を統合
+        """簡易解析結果とAI解析結果を統合
 
         Args:
             local_result: 簡易解析結果

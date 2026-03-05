@@ -71,6 +71,8 @@ src/aetherterm/agentserver/static/index.html
 *.iml
 .claude/
 .roo/
+.gemini/
+.agents/
 
 # Project Specific
 models/
@@ -82,3 +84,6 @@ butterfly/themes/
 *.crt
 *.key
 *.p12
+
+frontend/dist/*
+.grepai/

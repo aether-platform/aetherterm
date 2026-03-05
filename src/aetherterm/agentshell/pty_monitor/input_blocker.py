@@ -1,5 +1,4 @@
-"""
-Input Blocker
+"""Input Blocker
 
 危険検出時のユーザー入力ブロック機能
 Ctrl+D検出による解除機能を含む
@@ -38,8 +37,7 @@ class InputBlocker:
         self._lock = threading.Lock()
 
     def set_unblock_callback(self, callback: Callable[[], None]):
-        """
-        ブロック解除時のコールバック関数を設定
+        """ブロック解除時のコールバック関数を設定
 
         Args:
             callback: ブロック解除時に呼び出される関数
@@ -88,8 +86,7 @@ class InputBlocker:
         logger.info("Stopped input monitoring")
 
     def block_input(self, reason: str = "危険なコマンドが検出されました"):
-        """
-        入力をブロック
+        """入力をブロック
 
         Args:
             reason: ブロック理由

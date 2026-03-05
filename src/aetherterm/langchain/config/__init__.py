@@ -1,6 +1,4 @@
-"""
-LangChain統合設定管理パッケージ
-"""
+"""LangChain統合設定管理パッケージ"""
 
 from .langchain_config import LangChainConfig
 from .memory_config import MemoryConfig

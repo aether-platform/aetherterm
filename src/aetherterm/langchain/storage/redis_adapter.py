@@ -1,6 +1,4 @@
-"""
-Redisストレージアダプター（短期メモリ用）
-"""
+"""Redisストレージアダプター（短期メモリ用）"""
 
 import json
 import logging
@@ -22,8 +20,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
     """Redisストレージアダプター"""
 
     def __init__(self, config: StorageConfig):
-        """
-        初期化
+        """初期化
 
         Args:
             config: ストレージ設定
@@ -89,8 +86,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
         return f"{self.key_prefixes[prefix]}{key}"
 
     async def cache_recent_conversation(self, entry: ConversationEntry) -> None:
-        """
-        最近の会話をキャッシュ
+        """最近の会話をキャッシュ
 
         Args:
             entry: 会話エントリ
@@ -123,8 +119,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
     async def get_recent_conversations(
         self, session_id: str, limit: int = 10
     ) -> List[ConversationEntry]:
-        """
-        最近の会話を取得
+        """最近の会話を取得
 
         Args:
             session_id: セッションID
@@ -160,8 +155,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
             return []
 
     async def cache_session_context(self, context: SessionContext) -> None:
-        """
-        セッションコンテキストをキャッシュ
+        """セッションコンテキストをキャッシュ
 
         Args:
             context: セッションコンテキスト
@@ -185,8 +179,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
             raise
 
     async def get_session_context(self, session_id: str) -> Optional[SessionContext]:
-        """
-        セッションコンテキストを取得
+        """セッションコンテキストを取得
 
         Args:
             session_id: セッションID
@@ -212,8 +205,7 @@ class RedisStorageAdapter(BaseStorageAdapter, CacheStorageAdapter):
             return None
 
     async def cleanup_old_cache(self) -> int:
-        """
-        古いキャッシュをクリーンアップ
+        """古いキャッシュをクリーンアップ
 
         Returns:
             int: クリーンアップされたキー数

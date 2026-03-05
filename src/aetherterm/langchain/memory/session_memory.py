@@ -1,6 +1,4 @@
-"""
-セッションメモリ管理クラス
-"""
+"""セッションメモリ管理クラス"""
 
 import asyncio
 import logging
@@ -15,8 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionMemoryManager:
-    """
-    セッションメモリ管理クラス。
+    """セッションメモリ管理クラス。
     HierarchicalMemoryManagerを利用して、セッションコンテキストの保存、取得、クリーンアップを行います。
     """
 
@@ -26,8 +23,7 @@ class SessionMemoryManager:
         memory_config: MemoryConfig,
         hierarchical_memory_manager: HierarchicalMemoryManager,
     ):
-        """
-        初期化
+        """初期化
 
         Args:
             langchain_config: LangChain全体設定
@@ -46,8 +42,7 @@ class SessionMemoryManager:
         session_type: SessionType = SessionType.TERMINAL,
         initial_metadata: Optional[Dict[str, Any]] = None,
     ) -> SessionContext:
-        """
-        新しいセッションを作成し、保存します。
+        """新しいセッションを作成し、保存します。
 
         Args:
             session_id: 新しいセッションのID。
@@ -80,8 +75,7 @@ class SessionMemoryManager:
             raise
 
     async def get_session_context(self, session_id: str) -> Optional[SessionContext]:
-        """
-        セッションIDに基づいてセッションコンテキストを取得します。
+        """セッションIDに基づいてセッションコンテキストを取得します。
         まずRedisキャッシュを試行し、次にSQLデータベースを試行します。
 
         Args:
@@ -115,8 +109,7 @@ class SessionMemoryManager:
             return None
 
     async def update_session_context(self, context: SessionContext) -> None:
-        """
-        セッションコンテキストを更新します。
+        """セッションコンテキストを更新します。
 
         Args:
             context: 更新するセッションコンテキスト。
@@ -137,8 +130,7 @@ class SessionMemoryManager:
             raise
 
     async def terminate_session(self, session_id: str, reason: Optional[str] = None) -> None:
-        """
-        セッションを終了状態に設定します。
+        """セッションを終了状態に設定します。
 
         Args:
             session_id: 終了するセッションのID。
@@ -158,8 +150,7 @@ class SessionMemoryManager:
             raise
 
     async def list_active_sessions(self) -> List[SessionContext]:
-        """
-        現在アクティブなセッションのリストを取得します。
+        """現在アクティブなセッションのリストを取得します。
 
         Returns:
             List[SessionContext]: アクティブなセッションのリスト。
@@ -174,8 +165,7 @@ class SessionMemoryManager:
             return []
 
     async def cleanup_expired_sessions(self) -> int:
-        """
-        設定されたタイムアウトに基づいて期限切れのセッションをクリーンアップします。
+        """設定されたタイムアウトに基づいて期限切れのセッションをクリーンアップします。
 
         Returns:
             int: クリーンアップされたセッションの数。
@@ -200,8 +190,7 @@ class SessionMemoryManager:
             return 0
 
     async def get_session_summary(self, session_id: str) -> Optional[SessionSummary]:
-        """
-        特定のセッションの最新の要約を取得します。
+        """特定のセッションの最新の要約を取得します。
 
         Args:
             session_id: 要約を取得するセッションのID。
@@ -226,8 +215,7 @@ class SessionMemoryManager:
             return None
 
     async def store_session_summary(self, summary: SessionSummary) -> str:
-        """
-        セッション要約を保存します。
+        """セッション要約を保存します。
 
         Args:
             summary: 保存するセッション要約。
@@ -247,8 +235,7 @@ class SessionMemoryManager:
             raise
 
     async def get_session_statistics(self, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        セッションに関する統計情報を取得します。
+        """セッションに関する統計情報を取得します。
 
         Args:
             session_id: 統計情報を取得するセッションID。Noneの場合、全体の統計。

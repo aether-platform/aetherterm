@@ -2,6 +2,9 @@
 ZMQシリアライザのテスト
 
 AgentMessage ↔ ZMQフレーム往復テスト
+
+NOTE: The ZMQ module was removed during architecture cleanup.
+These tests are skipped until the module is replaced.
 """
 
 import pytest
@@ -9,6 +12,8 @@ from uuid import uuid4, UUID
 from datetime import datetime
 
 from aetherterm.common.agent_protocol import AgentMessage, MessageType
+
+pytest.importorskip("aetherterm.common.zmq", reason="ZMQ module removed during architecture cleanup")
 from aetherterm.common.zmq.zmq_serializer import ZMQSerializer
 
 

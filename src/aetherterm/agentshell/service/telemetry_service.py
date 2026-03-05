@@ -1,5 +1,4 @@
-"""
-テレメトリーサービス
+"""テレメトリーサービス
 
 OpenTelemetry連携による分散トレーシング、ログ収集、メトリクス収集機能を提供し、
 ターミナルイベント、AI連携、セッション管理の各操作をトレースします。
@@ -28,8 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class TelemetryService:
-    """
-    テレメトリーサービス
+    """テレメトリーサービス
 
     分散トレーシング、メトリクス収集、ログ相関機能を提供
     """
@@ -173,8 +171,7 @@ class TelemetryService:
 
     @contextmanager
     def trace_operation(self, operation_name: str, attributes: Optional[Dict[str, Any]] = None):
-        """
-        操作をトレースするコンテキストマネージャー
+        """操作をトレースするコンテキストマネージャー
 
         Args:
             operation_name: 操作名

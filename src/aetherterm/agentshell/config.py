@@ -1,5 +1,4 @@
-"""
-設定管理モジュール
+"""設定管理モジュール
 
 ラッパープログラムの設定を管理し、TOML設定ファイルの読み込みと
 環境変数の処理を行います。
@@ -151,8 +150,7 @@ class WrapperConfig:
 
     @classmethod
     def load_from_file(cls, config_path: Optional[Path] = None) -> "WrapperConfig":
-        """
-        設定ファイルから設定を読み込む
+        """設定ファイルから設定を読み込む
 
         Args:
             config_path: 設定ファイルのパス（Noneの場合はデフォルトパスを使用）
@@ -317,9 +315,7 @@ class WrapperConfig:
                 heartbeat_interval=zmq_data.get(
                     "heartbeat_interval", config.zmq.heartbeat_interval
                 ),
-                heartbeat_timeout=zmq_data.get(
-                    "heartbeat_timeout", config.zmq.heartbeat_timeout
-                ),
+                heartbeat_timeout=zmq_data.get("heartbeat_timeout", config.zmq.heartbeat_timeout),
             )
 
         # レガシー互換性: aetherterm_sync設定

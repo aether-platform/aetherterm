@@ -1,5 +1,4 @@
-"""
-依存性注入コンテナ
+"""依存性注入コンテナ
 
 dependency-injectorを使用して、設定の切り替えや
 動的なモジュールローディングに対応します。
@@ -85,6 +84,17 @@ class PluginRegistry:
         return self._plugins.copy()
 
 
+def _create_nats_bridge():
+    """NATSBridgeインスタンスを生成（NATS_URLが設定されている場合のみ）"""
+    nats_url = os.environ.get("NATS_URL")
+    if not nats_url:
+        return None
+    agent_id = os.environ.get("AGENT_ID", "aetherterm")
+    role = os.environ.get("AGENT_ROLE", "shell")
+    from .nats_bridge import NATSBridge
+    return NATSBridge(agent_id=agent_id, role=role, nats_url=nats_url)
+
+
 class WrapperContainer(containers.DeclarativeContainer):
     """ラッパープログラムの依存性注入コンテナ（環境別設定・プラグイン対応）"""
 
@@ -146,6 +156,11 @@ class WrapperContainer(containers.DeclarativeContainer):
     # AI連携プロバイダー（条件付き）
     ai_service = providers.Singleton(AIService, config=config.ai_service)
 
+    # NATS Bridge プロバイダー（NATS_URL環境変数が設定されている場合のみ有効）
+    nats_bridge = providers.Factory(
+        _create_nats_bridge,
+    )
+
     # ターミナル監視コントローラーファクトリー（セッションIDごとに作成）
     terminal_controller_factory = providers.Factory(
         TerminalController,
@@ -153,6 +168,7 @@ class WrapperContainer(containers.DeclarativeContainer):
         ai_service=ai_service,
         session_service=session_service,
         telemetry_service=telemetry_service,
+        nats_bridge=nats_bridge,
     )
 
     # 環境別設定プロバイダー
@@ -191,8 +207,7 @@ class WrapperContainer(containers.DeclarativeContainer):
 
 
 class WrapperApplication:
-    """
-    ラッパーアプリケーションクラス
+    """ラッパーアプリケーションクラス
 
     dependency-injectorを使用した依存性管理と
     動的な設定切り替えに対応
@@ -338,8 +353,7 @@ class WrapperApplication:
             raise
 
     def create_terminal_controller(self, session_id: str) -> TerminalController:
-        """
-        ターミナル監視コントローラーインスタンスを作成
+        """ターミナル監視コントローラーインスタンスを作成
 
         Args:
             session_id: セッションID
@@ -364,8 +378,7 @@ class WrapperApplication:
         return await self.container.telemetry_service()
 
     def reload_configuration(self, new_config_path: Optional[Path] = None) -> None:
-        """
-        設定を動的に再読み込み
+        """設定を動的に再読み込み
 
         Args:
             new_config_path: 新しい設定ファイルパス
@@ -380,8 +393,7 @@ class WrapperApplication:
         logger.warning("設定の動的再読み込みは実装中です")
 
     def get_config_value(self, key: str, default=None):
-        """
-        設定値を動的に取得
+        """設定値を動的に取得
 
         Args:
             key: 設定キー（ドット記法対応）
@@ -411,8 +423,7 @@ _app_instance: Optional[WrapperApplication] = None
 
 
 def get_application(config_path: Optional[Path] = None) -> WrapperApplication:
-    """
-    アプリケーションインスタンスを取得（シングルトン）
+    """アプリケーションインスタンスを取得（シングルトン）
 
     Args:
         config_path: 設定ファイルパス

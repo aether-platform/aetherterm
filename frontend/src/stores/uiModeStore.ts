@@ -1,90 +1,100 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-export type UIMode = 'terminal-first' | 'chat-first'
+export type InteractionMode = 'tmux' | 'pilot'
 
 const STORAGE_KEYS = {
-  mode: 'aetherterm-ui-mode',
-  onboarding: 'aetherterm-onboarding-complete',
-  terminalPanelHeight: 'aetherterm-terminal-panel-height',
+  interactionMode: 'aetherterm-interaction-mode',
+  sidebarWidth: 'aetherterm-sidebar-width',
+  sidebarCollapsed: 'aetherterm-sidebar-collapsed',
 } as const
 
 export const useUIModeStore = defineStore('uiMode', () => {
-  const currentMode = ref<UIMode>('terminal-first')
-  const hasCompletedOnboarding = ref(false)
-  const terminalPanelHeight = ref(250)
-  const isTerminalPanelCollapsed = ref(false)
+  const interactionMode = ref<InteractionMode>('tmux')
   const isTransitioning = ref(false)
+  const sidebarWidth = ref(320)
+  const isSidebarCollapsed = ref(false)
+  const activeSidebarTab = ref<'chat' | 'agents' | 'tasks'>('chat')
 
   // Getters
-  const isTerminalFirst = computed(() => currentMode.value === 'terminal-first')
-  const isChatFirst = computed(() => currentMode.value === 'chat-first')
-  const showOnboarding = computed(() => !hasCompletedOnboarding.value)
+  const isTmuxMode = computed(() => interactionMode.value === 'tmux')
+  const isPilotMode = computed(() => interactionMode.value === 'pilot')
+  const showSidebar = computed(() => isPilotMode.value && !isSidebarCollapsed.value)
+  const effectiveSidebarWidth = computed(() =>
+    showSidebar.value ? sidebarWidth.value : 0
+  )
 
   // Actions
-  function setMode(mode: UIMode) {
-    if (currentMode.value === mode) return
+  function setInteractionMode(mode: InteractionMode) {
+    if (interactionMode.value === mode) return
     isTransitioning.value = true
-    currentMode.value = mode
-    localStorage.setItem(STORAGE_KEYS.mode, mode)
+    interactionMode.value = mode
+    localStorage.setItem(STORAGE_KEYS.interactionMode, mode)
     setTimeout(() => {
       isTransitioning.value = false
-    }, 300)
+    }, 250)
   }
 
-  function toggleMode() {
-    setMode(currentMode.value === 'terminal-first' ? 'chat-first' : 'terminal-first')
+  function toggleInteractionMode() {
+    setInteractionMode(interactionMode.value === 'tmux' ? 'pilot' : 'tmux')
   }
 
-  function completeOnboarding(mode: UIMode) {
-    hasCompletedOnboarding.value = true
-    localStorage.setItem(STORAGE_KEYS.onboarding, 'true')
-    setMode(mode)
+  function setSidebarTab(tab: 'chat' | 'agents' | 'tasks') {
+    activeSidebarTab.value = tab
+    // Auto-expand sidebar when selecting a tab
+    if (isSidebarCollapsed.value) {
+      isSidebarCollapsed.value = false
+      localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, 'false')
+    }
   }
 
-  function toggleTerminalPanel() {
-    isTerminalPanelCollapsed.value = !isTerminalPanelCollapsed.value
+  function toggleSidebar() {
+    isSidebarCollapsed.value = !isSidebarCollapsed.value
+    localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, String(isSidebarCollapsed.value))
   }
 
-  function setTerminalPanelHeight(height: number) {
-    terminalPanelHeight.value = Math.max(100, Math.min(height, window.innerHeight - 200))
-    localStorage.setItem(STORAGE_KEYS.terminalPanelHeight, String(terminalPanelHeight.value))
+  function setSidebarWidth(width: number) {
+    sidebarWidth.value = Math.max(240, Math.min(width, 480))
+    localStorage.setItem(STORAGE_KEYS.sidebarWidth, String(sidebarWidth.value))
   }
 
   function loadFromStorage() {
-    const savedMode = localStorage.getItem(STORAGE_KEYS.mode)
-    if (savedMode === 'terminal-first' || savedMode === 'chat-first') {
-      currentMode.value = savedMode
+    const savedMode = localStorage.getItem(STORAGE_KEYS.interactionMode)
+    if (savedMode === 'tmux' || savedMode === 'pilot') {
+      interactionMode.value = savedMode
     }
 
-    const savedOnboarding = localStorage.getItem(STORAGE_KEYS.onboarding)
-    hasCompletedOnboarding.value = savedOnboarding === 'true'
+    const savedWidth = localStorage.getItem(STORAGE_KEYS.sidebarWidth)
+    if (savedWidth) {
+      sidebarWidth.value = Math.max(240, Math.min(Number(savedWidth) || 320, 480))
+    }
 
-    const savedHeight = localStorage.getItem(STORAGE_KEYS.terminalPanelHeight)
-    if (savedHeight) {
-      terminalPanelHeight.value = Number(savedHeight) || 250
+    const savedCollapsed = localStorage.getItem(STORAGE_KEYS.sidebarCollapsed)
+    if (savedCollapsed === 'true') {
+      isSidebarCollapsed.value = true
     }
   }
 
   return {
     // State
-    currentMode,
-    hasCompletedOnboarding,
-    terminalPanelHeight,
-    isTerminalPanelCollapsed,
+    interactionMode,
     isTransitioning,
+    sidebarWidth,
+    isSidebarCollapsed,
+    activeSidebarTab,
 
     // Getters
-    isTerminalFirst,
-    isChatFirst,
-    showOnboarding,
+    isTmuxMode,
+    isPilotMode,
+    showSidebar,
+    effectiveSidebarWidth,
 
     // Actions
-    setMode,
-    toggleMode,
-    completeOnboarding,
-    toggleTerminalPanel,
-    setTerminalPanelHeight,
+    setInteractionMode,
+    toggleInteractionMode,
+    setSidebarTab,
+    toggleSidebar,
+    setSidebarWidth,
     loadFromStorage,
   }
 })

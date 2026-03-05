@@ -1,5 +1,4 @@
-"""
-OpenTelemetry テレメトリー管理
+"""OpenTelemetry テレメトリー管理
 
 分散トレーシング、メトリクス収集、ログ統合のための
 OpenTelemetry設定と管理を行います。
@@ -23,8 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class TelemetryManager:
-    """
-    OpenTelemetryテレメトリー管理クラス
+    """OpenTelemetryテレメトリー管理クラス
 
     トレーシング、メトリクス、ログの統合管理を行い、
     AetherTermシェルの観測可能性を提供します。

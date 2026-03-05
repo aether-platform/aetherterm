@@ -2,6 +2,9 @@
 ZMQブローカーのテスト
 
 ブローカー登録、ルーティング、Heartbeat死活監視テスト
+
+NOTE: The ZMQ module was removed during architecture cleanup.
+These tests are skipped until the module is replaced.
 """
 
 import asyncio
@@ -12,6 +15,8 @@ import zmq
 import zmq.asyncio
 
 from aetherterm.common.agent_protocol import AgentMessage, MessageType
+
+pytest.importorskip("aetherterm.common.zmq", reason="ZMQ module removed during architecture cleanup")
 from aetherterm.common.zmq.zmq_broker import AgentRegistration, ZMQBroker
 from aetherterm.common.zmq.zmq_config import ZMQConfig
 from aetherterm.common.zmq.zmq_serializer import ZMQSerializer
@@ -141,9 +146,7 @@ class TestAgentRegistration:
         ctx = zmq.asyncio.Context()
 
         # 2つのAgentを登録
-        for i, caps in enumerate(
-            [["cap_a", "cap_b"], ["cap_b", "cap_c"]]
-        ):
+        for i, caps in enumerate([["cap_a", "cap_b"], ["cap_b", "cap_c"]]):
             dealer = ctx.socket(zmq.DEALER)
             dealer.identity = f"agent_{i}".encode()
             dealer.connect(zmq_config.broker_router_endpoint)
@@ -356,9 +359,7 @@ class TestAgentRegistrationDataclass:
 
     def test_default_values(self):
         """デフォルト値が正しく設定されること"""
-        reg = AgentRegistration(
-            agent_id="test", identity=b"test_identity"
-        )
+        reg = AgentRegistration(agent_id="test", identity=b"test_identity")
         assert reg.status == "active"
         assert reg.capabilities == []
         assert reg.last_heartbeat > 0

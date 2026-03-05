@@ -1,5 +1,4 @@
-"""
-AetherTerm LangChain統合パッケージ
+"""AetherTerm LangChain統合パッケージ
 
 このパッケージは、AetherTermプロジェクトにLangChainを統合し、
 以下の機能を提供します：

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
-"""
-SSL Certificate Generation Script for AetherTerm
-"""
+"""SSL Certificate Generation Script for AetherTerm"""
 
 import getpass
 import logging
@@ -240,7 +238,6 @@ def generate_client_certificate(ssl_dir, username, ca_cert, ca_key):
 )
 def main(host, ssl_dir, generate_client, generate_current_user):
     """Generate SSL certificates for AetherTerm."""
-
     # Set SSL directory
     if not ssl_dir:
         ssl_dir = get_ssl_directory()

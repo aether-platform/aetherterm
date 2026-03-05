@@ -1,6 +1,4 @@
-"""
-LangChain統合メモリ管理パッケージ
-"""
+"""LangChain統合メモリ管理パッケージ"""
 
 from .conversation_memory import ConversationMemoryManager
 from .hierarchical_memory import HierarchicalMemoryManager

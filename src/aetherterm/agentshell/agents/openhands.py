@@ -1,5 +1,4 @@
-"""
-OpenHandsエージェント実装
+"""OpenHandsエージェント実装
 
 OpenHandsとの統合を提供し、コード生成、編集、デバッグなどの
 高度な開発タスクを実行します。
@@ -28,8 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class OpenHandsAgent(AgentInterface):
-    """
-    OpenHandsエージェント
+    """OpenHandsエージェント
 
     OpenHandsサービスと通信し、高度な開発タスクを実行します。
     WebSocket/HTTPベースの通信を使用し、リアルタイムの進捗更新と

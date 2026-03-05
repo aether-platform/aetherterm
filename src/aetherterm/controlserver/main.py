@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""
-ControlServer - システム制御・管理サーバー
+"""ControlServer - システム制御・管理サーバー
 
 複数ターミナルの一括制御とログ解析を行うサーバー
+WebSocket (admin UI) + REST API (admin operations) を同時提供。
 """
 
 import asyncio
@@ -11,7 +11,12 @@ import signal
 import sys
 
 import click
-import uvloop
+import uvicorn
+
+try:
+    import uvloop
+except ImportError:
+    uvloop = None
 
 from .central_controller import CentralController
 
@@ -21,24 +26,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# REST API port offset from the WebSocket port
+REST_API_PORT_OFFSET = 15  # e.g. WS=8765 → REST=8780
+
 
 class ControlServerApp:
     """ControlServerアプリケーション"""
 
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 8765,
+    ):
         self.host = host
         self.port = port
+        self.rest_port = port + REST_API_PORT_OFFSET
         self.controller = None
+        self._rest_server = None
 
     async def start(self):
         """サーバー開始"""
         logger.info(f"ControlServer starting on {self.host}:{self.port}")
 
-        # CentralControllerを初期化
-        self.controller = CentralController(host=self.host, port=self.port)
+        # CentralControllerを初期化（ZMQはController内部で管理）
+        self.controller = CentralController(
+            host=self.host,
+            port=self.port,
+        )
 
-        # サーバー開始
+        # WebSocket + ZMQ サーバー開始
         await self.controller.start()
+
+        # REST API サーバー開始
+        rest_app = self.controller.create_rest_app()
+        config = uvicorn.Config(
+            rest_app,
+            host=self.host,
+            port=self.rest_port,
+            log_level="info",
+        )
+        self._rest_server = uvicorn.Server(config)
+        asyncio.create_task(self._rest_server.serve())
+        logger.info(f"REST API started on http://{self.host}:{self.rest_port}")
 
         # 状態監視ループ
         while True:
@@ -52,6 +81,8 @@ class ControlServerApp:
 
     async def stop(self):
         """サーバー停止"""
+        if self._rest_server:
+            self._rest_server.should_exit = True
         if self.controller:
             await self.controller.stop()
         logger.info("ControlServer stopped")
@@ -85,7 +116,7 @@ async def main_async(host: str, port: int, debug: bool):
 
 @click.command()
 @click.option("--host", default="localhost", help="Host to bind to")
-@click.option("--port", default=8765, help="Port to bind to")
+@click.option("--port", default=8765, help="Port to bind to (REST API on port+15)")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 def main(host: str, port: int, debug: bool):
     """ControlServer - システム制御・管理サーバー
@@ -102,9 +133,9 @@ def main(host: str, port: int, debug: bool):
         # カスタムポートで起動
         aetherterm-control --port 9000
     """
-
     # uvloopを使用してパフォーマンス向上
-    uvloop.install()
+    if uvloop is not None:
+        uvloop.install()
 
     try:
         asyncio.run(main_async(host, port, debug))

@@ -1,0 +1,69 @@
+:root {
+  /* VSCode-inspired CSS Variables for AetherTerm */
+
+  /* Layout & Backgrounds */
+  --vscode-editor-background: #1e1e1e;
+  --vscode-sideBar-background: #181818;
+  --vscode-activityBar-background: #232323;
+  --vscode-statusBar-background: #007acc;
+  --vscode-titleBar-activeBackground: #2d2d2d;
+
+  /* Text & Foregrounds */
+  --vscode-foreground: #cccccc;
+  --vscode-sideBar-foreground: #cccccc;
+  --vscode-editor-foreground: #d4d4d4;
+
+  /* Borders */
+  --vscode-sideBar-border: #252525;
+  --vscode-editorGroup-border: #444444;
+  --vscode-panel-border: #3c3c3c;
+
+  /* Interaction & Accents */
+  --vscode-list-activeSelectionBackground: #094771;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-button-background: #0e639c;
+  --vscode-button-hoverBackground: #1177bb;
+
+  /* Glassmorphism Overrides (Premium) */
+  --bg-glass: rgba(30, 30, 30, 0.8);
+  --border-glass: rgba(255, 255, 255, 0.1);
+  --accent-color: #4caf50;
+  --accent-glow: rgba(76, 175, 80, 0.4);
+}
+
+/* Global resets for the theme */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden; /* App handles scrolling */
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vscode-editor-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-panel-border);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-editorGroup-border);
+}

@@ -2,53 +2,50 @@
   <div class="onboarding-overlay">
     <div class="onboarding-card">
       <h1 class="onboarding-title">Welcome to AetherTerm</h1>
-      <p class="onboarding-subtitle">Choose your preferred workflow</p>
+      <p class="onboarding-subtitle">Choose your preferred interaction mode</p>
 
-      <div class="mode-options">
-        <!-- Terminal-first -->
-        <div
-          class="mode-card"
-          :class="{ selected: selectedMode === 'terminal-first' }"
-          @click="selectedMode = 'terminal-first'"
-        >
-          <div class="mode-preview">
-            <div class="preview-terminal">
-              <div class="preview-row">
-                <span class="preview-pane">$ ls -la</span>
-                <span class="preview-divider"></span>
-                <span class="preview-pane">$ top</span>
+      <div class="selection-section">
+        <h3 class="section-title">Select Mode</h3>
+        <div class="mode-options">
+          <div
+            class="mode-card"
+            :class="{ selected: selectedMode === 'tmux' }"
+            @click="selectedMode = 'tmux'"
+          >
+            <div class="mode-preview">
+              <div class="preview-terminal">
+                <div class="preview-row">
+                  <span class="preview-pane">$ ls -la</span>
+                  <span class="preview-divider"></span>
+                  <span class="preview-pane">$ top</span>
+                </div>
               </div>
             </div>
+            <div class="mode-label">tmux Mode</div>
+            <div class="mode-desc">Full terminal with keyboard-driven tmux controls</div>
           </div>
-          <div class="mode-label">Terminal First</div>
-          <div class="mode-desc">Full multi-pane terminal with floating AI chat overlay</div>
-        </div>
 
-        <!-- Chat-first -->
-        <div
-          class="mode-card"
-          :class="{ selected: selectedMode === 'chat-first' }"
-          @click="selectedMode = 'chat-first'"
-        >
-          <div class="mode-preview">
-            <div class="preview-chat">
-              <div class="preview-msg preview-msg-user">User: Check disk</div>
-              <div class="preview-msg preview-msg-ai">AI: Running df -h...</div>
-              <div class="preview-cmd">[$ df -h] Run</div>
+          <div
+            class="mode-card"
+            :class="{ selected: selectedMode === 'pilot' }"
+            @click="selectedMode = 'pilot'"
+          >
+            <div class="mode-preview">
+              <div class="preview-chat">
+                <div class="preview-msg preview-msg-user">npm test in pane 2</div>
+                <div class="preview-msg preview-msg-ai">Running npm test...</div>
+                <div class="preview-cmd">[Agents] [Tasks] [Chat]</div>
+              </div>
             </div>
+            <div class="mode-label">Pilot Mode</div>
+            <div class="mode-desc">Terminal with AI sidebar for agents, tasks, and chat</div>
           </div>
-          <div class="mode-label">AI Chat First</div>
-          <div class="mode-desc">AI chat as main interface with collapsible terminal panel</div>
         </div>
       </div>
 
-      <p class="onboarding-hint">You can switch modes anytime from the header bar</p>
+      <p class="onboarding-hint">You can switch modes anytime with Ctrl+Shift+M</p>
 
-      <button
-        class="get-started-btn"
-        :disabled="!selectedMode"
-        @click="start"
-      >
+      <button class="get-started-btn" :disabled="!selectedMode" @click="start">
         Get Started
       </button>
     </div>
@@ -57,14 +54,14 @@
 
 <script setup lang="ts">
   import { ref } from 'vue'
-  import { useUIModeStore, type UIMode } from '../stores/uiModeStore'
+  import { useUIModeStore, type InteractionMode } from '../stores/uiModeStore'
 
   const uiModeStore = useUIModeStore()
-  const selectedMode = ref<UIMode | null>(null)
+  const selectedMode = ref<InteractionMode>('tmux')
 
-  function start() {
+  const start = () => {
     if (selectedMode.value) {
-      uiModeStore.completeOnboarding(selectedMode.value)
+      uiModeStore.setInteractionMode(selectedMode.value)
     }
   }
 </script>
@@ -82,14 +79,29 @@
   }
 
   .onboarding-card {
-    max-width: 600px;
-    width: 90%;
+    max-width: 700px;
+    width: 95%;
     padding: 40px;
     background: #1e1e1e;
     border: 1px solid #444;
-    border-radius: 16px;
+    border-radius: 20px;
     text-align: center;
     box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6);
+  }
+
+  .selection-section {
+    margin-bottom: 32px;
+    text-align: left;
+  }
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+    padding-left: 4px;
   }
 
   .onboarding-title {
@@ -197,7 +209,7 @@
   .preview-cmd {
     font-family: monospace;
     font-size: 9px;
-    color: #4caf50;
+    color: #a855f7;
     background: #111;
     padding: 3px 6px;
     border-radius: 3px;

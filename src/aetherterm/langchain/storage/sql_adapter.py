@@ -1,6 +1,4 @@
-"""
-SQLストレージアダプター（中期メモリ用）
-"""
+"""SQLストレージアダプター（中期メモリ用）"""
 
 import logging
 from datetime import datetime, timedelta
@@ -179,8 +177,7 @@ class SQLStorageAdapter(
     """SQLストレージアダプター"""
 
     def __init__(self, config: StorageConfig):
-        """
-        初期化
+        """初期化
 
         Args:
             config: ストレージ設定

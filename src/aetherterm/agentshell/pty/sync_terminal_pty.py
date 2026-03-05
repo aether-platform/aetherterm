@@ -1,5 +1,4 @@
-"""
-同期PTYターミナル - test.pyの機能を統合
+"""同期PTYターミナル - test.pyの機能を統合
 
 test.pyで実装された優れたPTY通信機能を
 agentshellパッケージに統合したモジュール。
@@ -31,8 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncWorker:
-    """
-    非同期イベントループを管理するクラス
+    """非同期イベントループを管理するクラス
 
     メインスレッドから非同期タスクを投入し、
     別スレッドで実行するワーカー
@@ -123,8 +121,7 @@ class TerminalUtils:
 
 
 class SyncTerminalPTY:
-    """
-    同期PTYターミナル - test.pyの機能を統合
+    """同期PTYターミナル - test.pyの機能を統合
 
     既存のTerminalPTYクラスとは異なり、
     同期的なPTY処理と非同期バックエンドの組み合わせを提供
@@ -163,8 +160,7 @@ class SyncTerminalPTY:
         }
 
     def start_shell(self, shell_command: Optional[str] = None) -> None:
-        """
-        PTYを介して対話型シェルを起動し、非同期バックエンドと連携する
+        """PTYを介して対話型シェルを起動し、非同期バックエンドと連携する
 
         Args:
             shell_command: 実行するシェルコマンド（Noneの場合は環境変数SHELLを使用）
@@ -389,8 +385,7 @@ class SyncTerminalPTY:
 
 # デフォルトの非同期ログ関数
 async def default_async_log(message: str) -> None:
-    """
-    デフォルトの非同期ログ処理
+    """デフォルトの非同期ログ処理
 
     Args:
         message: ログメッセージ
@@ -406,8 +401,7 @@ def run_shell_with_async_backend(
     shell_command: Optional[str] = None,
     async_log_callback: Optional[Callable[[str], Any]] = None,
 ) -> None:
-    """
-    PTYを介して対話型シェルを起動し、非同期バックエンドと連携する
+    """PTYを介して対話型シェルを起動し、非同期バックエンドと連携する
 
     Args:
         session_id: セッションID

@@ -1,23 +1,22 @@
-"""
-AIエージェント統合モジュール
+"""AIエージェント統合モジュール
 
 このモジュールは、様々なAIエージェント（OpenHands等）との
 統合インターフェースを提供します。
 """
 
-from .base import AgentInterface, AgentCapability, AgentTask, AgentResult
-from .openhands import OpenHandsAgent
-from .langchain_agent import LangChainAgent
+from .base import AgentCapability, AgentInterface, AgentResult, AgentTask
 from .command_analyzer import CommandAnalyzerAgent
+from .langchain_agent import LangChainAgent
 from .manager import AgentManager
+from .openhands import OpenHandsAgent
 
 __all__ = [
-    "AgentInterface",
     "AgentCapability",
-    "AgentTask",
-    "AgentResult",
-    "OpenHandsAgent",
-    "LangChainAgent",
-    "CommandAnalyzerAgent",
+    "AgentInterface",
     "AgentManager",
+    "AgentResult",
+    "AgentTask",
+    "CommandAnalyzerAgent",
+    "LangChainAgent",
+    "OpenHandsAgent",
 ]

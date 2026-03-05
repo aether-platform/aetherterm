@@ -1,5 +1,4 @@
-"""
-ユーティリティモジュール
+"""ユーティリティモジュール
 
 ラッパープログラム全体で使用される共通機能を提供します。
 """
@@ -19,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_session_id() -> str:
-    """
-    ユニークなセッションIDを生成
+    """ユニークなセッションIDを生成
 
     Returns:
         str: セッションID
@@ -29,8 +27,7 @@ def generate_session_id() -> str:
 
 
 def get_terminal_size() -> tuple[int, int]:
-    """
-    現在のターミナルサイズを取得
+    """現在のターミナルサイズを取得
 
     Returns:
         tuple[int, int]: (行数, 列数)
@@ -45,8 +42,7 @@ def get_terminal_size() -> tuple[int, int]:
 
 
 def is_process_running(pid: int) -> bool:
-    """
-    指定されたPIDのプロセスが実行中かチェック
+    """指定されたPIDのプロセスが実行中かチェック
 
     Args:
         pid: プロセスID
@@ -62,8 +58,7 @@ def is_process_running(pid: int) -> bool:
 
 
 def safe_kill_process(pid: int, timeout: int = 5) -> bool:
-    """
-    プロセスを安全に終了させる
+    """プロセスを安全に終了させる
 
     Args:
         pid: プロセスID
@@ -100,8 +95,7 @@ def safe_kill_process(pid: int, timeout: int = 5) -> bool:
 
 
 def ensure_directory(path: Path) -> None:
-    """
-    ディレクトリが存在しない場合は作成
+    """ディレクトリが存在しない場合は作成
 
     Args:
         path: ディレクトリパス
@@ -114,8 +108,7 @@ def ensure_directory(path: Path) -> None:
 
 
 def safe_write_file(file_path: Path, content: str, encoding: str = "utf-8") -> bool:
-    """
-    ファイルを安全に書き込み
+    """ファイルを安全に書き込み
 
     Args:
         file_path: ファイルパス
@@ -143,8 +136,7 @@ def safe_write_file(file_path: Path, content: str, encoding: str = "utf-8") -> b
 
 
 def safe_read_file(file_path: Path, encoding: str = "utf-8") -> Optional[str]:
-    """
-    ファイルを安全に読み込み
+    """ファイルを安全に読み込み
 
     Args:
         file_path: ファイルパス
@@ -216,8 +208,7 @@ class AsyncTimer:
 
 @asynccontextmanager
 async def async_timeout(seconds: float):
-    """
-    非同期タイムアウトコンテキストマネージャー
+    """非同期タイムアウトコンテキストマネージャー
 
     Args:
         seconds: タイムアウト秒数
@@ -231,8 +222,7 @@ async def async_timeout(seconds: float):
 
 
 def format_bytes(bytes_count: int) -> str:
-    """
-    バイト数を人間が読みやすい形式にフォーマット
+    """バイト数を人間が読みやすい形式にフォーマット
 
     Args:
         bytes_count: バイト数
@@ -248,8 +238,7 @@ def format_bytes(bytes_count: int) -> str:
 
 
 def truncate_string(text: str, max_length: int, suffix: str = "...") -> str:
-    """
-    文字列を指定された長さで切り詰める
+    """文字列を指定された長さで切り詰める
 
     Args:
         text: 対象文字列
@@ -266,8 +255,7 @@ def truncate_string(text: str, max_length: int, suffix: str = "...") -> str:
 
 
 def sanitize_filename(filename: str) -> str:
-    """
-    ファイル名を安全な形式にサニタイズ
+    """ファイル名を安全な形式にサニタイズ
 
     Args:
         filename: 元のファイル名
@@ -309,8 +297,7 @@ class DebugTimer:
 
 
 def get_env_bool(key: str, default: bool = False) -> bool:
-    """
-    環境変数をbool値として取得
+    """環境変数をbool値として取得
 
     Args:
         key: 環境変数名
@@ -327,8 +314,7 @@ def get_env_bool(key: str, default: bool = False) -> bool:
 
 
 def get_env_int(key: str, default: int = 0) -> int:
-    """
-    環境変数をint値として取得
+    """環境変数をint値として取得
 
     Args:
         key: 環境変数名

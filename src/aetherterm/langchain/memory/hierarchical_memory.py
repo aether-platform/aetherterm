@@ -1,6 +1,4 @@
-"""
-階層化メモリマネージャー
-"""
+"""階層化メモリマネージャー"""
 
 import asyncio
 import logging
@@ -24,8 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class HierarchicalMemoryManager:
-    """
-    階層化メモリ管理クラス。
+    """階層化メモリ管理クラス。
     短期（Redis）、中期（SQL）、長期（Vector Store）のメモリを統合管理します。
     """
 
@@ -37,8 +34,7 @@ class HierarchicalMemoryManager:
         sql_storage: SQLStorageAdapter,
         vector_storage: VectorStoreAdapter,
     ):
-        """
-        初期化
+        """初期化
 
         Args:
             langchain_config: LangChain全体設定
@@ -57,9 +53,7 @@ class HierarchicalMemoryManager:
         self._is_initialized = False
 
     async def initialize(self) -> None:
-        """
-        メモリマネージャーを初期化し、すべてのストレージに接続します。
-        """
+        """メモリマネージャーを初期化し、すべてのストレージに接続します。"""
         if self._is_initialized:
             self._logger.info("HierarchicalMemoryManagerは既に初期化されています。")
             return
@@ -79,9 +73,7 @@ class HierarchicalMemoryManager:
             raise
 
     async def shutdown(self) -> None:
-        """
-        メモリマネージャーをシャットダウンし、すべてのストレージ接続を閉じます。
-        """
+        """メモリマネージャーをシャットダウンし、すべてのストレージ接続を閉じます。"""
         if not self._is_initialized:
             self._logger.info("HierarchicalMemoryManagerは初期化されていません。")
             return
@@ -101,8 +93,7 @@ class HierarchicalMemoryManager:
             raise
 
     async def store_memory_entry(self, entry: MemoryEntry) -> str:
-        """
-        メモリエントリを適切な階層に保存します。
+        """メモリエントリを適切な階層に保存します。
 
         Args:
             entry: 保存するメモリエントリ。
@@ -151,8 +142,7 @@ class HierarchicalMemoryManager:
     async def retrieve_memory_entry(
         self, entry_id: str, memory_type: MemoryType
     ) -> Optional[MemoryEntry]:
-        """
-        指定されたIDとメモリタイプでメモリエントリを取得します。
+        """指定されたIDとメモリタイプでメモリエントリを取得します。
 
         Args:
             entry_id: 取得するエントリのID。
@@ -195,8 +185,7 @@ class HierarchicalMemoryManager:
         limit: int = 10,
         threshold: Optional[float] = None,
     ) -> MemorySearchResult:
-        """
-        階層化メモリ全体から関連する情報を検索します。
+        """階層化メモリ全体から関連する情報を検索します。
 
         Args:
             query: 検索クエリ。
@@ -343,8 +332,7 @@ class HierarchicalMemoryManager:
     def _deduplicate_and_rank_memory_entries(
         self, entries: List[MemoryEntry], query: str
     ) -> List[MemoryEntry]:
-        """
-        メモリエントリの重複を排除し、関連度でランキングします。
+        """メモリエントリの重複を排除し、関連度でランキングします。
 
         Args:
             entries: 処理するメモリエントリのリスト。
@@ -356,12 +344,11 @@ class HierarchicalMemoryManager:
         unique_entries: Dict[str, MemoryEntry] = {}
         for entry in entries:
             # IDをキーとして重複排除
-            if str(entry.id) not in unique_entries:
+            if (
+                str(entry.id) not in unique_entries
+                or entry.relevance_score > unique_entries[str(entry.id)].relevance_score
+            ):
                 unique_entries[str(entry.id)] = entry
-            else:
-                # 既存のエントリよりも高い関連度を持つ場合は更新
-                if entry.relevance_score > unique_entries[str(entry.id)].relevance_score:
-                    unique_entries[str(entry.id)] = entry
 
         # 関連度スコアでソート
         sorted_entries = sorted(
@@ -384,8 +371,7 @@ class HierarchicalMemoryManager:
         )
 
     async def get_memory_statistics(self) -> MemoryStatistics:
-        """
-        階層化メモリ全体の統計情報を取得します。
+        """階層化メモリ全体の統計情報を取得します。
 
         Returns:
             MemoryStatistics: メモリ統計情報オブジェクト。
@@ -441,8 +427,7 @@ class HierarchicalMemoryManager:
         return stats
 
     async def cleanup_old_memory(self) -> Dict[str, int]:
-        """
-        設定に基づいて古いメモリエントリをクリーンアップします。
+        """設定に基づいて古いメモリエントリをクリーンアップします。
 
         Returns:
             Dict[str, int]: 各メモリタイプで削除されたエントリ数。
@@ -484,8 +469,7 @@ class HierarchicalMemoryManager:
         limit: int = 5,
         strategy: MemoryStrategy = MemoryStrategy.HYBRID,
     ) -> List[ContextEntry]:
-        """
-        検索結果からContextEntryのリストを生成します。
+        """検索結果からContextEntryのリストを生成します。
 
         Args:
             query: 検索クエリ。

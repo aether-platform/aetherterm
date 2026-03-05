@@ -1,5 +1,4 @@
-"""
-AetherTerm Shell Agent
+"""AetherTerm Shell Agent
 
 ローカルセッション管理、AI連携調整、オプショナルサーバー連携を統合した
 メインエージェントクラスです。
@@ -12,15 +11,13 @@ from typing import Any, Dict, List, Optional
 from ..config import WrapperConfig
 from ..domain.models import WrapperSession
 from .ai_service import IndependentAIService
-from .server_connector import ServerConnector
 from .session_service import SessionService
 
 logger = logging.getLogger(__name__)
 
 
 class AetherTermShellAgent:
-    """
-    AetherTerm Shell Agent
+    """AetherTerm Shell Agent
 
     主要責任：
     1. ローカルセッション管理: PID追跡、状態管理
@@ -32,21 +29,10 @@ class AetherTermShellAgent:
         self.config = config
         self._is_running = False
 
-        # サーバーコネクター（オプショナル）
-        self.server_connector: Optional[ServerConnector] = None
-        if config.aetherterm_sync.enable_sync:
-            self.server_connector = ServerConnector(
-                server_url=config.aetherterm_sync.server_url,
-                auto_connect=True,
-                retry_interval=config.aetherterm_sync.reconnection_delay,
-                max_retries=config.aetherterm_sync.reconnection_attempts,
-            )
-
         # AI サービス（必須、独立動作）
         self.ai_service = IndependentAIService(
             config=config.ai_service,
             provider_type=self._determine_ai_provider(),
-            server_connector=self.server_connector,
         )
 
         # セッション管理サービス
@@ -73,14 +59,6 @@ class AetherTermShellAgent:
             # セッション管理を開始
             await self.session_service.start()
 
-            # サーバー連携を開始（オプショナル）
-            if self.server_connector:
-                server_connected = await self.server_connector.start()
-                if server_connected:
-                    logger.info("サーバー連携が有効になりました")
-                else:
-                    logger.info("サーバー連携は無効です（スタンドアロンモード）")
-
             self._is_running = True
             logger.info("AetherTerm Shell Agentが開始されました")
 
@@ -96,10 +74,6 @@ class AetherTermShellAgent:
         logger.info("AetherTerm Shell Agentを停止します")
 
         try:
-            # サーバー連携を停止
-            if self.server_connector:
-                await self.server_connector.stop()
-
             # セッション管理を停止
             await self.session_service.stop()
 
@@ -113,8 +87,7 @@ class AetherTermShellAgent:
             logger.error(f"Shell Agentの停止中にエラーが発生しました: {e}")
 
     def create_session(self, shell_pid: int, **kwargs) -> str:
-        """
-        新しいセッションを作成
+        """新しいセッションを作成
 
         Args:
             shell_pid: シェルプロセスID
@@ -170,8 +143,7 @@ class AetherTermShellAgent:
         exit_code: int,
         execution_time: float,
     ) -> None:
-        """
-        コマンド実行結果をAIサービスに報告
+        """コマンド実行結果をAIサービスに報告
 
         Args:
             session_id: セッションID
@@ -237,7 +209,7 @@ class AetherTermShellAgent:
 
     def is_server_connected(self) -> bool:
         """サーバーに接続されているかどうかを確認"""
-        return self.server_connector.is_connected() if self.server_connector else False
+        return False
 
     def has_ai_provider(self) -> bool:
         """AIプロバイダーが利用可能かどうかを確認"""
@@ -259,9 +231,6 @@ class AetherTermShellAgent:
             "current_session_id": self._current_session_id,
             "session_stats": self.session_service.get_session_stats(),
             "ai_service": self.ai_service.get_status(),
-            "server_connector": self.server_connector.get_status()
-            if self.server_connector
-            else None,
             "config": {
                 "ai_enabled": self.config.enable_ai,
                 "server_sync_enabled": self.config.aetherterm_sync.enable_sync,
@@ -271,15 +240,11 @@ class AetherTermShellAgent:
 
     def enable_server_sync(self) -> None:
         """サーバー同期を有効化"""
-        if self.server_connector:
-            self.server_connector.enable()
-        else:
-            logger.warning("サーバーコネクターが初期化されていません")
+        logger.warning("サーバーコネクターは削除されました（アーキテクチャクリーンアップ）")
 
     def disable_server_sync(self) -> None:
         """サーバー同期を無効化"""
-        if self.server_connector:
-            self.server_connector.disable()
+        pass
 
     def _determine_ai_provider(self) -> str:
         """設定からAIプロバイダータイプを決定"""
@@ -305,17 +270,12 @@ class AetherTermShellAgent:
         try:
             if event_type == "connected":
                 logger.info("サーバー同期が接続されました")
-                # 既存セッションを同期
-                if self.server_connector:
-                    sessions = self.session_service.list_sessions()
-                    await self.server_connector.sync_all_sessions(sessions)
 
             elif event_type == "disconnected":
                 logger.warning("サーバー同期が切断されました")
 
             elif event_type == "server_command":
                 logger.info(f"サーバーコマンドを受信しました: {data}")
-                # サーバーからのコマンドを処理
                 await self._handle_server_command(data)
 
         except Exception as e:
@@ -326,37 +286,21 @@ class AetherTermShellAgent:
         command_type = command_data.get("type")
 
         if command_type == "get_status":
-            # ステータス要求
-            status = self.get_status()
-            if self.server_connector:
-                await self.server_connector.send_ai_notification(
-                    session_id=self._current_session_id or "system",
-                    notification_type="status_response",
-                    data=status,
-                )
+            logger.info("ステータス要求を受信しました")
 
         elif command_type == "clear_history":
-            # 履歴クリア要求
             self.clear_command_history()
             logger.info("コマンド履歴をクリアしました")
 
         elif command_type == "analyze_command":
-            # コマンド解析要求
             cmd_data = command_data.get("data", {})
             if all(key in cmd_data for key in ["command", "output", "exit_code"]):
-                analysis = await self.analyze_command_with_ai(
+                await self.analyze_command_with_ai(
                     command=cmd_data["command"],
                     output=cmd_data["output"],
                     exit_code=cmd_data["exit_code"],
                     execution_time=cmd_data.get("execution_time", 0.0),
                 )
-
-                if self.server_connector:
-                    await self.server_connector.send_ai_notification(
-                        session_id=self._current_session_id or "system",
-                        notification_type="analysis_response",
-                        data=analysis,
-                    )
 
         else:
             logger.warning(f"未知のサーバーコマンド: {command_type}")

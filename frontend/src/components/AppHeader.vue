@@ -3,8 +3,25 @@
     <div class="header-left">
       <div class="session-info" v-if="focusedPane">
         <span class="session-name">{{ focusedPane.title }}</span>
-        <span class="session-mode">{{ focusedPane.mode }}</span>
+        <span class="session-mode">{{ focusedPane.mode || focusedPane.status }}</span>
       </div>
+    </div>
+
+    <div class="header-nav">
+      <router-link
+        to="/tmux"
+        class="nav-item"
+        :class="{ active: route.path.startsWith('/tmux') }"
+      >
+        AetherTerm
+      </router-link>
+      <router-link
+        to="/term/control"
+        class="nav-item"
+        :class="{ active: route.path === '/term/control' }"
+      >
+        Control Center
+      </router-link>
     </div>
 
     <div class="header-center">
@@ -15,18 +32,6 @@
     </div>
 
     <div class="header-right">
-      <div class="mode-actions">
-        <button
-          v-for="mode in ['terminal', 'code-server', 'tmux', 'pilot-chat']"
-          :key="mode"
-          class="mode-btn"
-          :class="{ active: focusedPane?.mode === mode }"
-          @click="changeMode(mode as any)"
-          :title="`Switch to ${mode}`"
-        >
-          {{ mode === 'pilot-chat' ? 'Pilot' : mode }}
-        </button>
-      </div>
       <div class="divider"></div>
       <slot name="actions"></slot>
       <div
@@ -42,33 +47,15 @@
 
 <script setup lang="ts">
   import { computed, ref } from 'vue'
-  import { useAetherTerminalServiceStore } from '../stores/aetherTerminalServiceStore'
-  import { usePaneStore } from '../stores/paneStore'
+  import { useRoute } from 'vue-router'
+  import { useTmuxStore } from '../stores/tmuxStore'
 
-  const terminalStore = useAetherTerminalServiceStore()
-  const paneStore = usePaneStore()
+  const route = useRoute()
+  const tmuxStore = useTmuxStore()
 
-  const isConnected = computed(() => terminalStore.connectionState.isConnected)
-  const focusedPane = computed(() => paneStore.focusedPane)
+  const isConnected = computed(() => tmuxStore.isConnected)
+  const focusedPane = computed(() => tmuxStore.activePane)
   const currentProjectName = ref('vibecoding-platform')
-
-  function changeMode(mode: 'terminal' | 'code-server' | 'tmux' | 'pilot-chat') {
-    if (paneStore.focusedPaneId) {
-      const pane = paneStore.panes.get(paneStore.focusedPaneId)
-      if (pane) {
-        pane.mode = mode
-        // Notify backend if needed
-        if (terminalStore.socket) {
-          terminalStore.socket.emit('pane_update', {
-            pane_id: pane.id,
-            mode: mode,
-          })
-        }
-      }
-    } else {
-      paneStore.addPane(undefined, mode)
-    }
-  }
 </script>
 
 <style scoped>

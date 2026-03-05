@@ -1,6 +1,4 @@
-"""
-ストレージアダプター基底クラス
-"""
+"""ストレージアダプター基底クラス"""
 
 import logging
 from abc import ABC, abstractmethod
@@ -17,8 +15,7 @@ class MemoryStorageAdapter(ABC):
 
     @abstractmethod
     async def store_conversation(self, entry: ConversationEntry) -> str:
-        """
-        会話エントリを保存
+        """会話エントリを保存
 
         Args:
             entry: 会話エントリ
@@ -31,8 +28,7 @@ class MemoryStorageAdapter(ABC):
     async def retrieve_conversations(
         self, session_id: str, limit: int = 10, offset: int = 0
     ) -> List[ConversationEntry]:
-        """
-        会話履歴を取得
+        """会話履歴を取得
 
         Args:
             session_id: セッションID
@@ -47,8 +43,7 @@ class MemoryStorageAdapter(ABC):
     async def search_conversations(
         self, query: str, session_id: Optional[str] = None, limit: int = 10, threshold: float = 0.7
     ) -> List[ConversationEntry]:
-        """
-        会話を検索
+        """会話を検索
 
         Args:
             query: 検索クエリ
@@ -62,8 +57,7 @@ class MemoryStorageAdapter(ABC):
 
     @abstractmethod
     async def delete_old_conversations(self, days: int) -> int:
-        """
-        古い会話を削除
+        """古い会話を削除
 
         Args:
             days: 保持日数
@@ -74,8 +68,7 @@ class MemoryStorageAdapter(ABC):
 
     @abstractmethod
     async def get_conversation_statistics(self, session_id: str) -> Dict[str, Any]:
-        """
-        会話統計情報を取得
+        """会話統計情報を取得
 
         Args:
             session_id: セッションID
@@ -90,8 +83,7 @@ class SessionStorageAdapter(ABC):
 
     @abstractmethod
     async def store_session_context(self, context: SessionContext) -> None:
-        """
-        セッションコンテキストを保存
+        """セッションコンテキストを保存
 
         Args:
             context: セッションコンテキスト
@@ -99,8 +91,7 @@ class SessionStorageAdapter(ABC):
 
     @abstractmethod
     async def retrieve_session_context(self, session_id: str) -> Optional[SessionContext]:
-        """
-        セッションコンテキストを取得
+        """セッションコンテキストを取得
 
         Args:
             session_id: セッションID
@@ -111,8 +102,7 @@ class SessionStorageAdapter(ABC):
 
     @abstractmethod
     async def update_session_activity(self, session_id: str) -> None:
-        """
-        セッションアクティビティを更新
+        """セッションアクティビティを更新
 
         Args:
             session_id: セッションID
@@ -120,8 +110,7 @@ class SessionStorageAdapter(ABC):
 
     @abstractmethod
     async def list_active_sessions(self) -> List[SessionContext]:
-        """
-        アクティブセッション一覧を取得
+        """アクティブセッション一覧を取得
 
         Returns:
             List[SessionContext]: アクティブセッション一覧
@@ -129,8 +118,7 @@ class SessionStorageAdapter(ABC):
 
     @abstractmethod
     async def cleanup_expired_sessions(self, timeout_minutes: int = 60) -> int:
-        """
-        期限切れセッションをクリーンアップ
+        """期限切れセッションをクリーンアップ
 
         Args:
             timeout_minutes: タイムアウト時間（分）
@@ -145,8 +133,7 @@ class SummaryStorageAdapter(ABC):
 
     @abstractmethod
     async def store_summary(self, summary: SessionSummary) -> str:
-        """
-        要約を保存
+        """要約を保存
 
         Args:
             summary: セッション要約
@@ -159,8 +146,7 @@ class SummaryStorageAdapter(ABC):
     async def retrieve_summaries(
         self, session_id: str, summary_type: Optional[str] = None
     ) -> List[SessionSummary]:
-        """
-        要約を取得
+        """要約を取得
 
         Args:
             session_id: セッションID
@@ -172,8 +158,7 @@ class SummaryStorageAdapter(ABC):
 
     @abstractmethod
     async def search_summaries(self, query: str, limit: int = 10) -> List[SessionSummary]:
-        """
-        要約を検索
+        """要約を検索
 
         Args:
             query: 検索クエリ
@@ -185,8 +170,7 @@ class SummaryStorageAdapter(ABC):
 
     @abstractmethod
     async def delete_old_summaries(self, days: int) -> int:
-        """
-        古い要約を削除
+        """古い要約を削除
 
         Args:
             days: 保持日数
@@ -201,8 +185,7 @@ class VectorStorageAdapter(ABC):
 
     @abstractmethod
     async def generate_embedding(self, text: str) -> List[float]:
-        """
-        テキストの埋め込みベクトルを生成
+        """テキストの埋め込みベクトルを生成
 
         Args:
             text: テキスト
@@ -215,8 +198,7 @@ class VectorStorageAdapter(ABC):
     async def store_embedding(
         self, content_id: str, content: str, embedding: List[float], metadata: Dict[str, Any] = None
     ) -> str:
-        """
-        埋め込みベクトルを保存
+        """埋め込みベクトルを保存
 
         Args:
             content_id: コンテンツID
@@ -232,8 +214,7 @@ class VectorStorageAdapter(ABC):
     async def similarity_search(
         self, query: str, limit: int = 10, threshold: float = 0.7, filters: Dict[str, Any] = None
     ) -> List[Tuple[str, float]]:
-        """
-        類似性検索
+        """類似性検索
 
         Args:
             query: 検索クエリ
@@ -247,8 +228,7 @@ class VectorStorageAdapter(ABC):
 
     @abstractmethod
     async def delete_embeddings(self, content_ids: List[str]) -> int:
-        """
-        埋め込みベクトルを削除
+        """埋め込みベクトルを削除
 
         Args:
             content_ids: 削除するコンテンツIDのリスト
@@ -259,8 +239,7 @@ class VectorStorageAdapter(ABC):
 
     @abstractmethod
     async def get_embedding_statistics(self) -> Dict[str, Any]:
-        """
-        埋め込み統計情報を取得
+        """埋め込み統計情報を取得
 
         Returns:
             Dict[str, Any]: 統計情報
@@ -272,8 +251,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def get(self, key: str) -> Optional[Any]:
-        """
-        キャッシュから値を取得
+        """キャッシュから値を取得
 
         Args:
             key: キー
@@ -284,8 +262,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def set(self, key: str, value: Any, ttl_seconds: int = None) -> None:
-        """
-        キャッシュに値を設定
+        """キャッシュに値を設定
 
         Args:
             key: キー
@@ -295,8 +272,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def delete(self, key: str) -> bool:
-        """
-        キャッシュから値を削除
+        """キャッシュから値を削除
 
         Args:
             key: キー
@@ -307,8 +283,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def exists(self, key: str) -> bool:
-        """
-        キーが存在するかチェック
+        """キーが存在するかチェック
 
         Args:
             key: キー
@@ -319,8 +294,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def clear_pattern(self, pattern: str) -> int:
-        """
-        パターンにマッチするキーを削除
+        """パターンにマッチするキーを削除
 
         Args:
             pattern: パターン
@@ -331,8 +305,7 @@ class CacheStorageAdapter(ABC):
 
     @abstractmethod
     async def get_cache_statistics(self) -> Dict[str, Any]:
-        """
-        キャッシュ統計情報を取得
+        """キャッシュ統計情報を取得
 
         Returns:
             Dict[str, Any]: 統計情報
@@ -343,8 +316,7 @@ class BaseStorageAdapter:
     """ストレージアダプター基底実装クラス"""
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        初期化
+        """初期化
 
         Args:
             config: 設定

@@ -1,5 +1,4 @@
-"""
-PTY Controller
+"""PTY Controller
 
 PTY master/slaveを使用してログファイルを監視し、
 リアルタイムでログデータを読み取る機能を提供
@@ -20,8 +19,7 @@ class PTYController:
     """PTY制御クラス"""
 
     def __init__(self, log_file_path: str):
-        """
-        初期化
+        """初期化
 
         Args:
             log_file_path: 監視するログファイルのパス
@@ -35,8 +33,7 @@ class PTYController:
         self._monitor_thread = None
 
     def set_data_callback(self, callback: Callable[[str], None]):
-        """
-        データ受信時のコールバック関数を設定
+        """データ受信時のコールバック関数を設定
 
         Args:
             callback: ログデータを受信した時に呼び出される関数
@@ -143,8 +140,7 @@ class PTYController:
                 break
 
     def write_to_terminal(self, text: str):
-        """
-        ターミナルに文字列を出力
+        """ターミナルに文字列を出力
 
         Args:
             text: 出力する文字列

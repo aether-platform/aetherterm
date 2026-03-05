@@ -16,21 +16,22 @@
       </div>
 
       <div class="results-container">
-        <div
-          v-for="(item, index) in filteredItems"
-          :key="item.id"
-          class="result-item"
-          :class="{ active: index === selectedIndex }"
-          @click="execute(item)"
-          @mouseenter="selectedIndex = index"
-        >
-          <span class="item-icon">{{ item.icon }}</span>
-          <div class="item-details">
-            <div class="item-title">{{ item.title }}</div>
-            <div class="item-description">{{ item.description }}</div>
+        <template v-for="(item, index) in filteredItems" :key="item.id">
+          <div v-if="categoryHeader(index)" class="category-header">{{ categoryHeader(index) }}</div>
+          <div
+            class="result-item"
+            :class="{ active: index === selectedIndex }"
+            @click="execute(item)"
+            @mouseenter="selectedIndex = index"
+          >
+            <span class="item-icon">{{ item.icon }}</span>
+            <div class="item-details">
+              <div class="item-title">{{ item.title }}</div>
+              <div class="item-description">{{ item.description }}</div>
+            </div>
+            <span v-if="item.shortcut" class="item-shortcut">{{ item.shortcut }}</span>
           </div>
-          <span v-if="item.shortcut" class="item-shortcut">{{ item.shortcut }}</span>
-        </div>
+        </template>
         <div v-if="filteredItems.length === 0" class="no-results">No matching commands found.</div>
       </div>
     </div>
@@ -39,7 +40,7 @@
 
 <script setup lang="ts">
   import { computed, nextTick, ref, watch } from 'vue'
-  import { usePaneStore } from '../stores/paneStore'
+  import { useTmuxStore } from '../stores/tmuxStore'
   import { useUIModeStore } from '../stores/uiModeStore'
 
   const props = defineProps<{
@@ -50,7 +51,7 @@
     'update:show': [value: boolean]
   }>()
 
-  const paneStore = usePaneStore()
+  const tmuxStore = useTmuxStore()
   const uiModeStore = useUIModeStore()
 
   const query = ref('')
@@ -63,17 +64,26 @@
     description: string
     icon: string
     shortcut?: string
+    category?: string
     action: () => void
   }
 
+  const paneList = computed(() => {
+    const win = tmuxStore.activeWindow
+    if (!win) return []
+    return Object.values(win.panes)
+  })
+
   const commands = computed<CommandItem[]>(() => [
+    // Pane Operations
     {
       id: 'split-v',
       title: 'Split Pane Vertical',
       description: 'Split the current pane vertically',
       icon: '&#x2503;',
       shortcut: 'Ctrl+Shift+|',
-      action: () => paneStore.addPane('vertical'),
+      category: 'Pane Operations',
+      action: () => tmuxStore.splitPane('v'),
     },
     {
       id: 'split-h',
@@ -81,15 +91,8 @@
       description: 'Split the current pane horizontally',
       icon: '&#x2501;',
       shortcut: 'Ctrl+Shift+_',
-      action: () => paneStore.addPane('horizontal'),
-    },
-    {
-      id: 'toggle-mode',
-      title: 'Toggle UI Mode',
-      description: 'Switch between Terminal and Chat focus',
-      icon: '&#x21C4;',
-      shortcut: 'Ctrl+Shift+M',
-      action: () => uiModeStore.toggleMode(),
+      category: 'Pane Operations',
+      action: () => tmuxStore.splitPane('h'),
     },
     {
       id: 'close-pane',
@@ -97,27 +100,122 @@
       description: 'Remove the focused terminal/pane',
       icon: '&#x2715;',
       shortcut: 'Ctrl+Shift+W',
+      category: 'Pane Operations',
       action: () => {
-        if (paneStore.focusedPaneId) paneStore.removePane(paneStore.focusedPaneId)
+        if (tmuxStore.activePaneId) tmuxStore.closePane(tmuxStore.activePaneId)
       },
     },
-    // Add dynamic pane items
-    ...Array.from(paneStore.panes.values()).map((pane) => ({
-      id: `pane-${pane.id}`,
+    // Dynamic pane items
+    ...paneList.value.map((pane) => ({
+      id: `pane-${pane.pane_id}`,
       title: `Focus: ${pane.title}`,
-      description: `Switch to session ${pane.sessionId} (${pane.mode})`,
+      description: `Pane ${pane.pane_id} (${pane.status})`,
       icon: '&#x25A3;',
-      action: () => paneStore.focusPane(pane.id),
+      category: 'Pane Operations',
+      action: () => tmuxStore.focusPane(pane.pane_id),
     })),
+    // Mode
+    {
+      id: 'toggle-mode',
+      title: 'Toggle Interaction Mode',
+      description: 'Switch between Tmux and Pilot mode',
+      icon: '&#x21C4;',
+      shortcut: 'Ctrl+Shift+M',
+      category: 'Mode',
+      action: () => uiModeStore.toggleInteractionMode(),
+    },
+    {
+      id: 'open-sidebar',
+      title: 'Open AI Sidebar',
+      description: 'Toggle the AI assistant sidebar panel',
+      icon: '&#x2630;',
+      shortcut: 'Ctrl+B \\',
+      category: 'Mode',
+      action: () => uiModeStore.toggleSidebar(),
+    },
+    {
+      id: 'show-agents',
+      title: 'Show Agents Tab',
+      description: 'Switch sidebar to the Agents tab',
+      icon: '&#x1F916;',
+      shortcut: 'Ctrl+B a',
+      category: 'Mode',
+      action: () => uiModeStore.setSidebarTab('agents'),
+    },
+    {
+      id: 'show-tasks',
+      title: 'Show Tasks Tab',
+      description: 'Switch sidebar to the Tasks tab',
+      icon: '&#x2611;',
+      shortcut: 'Ctrl+B t',
+      category: 'Mode',
+      action: () => uiModeStore.setSidebarTab('tasks'),
+    },
+    // Agent Operations
+    {
+      id: 'agent-send-message',
+      title: 'Send Message to Agent',
+      description: 'Send a direct message to a specific agent',
+      icon: '&#x2709;',
+      category: 'Agent Operations',
+      action: () => { /* placeholder */ },
+    },
+    {
+      id: 'agent-broadcast',
+      title: 'Broadcast to All Agents',
+      description: 'Send a message to all connected agents',
+      icon: '&#x1F4E2;',
+      category: 'Agent Operations',
+      action: () => { /* placeholder */ },
+    },
+    {
+      id: 'agent-create-task',
+      title: 'Create Task',
+      description: 'Create a new task for agent execution',
+      icon: '&#x2795;',
+      category: 'Agent Operations',
+      action: () => { /* placeholder */ },
+    },
+    {
+      id: 'agent-shutdown',
+      title: 'Shutdown Agent',
+      description: 'Request a specific agent to shut down',
+      icon: '&#x23FB;',
+      category: 'Agent Operations',
+      action: () => { /* placeholder */ },
+    },
   ])
+
+  function scoreItem(item: CommandItem, q: string): number {
+    const title = item.title.toLowerCase()
+    const desc = item.description.toLowerCase()
+    let score = 0
+    if (title === q) score += 100
+    else if (title.startsWith(q)) score += 80
+    else if (title.includes(q)) score += 60
+    if (desc.includes(q)) score += 20
+    if (item.category?.toLowerCase().includes(q)) score += 10
+    return score
+  }
 
   const filteredItems = computed(() => {
     if (!query.value) return commands.value
     const q = query.value.toLowerCase()
-    return commands.value.filter(
-      (item) => item.title.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
-    )
+    return commands.value
+      .map((item) => ({ item, score: scoreItem(item, q) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ item }) => item)
   })
+
+  /** Returns category label if this item starts a new category group */
+  function categoryHeader(index: number): string | null {
+    const item = filteredItems.value[index]
+    if (!item?.category) return null
+    if (index === 0) return item.category
+    const prev = filteredItems.value[index - 1]
+    return prev?.category !== item.category ? item.category : null
+  }
 
   watch(
     () => props.show,
@@ -276,6 +374,22 @@
     border-radius: 4px;
     color: #8b949e;
     font-family: monospace;
+  }
+
+  .category-header {
+    padding: 6px 16px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #58a6ff;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 4px;
+  }
+
+  .category-header:first-child {
+    border-top: none;
+    margin-top: 0;
   }
 
   .no-results {

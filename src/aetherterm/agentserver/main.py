@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import asyncio
 import logging
 import os
 import subprocess
@@ -23,6 +24,7 @@ def set_environment_variables(kwargs):
     env["AETHERTERM_MORE"] = "true" if kwargs.get("more", False) else "false"
     env["AETHERTERM_UNSECURE"] = "true" if kwargs.get("unsecure", False) else "false"
     env["AETHERTERM_URI_ROOT_PATH"] = kwargs.get("uri_root_path", "")
+    env["AETHERTERM_UDS"] = kwargs.get("uds", "")
     env["AETHERTERM_LOGIN"] = "true" if kwargs.get("login", False) else "false"
     env["AETHERTERM_PAM_PROFILE"] = kwargs.get("pam_profile", "")
     env["AETHERTERM_AI_MODE"] = kwargs.get("ai_mode", "streaming")
@@ -50,18 +52,20 @@ def launch_uvicorn(kwargs):
     """Launch the application using uvicorn."""
     env = set_environment_variables(kwargs)
 
-    # Build uvicorn command
-    cmd = [
+    args = [
         sys.executable,
         "-m",
         "uvicorn",
-        "aetherterm.agentserver.server:create_asgi_app",
+        "aetherterm.agentserver.api.server:create_asgi_app",
         "--factory",
-        "--host",
-        env["AETHERTERM_HOST"],
-        "--port",
-        env["AETHERTERM_PORT"],
     ]
+
+    if env.get("AETHERTERM_UDS"):
+        args.extend(["--uds", env["AETHERTERM_UDS"]])
+    else:
+        args.extend(["--host", env["AETHERTERM_HOST"], "--port", env["AETHERTERM_PORT"]])
+
+    cmd = args
 
     # Add SSL options
     ssl_config = get_ssl_args(kwargs)
@@ -94,7 +98,7 @@ def launch_uvicorn(kwargs):
     log.info(f"Starting uvicorn: {' '.join(cmd)}")
 
     try:
-        subprocess.run(cmd, env=env)
+        subprocess.run(cmd, check=False, env=env)
     except KeyboardInterrupt:
         log.info("Server stopped by user")
     except Exception as e:
@@ -111,11 +115,14 @@ def launch_hypercorn(kwargs):
         sys.executable,
         "-m",
         "hypercorn",
-        "aetherterm.agentserver.server:create_asgi_app",
+        "aetherterm.agentserver.api.server:create_asgi_app",
         "--factory",
-        "--bind",
-        f"{env['AETHERTERM_HOST']}:{env['AETHERTERM_PORT']}",
     ]
+
+    if env.get("AETHERTERM_UDS"):
+        cmd.extend(["--bind", f"unix:{env['AETHERTERM_UDS']}"])
+    else:
+        cmd.extend(["--bind", f"{env['AETHERTERM_HOST']}:{env['AETHERTERM_PORT']}"])
 
     # Add SSL options
     ssl_config = get_ssl_args(kwargs)
@@ -148,12 +155,22 @@ def launch_hypercorn(kwargs):
     log.info(f"Starting hypercorn: {' '.join(cmd)}")
 
     try:
-        subprocess.run(cmd, env=env)
+        subprocess.run(cmd, check=False, env=env)
     except KeyboardInterrupt:
         log.info("Server stopped by user")
     except Exception as e:
         log.error(f"Error running hypercorn: {e}")
         sys.exit(1)
+
+
+async def start_server(**kwargs):
+    """Start the AetherTerm AgentServer."""
+    # Launch with selected server
+    server = kwargs.get("server", "uvicorn")
+    if server == "uvicorn":
+        launch_uvicorn(kwargs)
+    else:
+        launch_hypercorn(kwargs)
 
 
 @click.command()
@@ -228,14 +245,13 @@ def launch_hypercorn(kwargs):
     "--uri-root-path",
     "uri_root_path",
     default="",
-    help="Sets the server root path: example.com/<uri_root_path>/static/",
+    help="Sets the server root path (e.g., /term)",
 )
 @click.option(
-    "--ai-mode",
-    "ai_mode",
-    default="streaming",
-    type=click.Choice(["streaming", "sentence_by_sentence", "disabled"]),
-    help="Sets the AI assistance mode (streaming, sentence_by_sentence, or disabled).",
+    "--uds",
+    "uds",
+    default="",
+    help="Bind to a Unix Domain Socket instead of host:port.",
 )
 def main(**kwargs):
     """AetherTerm AgentServer - A sleek web based terminal emulator."""
@@ -256,12 +272,7 @@ def main(**kwargs):
     url = f"{protocol}://{host}:{port}/{uri_root_path + '/' if uri_root_path else ''}"
     log.info(f"AetherTerm AgentServer is ready, open your browser to: {url}")
 
-    # Launch with selected server
-    server = kwargs.get("server", "uvicorn")
-    if server == "uvicorn":
-        launch_uvicorn(kwargs)
-    else:
-        launch_hypercorn(kwargs)
+    asyncio.run(start_server(**kwargs))
 
 
 if __name__ == "__main__":

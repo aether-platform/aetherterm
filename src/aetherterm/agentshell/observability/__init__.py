@@ -1,5 +1,4 @@
-"""
-AetherTerm Shell Observability Package
+"""AetherTerm Shell Observability Package
 
 OpenTelemetryを使用した分散トレーシング、メトリクス収集、
 構造化ログ出力を提供します。
@@ -17,8 +16,7 @@ def setup_telemetry(
     otlp_endpoint: str = None,
     enable_console_export: bool = True,
 ) -> TelemetryManager:
-    """
-    テレメトリーシステムをセットアップして初期化済みのTelemetryManagerを返す
+    """テレメトリーシステムをセットアップして初期化済みのTelemetryManagerを返す
 
     Args:
         service_name: サービス名

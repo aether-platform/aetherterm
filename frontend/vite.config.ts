@@ -11,17 +11,9 @@ export default defineConfig({
     vue(),
     vueDevTools(),
   ],
-  define: {
-    global: 'globalThis',
-    process: {
-      env: {}
-    }
-  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      'stream': 'stream-browserify',
-      'buffer': 'buffer'
     },
   },
   build: {
@@ -29,7 +21,23 @@ export default defineConfig({
       output: {
         entryFileNames: `assets/[name].[hash].js`,
         chunkFileNames: `assets/[name].[hash].js`,
-        assetFileNames: `assets/[name].[hash].[ext]`
+        assetFileNames: `assets/[name].[hash].[ext]`,
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            // Vue core ecosystem
+            if (id.includes('/vue/') || id.includes('vue-router') || id.includes('pinia')) {
+              return 'vendor-vue'
+            }
+            // xterm terminal emulator
+            if (id.includes('@xterm/')) {
+              return 'vendor-xterm'
+            }
+            // Chat libraries (lazy-loaded via routes)
+            if (id.includes('deep-chat') || id.includes('vue-advanced-chat')) {
+              return 'vendor-chat'
+            }
+          }
+        },
       }
     }
   },

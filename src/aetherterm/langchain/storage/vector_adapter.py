@@ -1,6 +1,4 @@
-"""
-ベクトルストレージアダプター（長期メモリ用）
-"""
+"""ベクトルストレージアダプター（長期メモリ用）"""
 
 import hashlib
 import logging
@@ -27,8 +25,7 @@ class VectorStoreAdapter(BaseStorageAdapter, VectorStorageAdapter):
     """ベクトルストレージアダプター"""
 
     def __init__(self, config: StorageConfig):
-        """
-        初期化
+        """初期化
 
         Args:
             config: ストレージ設定

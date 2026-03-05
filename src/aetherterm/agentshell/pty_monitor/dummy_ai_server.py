@@ -1,5 +1,4 @@
-"""
-Dummy AI Server
+"""Dummy AI Server
 
 テスト用のダミーAIサーバー
 WebSocketでログ解析リクエストを受信し、簡易的な解析結果を返す
@@ -56,8 +55,7 @@ class DummyAIServer:
         }
 
     async def handle_client(self, websocket, path):
-        """
-        クライアント接続処理
+        """クライアント接続処理
 
         Args:
             websocket: WebSocket接続
@@ -79,8 +77,7 @@ class DummyAIServer:
             self.connected_clients.discard(websocket)
 
     async def process_message(self, websocket, message: str):
-        """
-        メッセージ処理
+        """メッセージ処理
 
         Args:
             websocket: WebSocket接続
@@ -107,8 +104,7 @@ class DummyAIServer:
             await websocket.send(json.dumps(error_response))
 
     async def analyze_log(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        ログ解析処理
+        """ログ解析処理
 
         Args:
             data: 解析データ
@@ -178,8 +174,7 @@ class DummyAIServer:
         return result
 
     async def start_server(self, host: str = "localhost", port: int = 8765):
-        """
-        サーバー開始
+        """サーバー開始
 
         Args:
             host: バインドホスト

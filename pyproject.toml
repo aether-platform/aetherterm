@@ -30,18 +30,23 @@ dependencies = [
     "python-socketio",
     "uvicorn",
     "fastapi",
+    "pydantic>=2.0.0",
     "python-multipart",
     "jinja2",
     "libsass",
     "pyopenssl",
     "click",
     "websockets",
+    "httpx",
     # ZMQ Agent間通信
     "pyzmq>=25.0.0",
     "msgpack>=1.0.0",
+    # LLM integration for log analysis
+    "litellm>=1.0.0",
 ]
 
 [project.optional-dependencies]
+nats = ["nats-py>=2.9.0"]
 themes = ["libsass"]
 dev = ["ruff", "pre-commit", "mypy", "pytest", "pytest-cov", "pytest-asyncio"]
 test = [
@@ -54,23 +59,6 @@ test = [
 jupyter = [
     "jupyter-server-proxy>=4.0.0",
     "jupyter-server>=2.0.0",
-]
-ai = [
-    "langchain>=0.1.0",
-    "langchain-openai>=0.1.0",
-    "langchain-anthropic>=0.1.0",
-    "langchain-community>=0.0.20",
-    "chromadb>=0.4.0",
-    "faiss-cpu>=1.7.0",
-    "redis>=5.0.0",
-    "sqlalchemy>=2.0.0",
-    "alembic>=1.13.0",
-    "psycopg2-binary>=2.9.0",
-    "asyncpg>=0.29.0",
-    "sentence-transformers>=2.2.0",
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
-    "tiktoken>=0.5.0",
 ]
 
 [project.urls]
@@ -87,10 +75,10 @@ aetherterm-controlserver = "aetherterm.controlserver.main:main"
 aetherterm-shell-monitor = "aetherterm.agentshell.pty_monitor.main:main"
 aetherterm-dummy-ai = "aetherterm.agentshell.pty_monitor.dummy_ai_server:main"
 aetherterm-generate-ssl = "aetherterm.scripts.generate_ssl_certs:main"
-aetherterm-agentshell-zmq = "aetherterm.agentshell.main_zmq:main"
+aetherterm-tmux = "aetherterm.scripts.tmux_cli:tmux"
 
 [project.entry-points."jupyter_serverproxy_servers"]
-aetherterm = "aetherterm.scripts.jupyter_proxy:setup_aetherterm"
+term = "aetherterm.scripts.jupyter_proxy:setup_aetherterm"
 
 [tool.setuptools]
 
@@ -99,18 +87,17 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 aetherterm = [
-    "agentserver/sass/*.sass",
-    "agentserver/themes/*.*",
-    "agentserver/themes/*/*.*",
-    "agentserver/themes/*/*/*.*",
-    "agentserver/static/fonts/*",
-    "agentserver/static/images/favicon.png",
-    "agentserver/static/main.css",
-    "agentserver/static/html-sanitizer.js",
-    "agentserver/static/*.min.js",
-    "agentserver/static/assets/*",
-    "agentserver/templates/index.html",
-    "agentserver/templates/motd.j2",
+    "agentserver/web/sass/*.sass",
+    "agentserver/web/themes/*.*",
+    "agentserver/web/themes/*/*.*",
+    "agentserver/web/themes/*/*/*.*",
+    "agentserver/web/static/fonts/*",
+    "agentserver/web/static/favicon.ico",
+    "agentserver/web/static/index.html",
+    "agentserver/web/static/assets/*",
+    "agentserver/web/templates/index.html",
+    "agentserver/web/templates/motd.j2",
+    "agentserver/web/__init__.py",
     "agentserver/bin/*",
     "agentserver/terminals/*.py",
     "aetherterm.conf.default"

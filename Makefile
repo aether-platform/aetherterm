@@ -59,9 +59,9 @@ test:
 build-frontend:
 	cd frontend && $(NPM) install
 	cd frontend && $(NPM) run build
-	mv frontend/dist/index.html src/aetherterm/agentserver/templates/index.html
-	rm -rf src/aetherterm/agentserver/static/*
-	cp -r frontend/dist/* src/aetherterm/agentserver/static/
+	mkdir -p src/aetherterm/agentserver/web/static
+	rm -rf src/aetherterm/agentserver/web/static/assets
+	cp -r frontend/dist/* src/aetherterm/agentserver/web/static/
 
 # ============================================================
 # Docker

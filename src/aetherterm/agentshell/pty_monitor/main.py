@@ -1,5 +1,4 @@
-"""
-PTY Monitor Main
+"""PTY Monitor Main
 
 PTYログ監視とAI解析による自動ブロック機能のメインエントリーポイント
 """
@@ -27,8 +26,7 @@ class PTYMonitor:
     """PTY監視メインクラス"""
 
     def __init__(self, log_file_path: str, ai_server_url: str = "ws://localhost:8765"):
-        """
-        初期化
+        """初期化
 
         Args:
             log_file_path: 監視するログファイルのパス
@@ -117,8 +115,7 @@ class PTYMonitor:
         logger.info("PTY Monitor stopped")
 
     def _on_log_data(self, log_line: str):
-        """
-        ログデータ受信時のコールバック
+        """ログデータ受信時のコールバック
 
         Args:
             log_line: 受信したログ行
@@ -127,8 +124,7 @@ class PTYMonitor:
         asyncio.create_task(self._analyze_log_line(log_line))
 
     async def _analyze_log_line(self, log_line: str):
-        """
-        ログ行の解析処理
+        """ログ行の解析処理
 
         Args:
             log_line: 解析するログ行
@@ -158,8 +154,7 @@ class PTYMonitor:
             logger.error(f"Error analyzing log line: {e}")
 
     def _update_stats(self, result: AnalysisResult):
-        """
-        統計情報更新
+        """統計情報更新
 
         Args:
             result: 解析結果
@@ -273,8 +268,7 @@ async def main():
 
 
 async def create_test_log_file(log_file_path: str):
-    """
-    テスト用ログファイルを作成
+    """テスト用ログファイルを作成
 
     Args:
         log_file_path: 作成するログファイルのパス

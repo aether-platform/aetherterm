@@ -1,6 +1,4 @@
-"""
-LangChain統合ストレージアダプターパッケージ
-"""
+"""LangChain統合ストレージアダプターパッケージ"""
 
 from .base_storage import MemoryStorageAdapter, SessionStorageAdapter, SummaryStorageAdapter
 from .redis_adapter import RedisStorageAdapter

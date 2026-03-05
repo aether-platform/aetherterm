@@ -1,6 +1,4 @@
-"""
-LangChain統合用DIコンテナ
-"""
+"""LangChain統合用DIコンテナ"""
 
 import asyncio
 import logging

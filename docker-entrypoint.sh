@@ -17,6 +17,12 @@ echo "  🐛 Debug: ${AETHERTERM_DEBUG:-false}"
 echo "  👤 User:  $(whoami) (UID: $(id -u))"
 echo "----------------------------------------"
 
+# Default to jupyter-server if no command provided
+if [ $# -eq 0 ]; then
+    echo "📓 Starting Jupyter Server (Proxying AetherTerm)..."
+    exec jupyter-server --ip=0.0.0.0 --port=8888 --no-browser --allow-root --ServerApp.token='' --ServerApp.password=''
+fi
+
 # Check if the first argument is an option (e.g., -f or --host)
 if [ "${1#-}" != "$1" ]; then
     set -- aetherterm-agentserver "$@"

@@ -1,5 +1,4 @@
-"""
-AIプロバイダーの抽象化と実装
+"""AIプロバイダーの抽象化と実装
 
 直接AIサービス（OpenAI、Anthropic等）と通信し、
 AetherTermサーバーに依存しない独立したAI機能を提供します。
@@ -27,8 +26,7 @@ class AIProvider(ABC):
     async def analyze_command_output(
         self, command: str, output: str, exit_code: int, context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """
-        コマンド出力を解析してAIの洞察を取得
+        """コマンド出力を解析してAIの洞察を取得
 
         Args:
             command: 実行されたコマンド
@@ -44,8 +42,7 @@ class AIProvider(ABC):
     async def suggest_error_fix(
         self, command: str, error_output: str, context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """
-        エラーの修正提案を取得
+        """エラーの修正提案を取得
 
         Args:
             command: 実行されたコマンド
@@ -60,8 +57,7 @@ class AIProvider(ABC):
     async def suggest_next_commands(
         self, command_history: List[str], current_context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """
-        次のコマンドを提案
+        """次のコマンドを提案
 
         Args:
             command_history: コマンド履歴

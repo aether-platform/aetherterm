@@ -92,7 +92,7 @@ def launch_uvicorn(kwargs):
     log.info(f"Starting uvicorn: {' '.join(cmd)}")
 
     try:
-        subprocess.run(cmd, env=env)
+        subprocess.run(cmd, check=False, env=env)
     except KeyboardInterrupt:
         log.info("Server stopped by user")
     except Exception as e:
@@ -144,7 +144,7 @@ def launch_hypercorn(kwargs):
     log.info(f"Starting hypercorn: {' '.join(cmd)}")
 
     try:
-        subprocess.run(cmd, env=env)
+        subprocess.run(cmd, check=False, env=env)
     except KeyboardInterrupt:
         log.info("Server stopped by user")
     except Exception as e:

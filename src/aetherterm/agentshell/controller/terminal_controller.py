@@ -1,5 +1,4 @@
-"""
-ターミナル監視コントローラー
+"""ターミナル監視コントローラー
 
 PTY通信とサービス層の橋渡しを行い、
 ターミナルイベントの処理とAI連携を管理します。
@@ -12,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import MonitorConfig
 from ..domain.models import EventType, TerminalEvent
+from ..log_sender import LogSender
 from ..pty.terminal_pty import TerminalPTY
 from ..service.ai_service import AIService
 from ..service.session_service import SessionService
@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class TerminalController:
-    """
-    ターミナル監視コントローラー
+    """ターミナル監視コントローラー
 
     PTY通信を管理し、AI連携とセッション管理サービスと連携して
     ターミナルイベントを処理します。
@@ -35,12 +34,17 @@ class TerminalController:
         ai_service: Optional[AIService] = None,
         session_service: Optional[SessionService] = None,
         telemetry_service: Optional[TelemetryService] = None,
+        nats_bridge=None,
     ):
         self.config = config
         self.session_id = session_id
         self._ai_service = ai_service
         self._session_service = session_service
         self._telemetry_service = telemetry_service
+        self._nats_bridge = nats_bridge
+
+        # ログ送信（ControlServerへのターミナル出力転送）
+        self._log_sender = LogSender(session_id=session_id)
 
         # PTY通信インスタンス
         self._pty = TerminalPTY(config, session_id)
@@ -52,8 +56,7 @@ class TerminalController:
         self._last_prompt_time: Optional[datetime] = None
 
     async def start_monitoring(self, command: Optional[List[str]] = None) -> None:
-        """
-        監視を開始
+        """監視を開始
 
         Args:
             command: 実行するコマンド（Noneの場合はシェルを起動）
@@ -64,8 +67,18 @@ class TerminalController:
         if self._telemetry_service:
             self._telemetry_service.trace_session_event("start", self.session_id)
 
+        # ログ送信を開始（ControlServerへのターミナル出力転送）
+        await self._log_sender.start()
+
         # PTY監視を開始
         await self._pty.start_monitoring(command)
+
+        # NATS bridge を開始（設定されている場合）
+        if self._nats_bridge:
+            try:
+                await self._nats_bridge.start(self._pty)
+            except Exception as e:
+                logger.warning(f"NATS bridge の開始に失敗しました（続行します）: {e}")
 
         # セッションサービスにセッション作成を通知
         if self._session_service:
@@ -86,6 +99,16 @@ class TerminalController:
         if self._telemetry_service:
             self._telemetry_service.trace_session_event("stop", self.session_id)
 
+        # NATS bridge を停止
+        if self._nats_bridge:
+            try:
+                await self._nats_bridge.stop()
+            except Exception as e:
+                logger.warning(f"NATS bridge の停止に失敗しました: {e}")
+
+        # ログ送信を停止
+        await self._log_sender.stop()
+
         # PTY監視を停止
         await self._pty.stop_monitoring()
 
@@ -94,8 +117,7 @@ class TerminalController:
             self._session_service.remove_session(self.session_id)
 
     async def _handle_terminal_event(self, event: TerminalEvent) -> None:
-        """
-        ターミナルイベントを処理
+        """ターミナルイベントを処理
 
         Args:
             event: ターミナルイベント
@@ -109,6 +131,7 @@ class TerminalController:
 
             # 出力イベントの場合はAI分析を実行
             if event.event_type == EventType.OUTPUT:
+                await self._log_sender.send_output(event.data)
                 await self._analyze_terminal_output(event)
 
             # セッションサービスに活動を通知
@@ -121,8 +144,7 @@ class TerminalController:
             logger.error(f"ターミナルイベント処理エラー: {e}")
 
     async def _analyze_terminal_output(self, event: TerminalEvent) -> None:
-        """
-        ターミナル出力を分析
+        """ターミナル出力を分析
 
         Args:
             event: ターミナルイベント
@@ -150,8 +172,7 @@ class TerminalController:
             logger.error(f"ターミナル出力分析エラー: {e}")
 
     def _is_error_output(self, output: str) -> bool:
-        """
-        エラー出力かどうかを判定
+        """エラー出力かどうかを判定
 
         Args:
             output: 出力内容
@@ -179,8 +200,7 @@ class TerminalController:
         return False
 
     async def _handle_command_completion(self, session_id: str, output: str) -> None:
-        """
-        コマンド完了を処理
+        """コマンド完了を処理
 
         Args:
             session_id: セッションID
@@ -211,8 +231,7 @@ class TerminalController:
         self._command_start_time = None
 
     def _is_command_completion(self, output: str) -> bool:
-        """
-        コマンド完了を検出
+        """コマンド完了を検出
 
         Args:
             output: 出力内容
@@ -235,8 +254,7 @@ class TerminalController:
         return False
 
     def track_command_input(self, command: str) -> None:
-        """
-        コマンド入力を追跡
+        """コマンド入力を追跡
 
         Args:
             command: 入力されたコマンド
@@ -245,8 +263,7 @@ class TerminalController:
         self._command_start_time = datetime.now()
 
     async def send_input(self, data: bytes) -> bool:
-        """
-        ターミナルに入力を送信
+        """ターミナルに入力を送信
 
         Args:
             data: 送信するデータ
@@ -257,8 +274,7 @@ class TerminalController:
         return await self._pty.send_input(data)
 
     async def resize_terminal(self, rows: int, cols: int) -> bool:
-        """
-        ターミナルサイズを変更
+        """ターミナルサイズを変更
 
         Args:
             rows: 行数

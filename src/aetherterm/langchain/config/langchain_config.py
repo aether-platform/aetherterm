@@ -1,6 +1,4 @@
-"""
-LangChain統合設定管理クラス
-"""
+"""LangChain統合設定管理クラス"""
 
 import logging
 import os

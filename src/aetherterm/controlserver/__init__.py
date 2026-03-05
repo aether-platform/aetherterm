@@ -1,5 +1,4 @@
-"""
-AetherTerm ControlServer Package
+"""AetherTerm ControlServer Package
 
 システム全体の制御・管理を担当するサーバーパッケージ
 

@@ -1,5 +1,4 @@
-"""
-ドメインモデル
+"""ドメインモデル
 
 ターミナル監視に関するドメインオブジェクトを定義します。
 1Wrapper1AetherTermSessionの関係に対応。
@@ -50,8 +49,7 @@ class TerminalEvent:
 
 @dataclass
 class WrapperSession:
-    """
-    Wrapperセッション情報
+    """Wrapperセッション情報
 
     1Wrapper1AetherTermSessionの関係で、AetherTermのセッションと紐づく
     """

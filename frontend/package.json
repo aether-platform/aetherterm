@@ -19,13 +19,12 @@
     "@xterm/addon-unicode11": "^0.8.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "deep-chat": "^2.4.2",
     "normalize.css": "^8.0.1",
     "pinia": "^3.0.3",
-    "socket.io-client": "^4.8.1",
+    "reconnecting-websocket": "^4.4.0",
     "vue": "^3.5.16",
-    "vue-advanced-chat": "^2.1.0",
-    "vue-router": "^4.5.0",
-    "vue-term": "^0.1.2"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.1",

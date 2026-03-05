@@ -1,5 +1,4 @@
-"""
-セッション管理サービス
+"""セッション管理サービス
 
 ターミナルセッションの管理、セッションIDの追跡、
 セッション間の独立性確保、およびAetherTermサーバーとの連携を行います。
@@ -23,8 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionService:
-    """
-    セッション管理サービス
+    """セッション管理サービス
 
     ローカルセッション管理に加えて、AetherTermサーバーとの連携により
     WebSocketを通じてセッション情報を同期し、フロントエンドから
@@ -90,8 +88,7 @@ class SessionService:
             self._save_sessions()
 
     def create_session(self, pid: int, **kwargs) -> str:
-        """
-        新しいセッションを作成
+        """新しいセッションを作成
 
         Args:
             pid: プロセスID
@@ -139,8 +136,7 @@ class SessionService:
         return session_id
 
     def get_session(self, session_id: str) -> Optional[WrapperSession]:
-        """
-        セッション情報を取得
+        """セッション情報を取得
 
         Args:
             session_id: セッションID
@@ -154,8 +150,7 @@ class SessionService:
         return session
 
     def get_session_by_pid(self, pid: int) -> Optional[WrapperSession]:
-        """
-        PIDからセッション情報を取得
+        """PIDからセッション情報を取得
 
         Args:
             pid: プロセスID
@@ -169,8 +164,7 @@ class SessionService:
         return None
 
     def update_session(self, session_id: str, **kwargs) -> bool:
-        """
-        セッション情報を更新
+        """セッション情報を更新
 
         Args:
             session_id: セッションID
@@ -205,8 +199,7 @@ class SessionService:
         return True
 
     def remove_session(self, session_id: str) -> bool:
-        """
-        セッションを削除
+        """セッションを削除
 
         Args:
             session_id: セッションID
@@ -237,8 +230,7 @@ class SessionService:
         return True
 
     def list_sessions(self) -> List[WrapperSession]:
-        """
-        全セッションのリストを取得
+        """全セッションのリストを取得
 
         Returns:
             List[WrapperSession]: セッション情報のリスト
@@ -246,8 +238,7 @@ class SessionService:
         return list(self._sessions.values())
 
     def get_active_sessions(self) -> List[WrapperSession]:
-        """
-        アクティブなセッションのリストを取得
+        """アクティブなセッションのリストを取得
 
         Returns:
             List[WrapperSession]: アクティブなセッション情報のリスト

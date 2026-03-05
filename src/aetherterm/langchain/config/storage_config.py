@@ -1,6 +1,4 @@
-"""
-ストレージ設定クラス
-"""
+"""ストレージ設定クラス"""
 
 import logging
 from dataclasses import dataclass

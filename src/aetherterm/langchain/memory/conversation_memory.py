@@ -1,6 +1,4 @@
-"""
-会話メモリ管理クラス
-"""
+"""会話メモリ管理クラス"""
 
 import asyncio
 import logging
@@ -17,8 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationMemoryManager:
-    """
-    会話メモリ管理クラス。
+    """会話メモリ管理クラス。
     HierarchicalMemoryManagerを利用して、会話履歴の保存、取得、検索、クリーンアップを行います。
     """
 
@@ -28,8 +25,7 @@ class ConversationMemoryManager:
         memory_config: MemoryConfig,
         hierarchical_memory_manager: HierarchicalMemoryManager,
     ):
-        """
-        初期化
+        """初期化
 
         Args:
             langchain_config: LangChain全体設定
@@ -55,8 +51,7 @@ class ConversationMemoryManager:
         processing_time_ms: Optional[int] = None,
         confidence_score: Optional[float] = None,
     ) -> str:
-        """
-        会話エントリを保存します。
+        """会話エントリを保存します。
 
         Args:
             session_id: セッションID。
@@ -137,8 +132,7 @@ class ConversationMemoryManager:
     async def retrieve_conversation_history(
         self, session_id: str, limit: int = 10, offset: int = 0, include_embeddings: bool = False
     ) -> List[ConversationEntry]:
-        """
-        特定のセッションの会話履歴を取得します。
+        """特定のセッションの会話履歴を取得します。
 
         Args:
             session_id: セッションID。
@@ -185,8 +179,7 @@ class ConversationMemoryManager:
         threshold: Optional[float] = None,
         strategy: MemoryStrategy = MemoryStrategy.HYBRID,
     ) -> List[ConversationEntry]:
-        """
-        類似の会話エントリを検索します。
+        """類似の会話エントリを検索します。
 
         Args:
             query: 検索クエリ。
@@ -227,8 +220,7 @@ class ConversationMemoryManager:
             return []
 
     async def cleanup_old_conversations(self) -> int:
-        """
-        設定された保持日数に基づいて古い会話データをクリーンアップします。
+        """設定された保持日数に基づいて古い会話データをクリーンアップします。
 
         Returns:
             int: 削除された会話エントリの総数。
@@ -246,8 +238,7 @@ class ConversationMemoryManager:
             raise
 
     async def get_conversation_statistics(self, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        会話に関する統計情報を取得します。
+        """会話に関する統計情報を取得します。
 
         Args:
             session_id: 統計情報を取得するセッションID。Noneの場合、全体の統計。

@@ -1,5 +1,4 @@
-"""
-LangChainエージェント実装
+"""LangChainエージェント実装
 
 LangChainの機能を使用して会話メモリ、コンテキスト管理を行い、
 必要に応じてOpenHandsエージェントにタスクを委譲します。
@@ -42,8 +41,7 @@ class LangChainTaskType(str, Enum):
 
 
 class LangChainAgent(AgentInterface):
-    """
-    LangChainエージェント
+    """LangChainエージェント
 
     メモリ管理、コンテキスト保持、会話履歴管理を提供し、
     必要に応じてOpenHandsエージェントにタスクを委譲します。
@@ -55,8 +53,7 @@ class LangChainAgent(AgentInterface):
         agent_manager: Optional[AgentManager] = None,
         openhands_url: Optional[str] = None,
     ):
-        """
-        初期化
+        """初期化
 
         Args:
             agent_id: エージェントID
@@ -145,8 +142,7 @@ class LangChainAgent(AgentInterface):
         return self._status
 
     async def execute_task(self, task: TaskData) -> Dict[str, Any]:
-        """
-        タスクを実行
+        """タスクを実行
 
         Args:
             task: 実行するタスク
@@ -231,8 +227,7 @@ class LangChainAgent(AgentInterface):
         self._intervention_callback = callback
 
     async def _process_task(self, task: TaskData) -> Dict[str, Any]:
-        """
-        タスクを処理
+        """タスクを処理
 
         Args:
             task: 処理するタスク
@@ -270,8 +265,7 @@ class LangChainAgent(AgentInterface):
     async def _delegate_to_openhands(
         self, task: TaskData, context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        OpenHandsエージェントにタスクを委譲
+        """OpenHandsエージェントにタスクを委譲
 
         Args:
             task: 委譲するタスク
@@ -377,8 +371,7 @@ class LangChainAgent(AgentInterface):
         return doc_result
 
     async def _get_relevant_context(self, task: TaskData) -> Dict[str, Any]:
-        """
-        タスクに関連するコンテキストを取得
+        """タスクに関連するコンテキストを取得
 
         Args:
             task: タスク情報
