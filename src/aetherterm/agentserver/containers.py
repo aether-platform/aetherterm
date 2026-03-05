@@ -98,7 +98,7 @@ def configure_container(config=None):
         modules=[
             "aetherterm.agentserver.routes",
             "aetherterm.agentserver.server",
-            "aetherterm.agentserver.socket_handlers",
+            "aetherterm.agentserver.socket_handlers.terminal_handlers",
         ]
     )
 
