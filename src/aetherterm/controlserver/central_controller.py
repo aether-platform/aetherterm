@@ -3,57 +3,23 @@ CentralController - NATS-based central control system.
 
 Subscribes to AgentServer events via NATS, performs real-time analysis
 (command logging, security threat detection), and sends control commands.
+
+ドメインサービス (BlockManagementService) とドメインエンティティを使用して
+ビジネスロジックをインフラ層から分離しています。
 """
 
-import asyncio
-import json
 import logging
-import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 from ..common.nats import NatsClient, Subjects
 from .analyzers.command_log_analyzer import CommandLogAnalyzer
 from .analyzers.threat_detector import ThreatDetector
+from .domain.entities import AgentInfo, SessionInfo
+from .domain.services.block_management import BlockManagementService
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BlockCommand:
-    """Block command record."""
-
-    block_id: str
-    block_type: str  # "admin_initiated", "auto_detected", "emergency"
-    reason: str
-    admin_user: Optional[str]
-    affected_sessions: List[str]
-    timestamp: str
-    expires_at: Optional[str] = None
-
-
-@dataclass
-class AgentInfo:
-    """Connected agent information."""
-
-    agent_id: str
-    status: str
-    active_sessions: int
-    last_heartbeat: str
-
-
-@dataclass
-class SessionInfo:
-    """Session information."""
-
-    session_id: str
-    agent_server_id: str
-    user_info: Dict
-    created_at: str
-    last_activity: str
-    is_blocked: bool = False
-    block_reason: Optional[str] = None
 
 
 class CentralController:
@@ -62,7 +28,6 @@ class CentralController:
     def __init__(
         self,
         nats_url: str = "nats://localhost:4222",
-        # Legacy params kept for config compatibility
         host: str = "localhost",
         port: int = 8765,
     ):
@@ -75,14 +40,25 @@ class CentralController:
         self.command_analyzer = CommandLogAnalyzer()
         self.threat_detector = ThreatDetector()
 
+        # Domain services
+        self._block_service = BlockManagementService()
+
         # State
         self.agents: Dict[str, AgentInfo] = {}
         self.active_sessions: Dict[str, SessionInfo] = {}
-        self.active_blocks: Dict[str, BlockCommand] = {}
-        self.block_history: List[BlockCommand] = []
 
         # Admin notification callbacks
         self._admin_callbacks: List[Callable] = []
+
+    @property
+    def active_blocks(self):
+        """後方互換性のため BlockManagementService のブロックを公開"""
+        return self._block_service.active_blocks
+
+    @property
+    def block_history(self):
+        """後方互換性のため BlockManagementService の履歴を公開"""
+        return self._block_service.block_history
 
     async def start(self):
         """Start the central controller."""
@@ -175,9 +151,7 @@ class CentralController:
         event = data.get("event", "")
 
         if event == "input":
-            # Command log analysis
             await self.command_analyzer.handle_terminal_input(subject, data)
-            # Security threat detection
             await self.threat_detector.analyze_input(subject, data)
 
         elif event == "output":
@@ -206,28 +180,21 @@ class CentralController:
         self, reason: str = "Emergency block", admin_user: Optional[str] = None
     ) -> str:
         """Block all sessions across all agents."""
-        block_id = str(uuid.uuid4())
-
-        block_command = BlockCommand(
-            block_id=block_id,
+        affected = list(self.active_sessions.keys())
+        block_command = self._block_service.create_block(
             block_type="admin_initiated",
             reason=reason,
+            affected_sessions=affected,
             admin_user=admin_user,
-            affected_sessions=list(self.active_sessions.keys()),
-            timestamp=datetime.now().isoformat(),
         )
 
-        self.active_blocks[block_id] = block_command
-        self.block_history.append(block_command)
+        logger.warning(f"Executing block all sessions: {reason} (ID: {block_command.block_id})")
 
-        logger.warning(f"Executing block all sessions: {reason} (ID: {block_id})")
-
-        # Broadcast to all agents
         await self._nats.publish(
             Subjects.control_broadcast(),
             {
                 "command": "emergency_block",
-                "block_id": block_id,
+                "block_id": block_command.block_id,
                 "action": "block_all_sessions",
                 "message": f"Emergency block: {reason}",
                 "affected_sessions": block_command.affected_sessions,
@@ -235,8 +202,8 @@ class CentralController:
             },
         )
 
-        await self._notify_admins("block_executed", {"block_command": asdict(block_command)})
-        return block_id
+        await self._notify_admins("block_executed", {"block_command": block_command.to_dict()})
+        return block_command.block_id
 
     async def execute_block_session(
         self,
@@ -249,28 +216,21 @@ class CentralController:
             logger.warning(f"Session not found for blocking: {session_id}")
             return None
 
-        block_id = str(uuid.uuid4())
         session_info = self.active_sessions[session_id]
         agent_id = session_info.agent_server_id
 
-        block_command = BlockCommand(
-            block_id=block_id,
+        block_command = self._block_service.create_block(
             block_type="admin_initiated",
             reason=reason,
-            admin_user=admin_user,
             affected_sessions=[session_id],
-            timestamp=datetime.now().isoformat(),
+            admin_user=admin_user,
         )
 
-        self.active_blocks[block_id] = block_command
-        self.block_history.append(block_command)
-
-        # Send to specific agent
         await self._nats.publish(
             Subjects.control_command(agent_id),
             {
                 "command": "block_session",
-                "block_id": block_id,
+                "block_id": block_command.block_id,
                 "session_id": session_id,
                 "message": f"Blocked by administrator: {reason}",
                 "timestamp": block_command.timestamp,
@@ -278,24 +238,17 @@ class CentralController:
         )
 
         logger.info(f"Blocked session {session_id}: {reason}")
-        return block_id
+        return block_command.block_id
 
     async def execute_unblock_session(
         self, session_id: str, admin_user: Optional[str] = None
     ) -> bool:
         """Unblock a session."""
-        # Find active block
-        block_to_remove = None
-        for block_id, block_cmd in self.active_blocks.items():
-            if session_id in block_cmd.affected_sessions:
-                block_to_remove = block_id
-                break
+        block_id = self._block_service.remove_block_for_session(session_id)
 
-        if not block_to_remove:
+        if not block_id:
             logger.warning(f"No active block found for session: {session_id}")
             return False
-
-        del self.active_blocks[block_to_remove]
 
         if session_id in self.active_sessions:
             agent_id = self.active_sessions[session_id].agent_server_id
@@ -334,8 +287,8 @@ class CentralController:
         return {
             "agent_servers_count": len(self.agents),
             "active_sessions_count": len(self.active_sessions),
-            "active_blocks_count": len(self.active_blocks),
-            "total_block_history": len(self.block_history),
+            "active_blocks_count": len(self._block_service.active_blocks),
+            "total_block_history": len(self._block_service.block_history),
             "command_log_stats": self.command_analyzer.get_statistics(),
             "threat_stats": self.threat_detector.get_statistics(),
             "last_activity": datetime.now().isoformat(),
@@ -343,12 +296,12 @@ class CentralController:
 
     def get_agents(self) -> List[Dict]:
         """Get connected agents info."""
-        return [asdict(info) for info in self.agents.values()]
+        return [agent.to_dict() for agent in self.agents.values()]
 
     def get_sessions(self) -> List[Dict]:
         """Get active sessions info."""
-        return [asdict(info) for info in self.active_sessions.values()]
+        return [session.to_dict() for session in self.active_sessions.values()]
 
     def get_block_history(self, limit: int = 50) -> List[Dict]:
         """Get block history."""
-        return [asdict(block) for block in self.block_history[-limit:]]
+        return [block.to_dict() for block in self._block_service.get_block_history(limit)]

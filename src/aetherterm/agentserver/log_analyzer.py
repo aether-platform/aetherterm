@@ -225,12 +225,26 @@ class LogAnalyzer:
         return stats
 
 
-# グローバルインスタンス
+# --- レガシーグローバル状態 (非推奨) ---
+# 新規コードでは ApplicationContainer.threat_detector を使用してください。
+# domain/services/threat_detection.py が後継です。
+
+import warnings as _warnings
+
 _log_analyzer_instance = None
 
 
 def get_log_analyzer() -> LogAnalyzer:
-    """ログ解析器のシングルトンインスタンスを取得"""
+    """ログ解析器のシングルトンインスタンスを取得
+
+    .. deprecated::
+        ApplicationContainer.threat_detector (ThreatDetectionService) を使用してください。
+    """
+    _warnings.warn(
+        "get_log_analyzer() is deprecated. Use ApplicationContainer.threat_detector instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _log_analyzer_instance
     if _log_analyzer_instance is None:
         _log_analyzer_instance = LogAnalyzer()

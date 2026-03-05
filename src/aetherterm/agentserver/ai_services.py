@@ -195,20 +195,30 @@ def create_ai_service(
     return MockAIService()
 
 
-# Global AI service instance (will be set by dependency injection)
+# --- レガシーグローバル状態 ---
+# 新規コードでは ApplicationContainer.ai_service を使用してください。
+# application/ports/ai_service.py (AIServicePort) が抽象インターフェースです。
+# 以下の関数はDIコンテナ初期化時の互換性のために残しています。
+
 _ai_service: Optional[AIService] = None
 
 
 def get_ai_service() -> AIService:
-    """Get the current AI service instance."""
+    """Get the current AI service instance.
+
+    Note: 新規 socket handler は DI 経由で AIServicePort を受け取るため、
+    この関数は互換性のために残されています。
+    """
     global _ai_service
     if _ai_service is None:
-        # Fallback to mock service if none configured
         _ai_service = MockAIService()
     return _ai_service
 
 
 def set_ai_service(service: AIService):
-    """Set the global AI service instance."""
+    """Set the global AI service instance.
+
+    Note: ApplicationContainer の初期化時に呼ばれます。
+    """
     global _ai_service
     _ai_service = service

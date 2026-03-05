@@ -6,7 +6,7 @@ AsyncioTerminal のクラスレベル辞書をラップします。
 """
 
 import logging
-from typing import Any, Optional, Set
+from typing import Any, List, Optional, Set
 
 from ...application.ports.terminal_repository import TerminalRepositoryPort
 from ...domain.entities import SessionOwner, TerminalSessionInfo
@@ -70,6 +70,46 @@ class InMemoryTerminalRepository(TerminalRepositoryPort):
             context_parts.append(f"User: {terminal.user.name}")
 
         return "\n\n".join(context_parts) if context_parts else None
+
+    def add_client_to_session(self, session_id: str, client_sid: str) -> bool:
+        terminal = AsyncioTerminal.sessions.get(session_id)
+        if terminal and hasattr(terminal, "client_sids"):
+            terminal.client_sids.add(client_sid)
+            return True
+        return False
+
+    def remove_client_from_session(self, session_id: str, client_sid: str) -> int:
+        terminal = AsyncioTerminal.sessions.get(session_id)
+        if terminal and hasattr(terminal, "client_sids"):
+            terminal.client_sids.discard(client_sid)
+            return len(terminal.client_sids)
+        return 0
+
+    def get_all_sessions_for_client(self, client_sid: str) -> List[str]:
+        result = []
+        for session_id, terminal in AsyncioTerminal.sessions.items():
+            if hasattr(terminal, "client_sids") and client_sid in terminal.client_sids:
+                result.append(session_id)
+        return result
+
+    async def write_to_session(self, session_id: str, data: str) -> bool:
+        terminal = AsyncioTerminal.sessions.get(session_id)
+        if terminal:
+            await terminal.write(data)
+            return True
+        return False
+
+    async def resize_session(self, session_id: str, cols: int, rows: int) -> bool:
+        terminal = AsyncioTerminal.sessions.get(session_id)
+        if terminal:
+            await terminal.resize(cols, rows)
+            return True
+        return False
+
+    async def close_session(self, session_id: str) -> None:
+        terminal = AsyncioTerminal.sessions.get(session_id)
+        if terminal:
+            await terminal.close()
 
     def _get_owner(self, session_id: str) -> Optional[SessionOwner]:
         owner_info = AsyncioTerminal.session_owners.get(session_id)

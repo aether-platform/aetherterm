@@ -2,7 +2,8 @@
 Terminal-related Socket.IO event handlers.
 
 薄いアダプター層として、Socket.IOイベントを受け取り、
-ユースケースに処理を委譲します。
+ユースケースとリポジトリに処理を委譲します。
+AsyncioTerminal への直接アクセスはターミナル生成時のみ。
 """
 
 import asyncio
@@ -14,6 +15,7 @@ from dependency_injector.wiring import Provide, inject
 
 from aetherterm.agentserver import utils
 from aetherterm.agentserver.containers import ApplicationContainer
+from aetherterm.agentserver.domain.entities import UserInfo, check_session_ownership
 from aetherterm.agentserver.terminals.asyncio_terminal import AsyncioTerminal
 from aetherterm.agentserver.utils import User
 
@@ -49,18 +51,22 @@ async def connect(
         log.error(f"Error reading MOTD file: {e}")
 
 
-async def disconnect(sid, environ=None):
+@inject
+async def disconnect(
+    sid,
+    environ=None,
+    terminal_repo=Provide[ApplicationContainer.terminal_repo],
+):
     """Handle client disconnection."""
-    sio = get_sio()
     log.info(f"Client disconnected: {sid}")
 
-    for session_id, terminal in list(AsyncioTerminal.sessions.items()):
-        if hasattr(terminal, "client_sids") and sid in terminal.client_sids:
-            terminal.client_sids.discard(sid)
-            log.info(f"Removed client {sid} from terminal session {session_id}")
-            if not terminal.client_sids:
-                log.info(f"No clients remaining for session {session_id}, closing terminal")
-                await terminal.close()
+    session_ids = terminal_repo.get_all_sessions_for_client(sid)
+    for session_id in session_ids:
+        remaining = terminal_repo.remove_client_from_session(session_id, sid)
+        log.info(f"Removed client {sid} from terminal session {session_id}")
+        if remaining == 0:
+            log.info(f"No clients remaining for session {session_id}, closing terminal")
+            await terminal_repo.close_session(session_id)
 
 
 @inject
@@ -70,6 +76,8 @@ async def create_terminal(
     config_login: bool = Provide[ApplicationContainer.config.login],
     config_pam_profile: str = Provide[ApplicationContainer.config.pam_profile],
     config_uri_root_path: str = Provide[ApplicationContainer.config.uri_root_path],
+    terminal_repo=Provide[ApplicationContainer.terminal_repo],
+    broadcaster=Provide[ApplicationContainer.broadcaster],
 ):
     """Handle the creation of a new terminal session."""
     sio = get_sio()
@@ -84,49 +92,49 @@ async def create_terminal(
         log.debug(f"Terminal data: user={user_name}, path={path}")
 
         # Reuse existing active session
-        if session_id in AsyncioTerminal.sessions:
-            existing_terminal = AsyncioTerminal.sessions[session_id]
-            if not existing_terminal.closed:
+        if terminal_repo.session_exists(session_id):
+            session_info = terminal_repo.get_session_info(session_id)
+            if session_info and not session_info.is_closed:
                 log.info(f"Reusing existing terminal session {session_id}")
-                existing_terminal.client_sids.add(sid)
-                if existing_terminal.history:
-                    await sio.emit(
+                terminal_repo.add_client_to_session(session_id, sid)
+                if session_info.history:
+                    await broadcaster.emit_to_client(
                         "terminal_output",
-                        {"session": session_id, "data": existing_terminal.history},
-                        room=sid,
+                        {"session": session_id, "data": session_info.history},
+                        sid,
                     )
-                await sio.emit(
-                    "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
+                await broadcaster.emit_to_client(
+                    "terminal_ready", {"session": session_id, "status": "ready"}, sid
                 )
                 return
             else:
                 log.info(f"Attempted to connect to closed session {session_id}")
                 environ = getattr(sio, "environ", {}) if sio else {}
                 current_user_info = get_user_info_from_environ(environ)
-                is_owner = _check_session_ownership(session_id, current_user_info)
+                is_owner = _check_ownership_via_repo(terminal_repo, session_id, current_user_info)
 
-                await sio.emit(
+                await broadcaster.emit_to_client(
                     "terminal_closed",
                     {
                         "session": session_id,
                         "reason": "session_already_closed",
                         "is_owner": is_owner,
                     },
-                    room=sid,
+                    sid,
                 )
                 return
 
         # Check previously closed sessions
-        if is_specific_session_request and session_id in AsyncioTerminal.closed_sessions:
+        if is_specific_session_request and terminal_repo.is_session_closed(session_id):
             log.info(f"Attempted to connect to previously closed session {session_id}")
             environ = getattr(sio, "environ", {}) if sio else {}
             current_user_info = get_user_info_from_environ(environ)
-            is_owner = _check_session_ownership(session_id, current_user_info)
+            is_owner = _check_ownership_via_repo(terminal_repo, session_id, current_user_info)
 
-            await sio.emit(
+            await broadcaster.emit_to_client(
                 "terminal_closed",
                 {"session": session_id, "reason": "session_already_closed", "is_owner": is_owner},
-                room=sid,
+                sid,
             )
             return
 
@@ -148,7 +156,6 @@ async def create_terminal(
             except Exception:
                 pass
 
-        current_user_info = get_user_info_from_environ(environ)
         socket = utils.ConnectionInfo(environ, socket_remote_addr)
 
         # Determine user
@@ -161,7 +168,7 @@ async def create_terminal(
                 log.warning(f"Invalid user: {user_name}, falling back to default user.")
                 terminal_user = User()
 
-        # Create terminal instance
+        # Create terminal instance (AsyncioTerminal auto-registers in sessions dict)
         log.debug("Creating AsyncioTerminal instance")
         terminal_instance = AsyncioTerminal(
             user=terminal_user,
@@ -181,8 +188,8 @@ async def create_terminal(
         await terminal_instance.start_pty()
         log.info(f"PTY started successfully for session {session_id}")
 
-        await sio.emit(
-            "terminal_ready", {"session": session_id, "status": "ready"}, room=sid
+        await broadcaster.emit_to_client(
+            "terminal_ready", {"session": session_id, "status": "ready"}, sid
         )
         log.debug(f"Sent terminal_ready event to client {sid}")
 
@@ -191,33 +198,37 @@ async def create_terminal(
         await sio.emit("terminal_error", {"error": str(e)}, room=sid)
 
 
-async def terminal_input(sid, data):
+@inject
+async def terminal_input(
+    sid,
+    data,
+    terminal_repo=Provide[ApplicationContainer.terminal_repo],
+):
     """Handle input from client to terminal."""
     try:
         session_id = data.get("session")
         input_data = data.get("data", "")
 
-        if session_id in AsyncioTerminal.sessions:
-            terminal = AsyncioTerminal.sessions[session_id]
-            await terminal.write(input_data)
-        else:
+        if not await terminal_repo.write_to_session(session_id, input_data):
             log.warning(f"Terminal session {session_id} not found")
 
     except Exception as e:
         log.error(f"Error handling terminal input: {e}")
 
 
-async def terminal_resize(sid, data):
+@inject
+async def terminal_resize(
+    sid,
+    data,
+    terminal_repo=Provide[ApplicationContainer.terminal_repo],
+):
     """Handle terminal resize from client."""
     try:
         session_id = data.get("session")
         cols = data.get("cols", 80)
         rows = data.get("rows", 24)
 
-        if session_id in AsyncioTerminal.sessions:
-            terminal = AsyncioTerminal.sessions[session_id]
-            await terminal.resize(cols, rows)
-        else:
+        if not await terminal_repo.resize_session(session_id, cols, rows):
             log.warning(f"Terminal session {session_id} not found")
 
     except Exception as e:
@@ -239,20 +250,12 @@ def broadcast_to_session(
     )
 
 
-def _check_session_ownership(session_id, current_user_info):
-    """Check if the current user is the owner of the session."""
-    from aetherterm.agentserver.domain.entities import SessionOwner, UserInfo, check_session_ownership
-
-    if session_id not in AsyncioTerminal.session_owners:
+def _check_ownership_via_repo(terminal_repo, session_id, current_user_info):
+    """リポジトリ経由でセッション所有権を確認"""
+    owner = terminal_repo.get_session_owner(session_id)
+    if owner is None:
         return False
 
-    owner_info = AsyncioTerminal.session_owners[session_id]
-    owner = SessionOwner(
-        remote_addr=owner_info.get("remote_addr"),
-        remote_user=owner_info.get("remote_user"),
-        user_name=owner_info.get("user_name"),
-        created_at=owner_info.get("created_at", 0),
-    )
     user_info = UserInfo(
         remote_addr=current_user_info.get("remote_addr"),
         remote_user=current_user_info.get("remote_user"),

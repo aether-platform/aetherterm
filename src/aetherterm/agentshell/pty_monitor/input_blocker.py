@@ -1,8 +1,11 @@
 """
 Input Blocker
 
-危険検出時のユーザー入力ブロック機能
-Ctrl+D検出による解除機能を含む
+危険検出時のユーザー入力ブロック機能。
+Ctrl+D検出による解除機能を含む。
+
+ドメインサービス (InputPolicyService) にブロック状態のビジネスロジックを委譲し、
+このクラスはターミナルI/O（stdin監視、表示）のインフラ層を担当します。
 """
 
 import logging
@@ -14,28 +17,53 @@ import tty
 from enum import Enum
 from typing import Callable, Optional
 
+from ..domain.services.input_policy import BlockState as DomainBlockState
+from ..domain.services.input_policy import InputPolicyService
+
 logger = logging.getLogger(__name__)
 
 
 class BlockState(Enum):
-    """ブロック状態"""
+    """ブロック状態（後方互換性のため残す。ドメイン層の BlockState を参照）"""
 
     NORMAL = "normal"
     BLOCKED = "blocked"
     WAITING_CONFIRMATION = "waiting_confirmation"
 
 
-class InputBlocker:
-    """入力制御クラス"""
+def _to_legacy_state(domain_state: DomainBlockState) -> BlockState:
+    """ドメイン状態をレガシー状態に変換"""
+    return BlockState(domain_state.value)
 
-    def __init__(self):
+
+class InputBlocker:
+    """入力制御クラス
+
+    ブロック状態のビジネスロジックは InputPolicyService に委譲し、
+    ターミナルI/O（stdin監視、表示）を担当します。
+    """
+
+    def __init__(self, policy: Optional[InputPolicyService] = None):
         """初期化"""
-        self.state = BlockState.NORMAL
+        self._policy = policy or InputPolicyService()
         self.original_settings = None
         self.input_thread = None
         self.running = False
         self.unblock_callback: Optional[Callable[[], None]] = None
         self._lock = threading.Lock()
+
+    @property
+    def state(self) -> BlockState:
+        """後方互換性のための状態プロパティ"""
+        return _to_legacy_state(self._policy.state)
+
+    @state.setter
+    def state(self, value: BlockState):
+        """後方互換性のための状態セッター"""
+        if value == BlockState.BLOCKED:
+            self._policy.block("manual")
+        elif value == BlockState.NORMAL:
+            self._policy.force_unblock()
 
     def set_unblock_callback(self, callback: Callable[[], None]):
         """
@@ -95,16 +123,16 @@ class InputBlocker:
             reason: ブロック理由
         """
         with self._lock:
-            if self.state == BlockState.NORMAL:
-                self.state = BlockState.BLOCKED
+            if not self._policy.is_blocked:
+                self._policy.block(reason)
                 self._display_block_message(reason)
                 logger.warning(f"Input blocked: {reason}")
 
     def unblock_input(self):
         """入力ブロックを解除"""
         with self._lock:
-            if self.state in [BlockState.BLOCKED, BlockState.WAITING_CONFIRMATION]:
-                self.state = BlockState.NORMAL
+            if self._policy.is_blocked:
+                self._policy.force_unblock()
                 self._display_unblock_message()
                 logger.info("Input unblocked")
 
@@ -116,20 +144,17 @@ class InputBlocker:
 
     def is_blocked(self) -> bool:
         """入力がブロックされているかどうかを返す"""
-        return self.state != BlockState.NORMAL
+        return self._policy.is_blocked
 
     def _input_monitor_loop(self):
         """入力監視ループ（別スレッドで実行）"""
         while self.running:
             try:
-                # 標準入力からの入力を監視
                 if select.select([sys.stdin], [], [], 0.1)[0]:
-                    # 入力がある場合
-                    if self.state == BlockState.BLOCKED:
-                        # ブロック中の場合、入力を読み取って処理
+                    current_state = self._policy.state
+                    if current_state == DomainBlockState.BLOCKED:
                         self._handle_blocked_input()
-                    elif self.state == BlockState.WAITING_CONFIRMATION:
-                        # 確認待ち中の場合、Ctrl+Dを待機
+                    elif current_state == DomainBlockState.WAITING_CONFIRMATION:
                         self._handle_confirmation_input()
 
             except Exception as e:
@@ -140,23 +165,21 @@ class InputBlocker:
     def _handle_blocked_input(self):
         """ブロック中の入力処理"""
         try:
-            # 非正規モードで1文字読み取り
             tty.setraw(sys.stdin.fileno())
             char = sys.stdin.read(1)
 
             # Ctrl+D (ASCII 4) の検出
-            if ord(char) == 4:  # Ctrl+D
+            if ord(char) == 4:
                 with self._lock:
-                    self.state = BlockState.WAITING_CONFIRMATION
-                    self._display_confirmation_message()
+                    new_state = self._policy.handle_ctrl_d()
+                    if new_state == DomainBlockState.WAITING_CONFIRMATION:
+                        self._display_confirmation_message()
             else:
-                # その他の入力は無視（ブロック中のため）
                 self._display_block_reminder()
 
         except Exception as e:
             logger.error(f"Error handling blocked input: {e}")
         finally:
-            # 端末設定を復元
             if self.original_settings:
                 try:
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.original_settings)
@@ -166,23 +189,21 @@ class InputBlocker:
     def _handle_confirmation_input(self):
         """確認待ち中の入力処理"""
         try:
-            # 非正規モードで1文字読み取り
             tty.setraw(sys.stdin.fileno())
             char = sys.stdin.read(1)
 
             # Ctrl+D (ASCII 4) の再検出で解除
-            if ord(char) == 4:  # Ctrl+D
+            if ord(char) == 4:
                 self.unblock_input()
             else:
                 # その他の入力でブロック状態に戻る
                 with self._lock:
-                    self.state = BlockState.BLOCKED
+                    self._policy.block("確認がキャンセルされました")
                     self._display_block_message("確認がキャンセルされました")
 
         except Exception as e:
             logger.error(f"Error handling confirmation input: {e}")
         finally:
-            # 端末設定を復元
             if self.original_settings:
                 try:
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.original_settings)

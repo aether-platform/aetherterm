@@ -236,12 +236,26 @@ class AutoBlocker:
         }
 
 
-# グローバルインスタンス
+# --- レガシーグローバル状態 (非推奨) ---
+# 新規コードでは ApplicationContainer.blocker_use_cases を使用してください。
+# domain/services/session_blocker.py + application/use_cases/blocker_use_cases.py が後継です。
+
+import warnings as _warnings
+
 _auto_blocker_instance = None
 
 
 def get_auto_blocker() -> AutoBlocker:
-    """自動ブロッカーのシングルトンインスタンスを取得"""
+    """自動ブロッカーのシングルトンインスタンスを取得
+
+    .. deprecated::
+        ApplicationContainer.blocker_use_cases を使用してください。
+    """
+    _warnings.warn(
+        "get_auto_blocker() is deprecated. Use ApplicationContainer.blocker_use_cases instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     global _auto_blocker_instance
     if _auto_blocker_instance is None:
         _auto_blocker_instance = AutoBlocker()
@@ -249,6 +263,15 @@ def get_auto_blocker() -> AutoBlocker:
 
 
 def set_socket_io_instance(sio_instance):
-    """Socket.IOインスタンスをグローバルブロッカーに設定"""
+    """Socket.IOインスタンスをグローバルブロッカーに設定
+
+    .. deprecated::
+        ApplicationContainer.broadcaster を使用してください。
+    """
+    _warnings.warn(
+        "set_socket_io_instance() is deprecated. Use ApplicationContainer.broadcaster instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     blocker = get_auto_blocker()
     blocker.set_socket_io(sio_instance)

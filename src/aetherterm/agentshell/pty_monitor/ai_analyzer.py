@@ -1,8 +1,9 @@
 """
 AI Analyzer
 
-ログデータを解析して危険度を判定するAI解析機能
-簡易キーワードベースの危険度判定とWebSocket通信によるAIサーバー連携
+ログデータを解析して危険度を判定するAI解析機能。
+ドメインサービス (CommandThreatAnalyzer) を活用しつつ、
+より詳細な正規表現パターンとWebSocket通信によるAIサーバー連携を提供します。
 """
 
 import asyncio
@@ -11,9 +12,11 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 import websockets
+
+from ..domain.services.command_threat_analyzer import CommandThreatAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -40,20 +43,30 @@ class AnalysisResult:
 
 
 class AIAnalyzer:
-    """AI解析クラス"""
+    """AI解析クラス
 
-    def __init__(self, ai_server_url: str = "ws://localhost:8765"):
+    ドメインサービス CommandThreatAnalyzer と連携し、
+    正規表現パターンマッチングとAIサーバー解析を統合します。
+    """
+
+    def __init__(
+        self,
+        ai_server_url: str = "ws://localhost:8765",
+        threat_analyzer: Optional[CommandThreatAnalyzer] = None,
+    ):
         """
         初期化
 
         Args:
             ai_server_url: AIサーバーのWebSocket URL
+            threat_analyzer: ドメイン脅威解析サービス（省略時は内部で生成）
         """
         self.ai_server_url = ai_server_url
         self.websocket = None
         self.connected = False
+        self._threat_analyzer = threat_analyzer or CommandThreatAnalyzer()
 
-        # 危険キーワードパターン（簡易AI解析）
+        # 正規表現ベースの詳細パターン（ドメインサービスの文字列マッチを補完）
         self.critical_patterns = {
             # システム破壊系
             r"rm\s+-rf\s+/": "システム全体削除の危険性",
@@ -144,7 +157,8 @@ class AIAnalyzer:
 
     def _analyze_with_keywords(self, log_line: str) -> AnalysisResult:
         """
-        キーワードベースの簡易解析
+        キーワードベースの解析。
+        ドメインサービスの文字列マッチと正規表現パターンを組み合わせます。
 
         Args:
             log_line: 解析するログ行
@@ -156,16 +170,25 @@ class AIAnalyzer:
         threat_level = ThreatLevel.SAFE
         message = "安全なログです"
 
-        # CRITICAL レベルチェック
-        for pattern, description in self.critical_patterns.items():
-            if re.search(pattern, log_line, re.IGNORECASE):
-                detected_keywords.append(f"{pattern}: {description}")
-                threat_level = ThreatLevel.CRITICAL
-                message = f"CRITICAL: {description}"
-                break
+        # 1. ドメインサービスによる文字列マッチ解析
+        domain_result = self._threat_analyzer.analyze(log_line)
+        if domain_result.detected_keywords:
+            detected_keywords.extend(domain_result.detected_keywords)
+            threat_level = ThreatLevel(domain_result.threat_level.value)
+            message = domain_result.message
 
-        # HIGH レベルチェック（CRITICALが検出されていない場合）
+        # 2. 正規表現パターンによる詳細解析（ドメインサービスで検出できなかった場合）
         if threat_level == ThreatLevel.SAFE:
+            # CRITICAL レベルチェック
+            for pattern, description in self.critical_patterns.items():
+                if re.search(pattern, log_line, re.IGNORECASE):
+                    detected_keywords.append(f"{pattern}: {description}")
+                    threat_level = ThreatLevel.CRITICAL
+                    message = f"CRITICAL: {description}"
+                    break
+
+        if threat_level == ThreatLevel.SAFE:
+            # HIGH レベルチェック
             for pattern, description in self.high_patterns.items():
                 if re.search(pattern, log_line, re.IGNORECASE):
                     detected_keywords.append(f"{pattern}: {description}")
@@ -173,8 +196,8 @@ class AIAnalyzer:
                     message = f"HIGH: {description}"
                     break
 
-        # MEDIUM レベルチェック（上位レベルが検出されていない場合）
         if threat_level == ThreatLevel.SAFE:
+            # MEDIUM レベルチェック
             for pattern, description in self.medium_patterns.items():
                 if re.search(pattern, log_line, re.IGNORECASE):
                     detected_keywords.append(f"{pattern}: {description}")
