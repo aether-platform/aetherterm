@@ -1,191 +1,185 @@
 """
-ControlIntegration - AgentServerとControlServerの統合機能
+ControlIntegration - NATS-based integration between AgentServer and ControlServer.
 
-ControlServerからの制御指示を受信し、セッション制御を実行
+Publishes session/terminal events to NATS and subscribes to control commands.
 """
 
 import asyncio
-import json
 import logging
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
-import websockets
-from websockets.client import WebSocketClientProtocol
-
+from ..common.nats import NatsClient, Subjects
 from .terminals.asyncio_terminal import AsyncioTerminal
 
 logger = logging.getLogger(__name__)
 
 
 class ControlIntegration:
-    """ControlServer統合クラス"""
+    """NATS-based ControlServer integration."""
 
     def __init__(
-        self, control_server_url: str = "ws://localhost:8765", agent_id: str = "agentserver_main"
+        self,
+        nats_url: str = "nats://localhost:4222",
+        agent_id: str = "agentserver_main",
+        # Legacy parameter kept for config compatibility
+        control_server_url: str = None,
     ):
-        self.control_server_url = control_server_url
         self.agent_id = agent_id
+        self.nats_url = nats_url
 
-        # WebSocket接続
-        self.websocket: Optional[WebSocketClientProtocol] = None
-        self.connection_task: Optional[asyncio.Task] = None
-        self.listen_task: Optional[asyncio.Task] = None
+        # NATS client
+        self._nats = NatsClient(servers=nats_url, name=f"agentserver-{agent_id}")
 
-        # 状態管理
-        self.is_connected = False
+        # State
         self.is_running = False
         self.blocked_sessions: Set[str] = set()
+        self._heartbeat_task: Optional[asyncio.Task] = None
 
-        # コールバック関数
+        # Callbacks
         self.on_block_session: Optional[Callable] = None
         self.on_unblock_session: Optional[Callable] = None
         self.sio_instance = None
 
     def set_socketio_instance(self, sio):
-        """Socket.IOインスタンスを設定"""
+        """Set Socket.IO instance for client notifications."""
         self.sio_instance = sio
 
     def set_block_handlers(self, block_handler: Callable, unblock_handler: Callable):
-        """ブロック/アンブロックハンドラーを設定"""
+        """Set block/unblock handlers."""
         self.on_block_session = block_handler
         self.on_unblock_session = unblock_handler
 
     async def start(self):
-        """統合機能開始"""
+        """Start NATS integration."""
         if self.is_running:
             logger.warning("ControlIntegration is already running")
             return
 
         self.is_running = True
-        logger.info(f"Starting ControlIntegration with ControlServer: {self.control_server_url}")
+        logger.info(f"Starting ControlIntegration via NATS: {self.nats_url}")
 
-        # ControlServerへの接続タスクを開始
-        self.connection_task = asyncio.create_task(self._maintain_connection())
+        await self._nats.connect()
+
+        # Subscribe to control commands directed at this agent
+        await self._nats.subscribe(
+            Subjects.control_command(self.agent_id), self._handle_control_command
+        )
+        # Subscribe to broadcast commands
+        await self._nats.subscribe(
+            Subjects.control_broadcast(), self._handle_control_command
+        )
+
+        # Start heartbeat
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+        # Publish registration event
+        await self._publish_status("registered")
+        logger.info(f"ControlIntegration started: agent_id={self.agent_id}")
 
     async def stop(self):
-        """統合機能停止"""
+        """Stop NATS integration."""
         if not self.is_running:
             return
 
         self.is_running = False
-        logger.info("Stopping ControlIntegration")
 
-        # タスクをキャンセル
-        if self.connection_task:
-            self.connection_task.cancel()
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
             try:
-                await self.connection_task
+                await self._heartbeat_task
             except asyncio.CancelledError:
                 pass
 
-        if self.listen_task:
-            self.listen_task.cancel()
-            try:
-                await self.listen_task
-            except asyncio.CancelledError:
-                pass
+        await self._publish_status("disconnecting")
+        await self._nats.close()
+        logger.info("ControlIntegration stopped")
 
-        # WebSocket接続を閉じる
-        if self.websocket:
-            await self.websocket.close()
+    # --- Event publishing (AgentServer → ControlServer) ---
 
-    async def _maintain_connection(self):
-        """ControlServerへの接続を維持"""
-        while self.is_running:
-            try:
-                if not self.is_connected:
-                    logger.info(f"Connecting to ControlServer: {self.control_server_url}")
-                    self.websocket = await websockets.connect(f"{self.control_server_url}/agent")
-                    self.is_connected = True
-                    logger.info("Connected to ControlServer")
-
-                    # AgentServer登録
-                    await self._register_agent()
-
-                    # メッセージ受信タスクを開始
-                    self.listen_task = asyncio.create_task(self._listen_for_messages())
-
-                # 接続が生きているかチェック
-                if self.websocket.closed:
-                    self.is_connected = False
-                    logger.warning("ControlServer connection lost")
-
-                await asyncio.sleep(5)  # 5秒間隔でチェック
-
-            except Exception as e:
-                self.is_connected = False
-                logger.error(f"Error maintaining ControlServer connection: {e}")
-                await asyncio.sleep(10)  # エラー時は10秒待機
-
-    async def _register_agent(self):
-        """AgentServerをControlServerに登録"""
-        try:
-            register_message = {
-                "type": "agent_register",
+    async def publish_session_event(self, event: str, session_id: str, data: Dict = None):
+        """Publish session lifecycle event (created, closed, updated)."""
+        await self._nats.publish(
+            Subjects.agent_session(self.agent_id, event),
+            {
                 "agent_id": self.agent_id,
+                "session_id": session_id,
+                "event": event,
+                "data": data or {},
                 "timestamp": datetime.now().isoformat(),
-                "capabilities": ["session_control", "emergency_block"],
-            }
+            },
+        )
 
-            await self.websocket.send(json.dumps(register_message))
-            logger.info(f"Sent agent registration: {self.agent_id}")
+    async def publish_terminal_event(
+        self, event: str, session_id: str, content: str, metadata: Dict = None
+    ):
+        """Publish terminal event (input, output)."""
+        await self._nats.publish(
+            Subjects.agent_terminal(self.agent_id, event),
+            {
+                "agent_id": self.agent_id,
+                "session_id": session_id,
+                "event": event,
+                "content": content,
+                "metadata": metadata or {},
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
 
-        except Exception as e:
-            logger.error(f"Error registering agent: {e}")
+    async def send_session_update(self, session_id: str, session_data: Dict):
+        """Publish session update (backward-compatible method)."""
+        await self.publish_session_event("updated", session_id, session_data)
 
-    async def _listen_for_messages(self):
-        """ControlServerからのメッセージを受信"""
-        try:
-            async for message in self.websocket:
-                await self._handle_control_message(message)
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("ControlServer connection closed")
-            self.is_connected = False
-        except Exception as e:
-            logger.error(f"Error listening for messages: {e}")
-            self.is_connected = False
+    async def send_unblock_request(self, session_id: str, user_action: str = "ctrl_d"):
+        """Publish unblock request from user."""
+        await self._nats.publish(
+            Subjects.agent_session(self.agent_id, "unblock_request"),
+            {
+                "agent_id": self.agent_id,
+                "session_id": session_id,
+                "user_action": user_action,
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
 
-    async def _handle_control_message(self, message: str):
-        """制御メッセージを処理"""
-        try:
-            data = json.loads(message)
-            message_type = data.get("type")
+    # --- Control command handling (ControlServer → AgentServer) ---
 
-            if message_type == "emergency_block":
-                await self._handle_emergency_block(data)
-            elif message_type == "unblock_session":
-                await self._handle_unblock_session(data)
-            elif message_type == "registration_confirmed":
-                logger.info("Registration confirmed by ControlServer")
-            else:
-                logger.debug(f"Received control message: {message_type}")
+    async def _handle_control_command(self, subject: str, data: Dict[str, Any]):
+        """Handle incoming control commands from ControlServer."""
+        command = data.get("command")
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from ControlServer: {e}")
-        except Exception as e:
-            logger.error(f"Error handling control message: {e}")
+        if command == "emergency_block":
+            await self._handle_emergency_block(data)
+        elif command == "block_session":
+            session_id = data.get("session_id")
+            message = data.get("message", "Session blocked by administrator")
+            if session_id:
+                if await self._block_session(session_id, message):
+                    self.blocked_sessions.add(session_id)
+        elif command == "unblock_session":
+            await self._handle_unblock_session(data)
+        elif command == "request_status":
+            await self._publish_status("active")
+        else:
+            logger.debug(f"Unknown control command: {command}")
 
     async def _handle_emergency_block(self, data: Dict):
-        """緊急ブロック指示を処理"""
+        """Handle emergency block command."""
         block_id = data.get("block_id")
+        message = data.get("message", "Emergency block")
         action = data.get("action", "block_all_sessions")
-        message = data.get("message", "緊急ブロック")
         affected_sessions = data.get("affected_sessions", [])
 
-        logger.warning(f"Received emergency block: {block_id} - {message}")
+        logger.warning(f"Emergency block received: {block_id} - {message}")
 
         if action == "block_all_sessions":
-            # 全セッションをブロック
             sessions_to_block = list(AsyncioTerminal.sessions.keys())
         elif action == "block_session":
-            # 指定セッションのみブロック
             sessions_to_block = affected_sessions
         else:
             logger.warning(f"Unknown block action: {action}")
             return
 
-        # セッションをブロック
         blocked_count = 0
         for session_id in sessions_to_block:
             if await self._block_session(session_id, message):
@@ -194,25 +188,30 @@ class ControlIntegration:
 
         logger.info(f"Blocked {blocked_count} sessions")
 
-        # ControlServerに確認を送信
-        await self._send_block_confirmation(block_id, list(self.blocked_sessions))
+        # Publish confirmation
+        await self._nats.publish(
+            Subjects.agent_session(self.agent_id, "block_confirmed"),
+            {
+                "agent_id": self.agent_id,
+                "block_id": block_id,
+                "confirmed_sessions": list(self.blocked_sessions),
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
 
     async def _handle_unblock_session(self, data: Dict):
-        """セッションブロック解除を処理"""
+        """Handle unblock command."""
         session_id = data.get("session_id")
-        admin_user = data.get("admin_user")
 
         if session_id in self.blocked_sessions:
             if await self._unblock_session(session_id):
                 self.blocked_sessions.remove(session_id)
-                logger.info(f"Unblocked session {session_id} by {admin_user}")
-            else:
-                logger.error(f"Failed to unblock session {session_id}")
+                logger.info(f"Unblocked session {session_id}")
         else:
             logger.warning(f"Session {session_id} is not blocked")
 
     async def _block_session(self, session_id: str, message: str) -> bool:
-        """セッションをブロック"""
+        """Block a session and notify connected clients."""
         try:
             if session_id not in AsyncioTerminal.sessions:
                 logger.warning(f"Session {session_id} not found for blocking")
@@ -220,7 +219,6 @@ class ControlIntegration:
 
             terminal = AsyncioTerminal.sessions[session_id]
 
-            # Socket.IOクライアントにブロック通知を送信
             if self.sio_instance and hasattr(terminal, "client_sids"):
                 for client_sid in terminal.client_sids:
                     await self.sio_instance.emit(
@@ -242,7 +240,7 @@ class ControlIntegration:
             return False
 
     async def _unblock_session(self, session_id: str) -> bool:
-        """セッションのブロックを解除"""
+        """Unblock a session and notify connected clients."""
         try:
             if session_id not in AsyncioTerminal.sessions:
                 logger.warning(f"Session {session_id} not found for unblocking")
@@ -250,12 +248,11 @@ class ControlIntegration:
 
             terminal = AsyncioTerminal.sessions[session_id]
 
-            # Socket.IOクライアントにブロック解除通知を送信
             if self.sio_instance and hasattr(terminal, "client_sids"):
                 for client_sid in terminal.client_sids:
                     await self.sio_instance.emit(
                         "input_unblock",
-                        {"message": "ブロックが解除されました", "session_id": session_id},
+                        {"message": "Block has been lifted", "session_id": session_id},
                         room=client_sid,
                     )
 
@@ -266,77 +263,43 @@ class ControlIntegration:
             logger.error(f"Error unblocking session {session_id}: {e}")
             return False
 
-    async def _send_block_confirmation(self, block_id: str, confirmed_sessions: List[str]):
-        """ブロック確認をControlServerに送信"""
-        try:
-            confirmation = {
-                "type": "block_confirmation",
-                "block_id": block_id,
+    # --- Heartbeat ---
+
+    async def _heartbeat_loop(self):
+        """Periodically publish agent status."""
+        while self.is_running:
+            try:
+                await self._publish_status("active")
+                await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Heartbeat error: {e}")
+                await asyncio.sleep(5)
+
+    async def _publish_status(self, status: str):
+        """Publish current agent status."""
+        await self._nats.publish(
+            Subjects.agent_status(self.agent_id),
+            {
                 "agent_id": self.agent_id,
-                "confirmed_sessions": confirmed_sessions,
+                "status": status,
+                "active_sessions": len(AsyncioTerminal.sessions),
+                "blocked_sessions": list(self.blocked_sessions),
                 "timestamp": datetime.now().isoformat(),
-            }
+            },
+        )
 
-            await self.websocket.send(json.dumps(confirmation))
-            logger.debug(f"Sent block confirmation: {block_id}")
-
-        except Exception as e:
-            logger.error(f"Error sending block confirmation: {e}")
-
-    async def send_session_update(self, session_id: str, session_data: Dict):
-        """セッション更新をControlServerに送信"""
-        if not self.is_connected or not self.websocket:
-            return
-
-        try:
-            update_message = {
-                "type": "session_update",
-                "agent_id": self.agent_id,
-                "session": {
-                    "session_id": session_id,
-                    "user_info": session_data.get("user_info", {}),
-                    "created_at": session_data.get("created_at", datetime.now().isoformat()),
-                    "last_activity": datetime.now().isoformat(),
-                },
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            await self.websocket.send(json.dumps(update_message))
-            logger.debug(f"Sent session update: {session_id}")
-
-        except Exception as e:
-            logger.error(f"Error sending session update: {e}")
-
-    async def send_unblock_request(self, session_id: str, user_action: str = "ctrl_d"):
-        """ブロック解除要求をControlServerに送信"""
-        if not self.is_connected or not self.websocket:
-            return
-
-        try:
-            request_message = {
-                "type": "unblock_request",
-                "agent_id": self.agent_id,
-                "session_id": session_id,
-                "user_action": user_action,
-                "timestamp": datetime.now().isoformat(),
-            }
-
-            await self.websocket.send(json.dumps(request_message))
-            logger.info(f"Sent unblock request: {session_id}")
-
-        except Exception as e:
-            logger.error(f"Error sending unblock request: {e}")
+    # --- Status query ---
 
     def is_session_blocked(self, session_id: str) -> bool:
-        """セッションがブロックされているかチェック"""
         return session_id in self.blocked_sessions
 
     def get_status(self) -> Dict:
-        """統合機能の状態を取得"""
         return {
             "is_running": self.is_running,
-            "is_connected": self.is_connected,
-            "control_server_url": self.control_server_url,
+            "is_connected": self._nats.is_connected,
+            "nats_url": self.nats_url,
             "agent_id": self.agent_id,
             "blocked_sessions_count": len(self.blocked_sessions),
             "blocked_sessions": list(self.blocked_sessions),

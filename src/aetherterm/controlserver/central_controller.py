@@ -1,7 +1,8 @@
 """
-CentralController - 中央制御システム
+CentralController - NATS-based central control system.
 
-管理者からの制御指示を受信し、全AgentServerに一括指示を送信
+Subscribes to AgentServer events via NATS, performs real-time analysis
+(command logging, security threat detection), and sends control commands.
 """
 
 import asyncio
@@ -10,17 +11,18 @@ import logging
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
-import websockets
-from websockets.server import WebSocketServerProtocol
+from ..common.nats import NatsClient, Subjects
+from .analyzers.command_log_analyzer import CommandLogAnalyzer
+from .analyzers.threat_detector import ThreatDetector
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class BlockCommand:
-    """ブロックコマンド"""
+    """Block command record."""
 
     block_id: str
     block_type: str  # "admin_initiated", "auto_detected", "emergency"
@@ -32,8 +34,18 @@ class BlockCommand:
 
 
 @dataclass
+class AgentInfo:
+    """Connected agent information."""
+
+    agent_id: str
+    status: str
+    active_sessions: int
+    last_heartbeat: str
+
+
+@dataclass
 class SessionInfo:
-    """セッション情報"""
+    """Session information."""
 
     session_id: str
     agent_server_id: str
@@ -45,160 +57,156 @@ class SessionInfo:
 
 
 class CentralController:
-    """中央制御システム"""
+    """NATS-based central control system with real-time analysis."""
 
-    def __init__(self, host: str = "localhost", port: int = 8765):
-        self.host = host
-        self.port = port
+    def __init__(
+        self,
+        nats_url: str = "nats://localhost:4222",
+        # Legacy params kept for config compatibility
+        host: str = "localhost",
+        port: int = 8765,
+    ):
+        self.nats_url = nats_url
 
-        # 接続管理
-        self.agent_servers: Dict[str, WebSocketServerProtocol] = {}
-        self.admin_clients: Set[WebSocketServerProtocol] = set()
+        # NATS client
+        self._nats = NatsClient(servers=nats_url, name="controlserver")
 
-        # 状態管理
+        # Analyzers
+        self.command_analyzer = CommandLogAnalyzer()
+        self.threat_detector = ThreatDetector()
+
+        # State
+        self.agents: Dict[str, AgentInfo] = {}
         self.active_sessions: Dict[str, SessionInfo] = {}
         self.active_blocks: Dict[str, BlockCommand] = {}
         self.block_history: List[BlockCommand] = []
 
-        # WebSocketサーバー
-        self.server = None
+        # Admin notification callbacks
+        self._admin_callbacks: List[Callable] = []
 
     async def start(self):
-        """中央制御サーバー開始"""
-        logger.info(f"Starting CentralController on {self.host}:{self.port}")
+        """Start the central controller."""
+        logger.info(f"Starting CentralController via NATS: {self.nats_url}")
 
-        self.server = await websockets.serve(self.handle_connection, self.host, self.port)
+        await self._nats.connect()
 
-        logger.info(f"CentralController started on ws://{self.host}:{self.port}")
+        # Wire up threat detector with NATS
+        self.threat_detector.set_nats_client(self._nats)
+
+        # Subscribe to agent events
+        await self._nats.subscribe(
+            Subjects.all_agent_sessions(), self._handle_session_event
+        )
+        await self._nats.subscribe(
+            Subjects.all_agent_terminal(), self._handle_terminal_event
+        )
+        await self._nats.subscribe(
+            Subjects.all_agent_status(), self._handle_agent_status
+        )
+
+        logger.info("CentralController started - listening for agent events")
 
     async def stop(self):
-        """中央制御サーバー停止"""
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-
-        # 全接続を閉じる
-        all_connections = list(self.agent_servers.values()) + list(self.admin_clients)
-        if all_connections:
-            await asyncio.gather(*[ws.close() for ws in all_connections], return_exceptions=True)
-
+        """Stop the central controller."""
+        await self._nats.close()
         logger.info("CentralController stopped")
 
-    async def handle_connection(self, websocket: WebSocketServerProtocol, path: str):
-        """WebSocket接続ハンドラー"""
-        client_addr = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        logger.info(f"New connection from {client_addr} on path {path}")
+    def register_admin_callback(self, callback: Callable) -> None:
+        """Register a callback for admin notifications."""
+        self._admin_callbacks.append(callback)
 
-        try:
-            # パスに基づいて接続タイプを判定
-            if path.startswith("/admin"):
-                await self.handle_admin_connection(websocket)
-            elif path.startswith("/agent"):
-                await self.handle_agent_connection(websocket)
-            else:
-                # デフォルトはAgentServer接続として扱う
-                await self.handle_agent_connection(websocket)
+    # --- Event handlers (NATS subscriptions) ---
 
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Connection closed: {client_addr}")
-        except Exception as e:
-            logger.error(f"Error handling connection {client_addr}: {e}")
-        finally:
-            # 接続を削除
-            self._remove_connection(websocket)
+    async def _handle_session_event(self, subject: str, data: Dict[str, Any]) -> None:
+        """Handle session lifecycle events from agents."""
+        event = data.get("event", "")
+        session_id = data.get("session_id", "")
+        agent_id = data.get("agent_id", "")
 
-    async def handle_admin_connection(self, websocket: WebSocketServerProtocol):
-        """管理者接続ハンドラー"""
-        self.admin_clients.add(websocket)
-        logger.info("Admin client connected")
+        if event == "created":
+            self.active_sessions[session_id] = SessionInfo(
+                session_id=session_id,
+                agent_server_id=agent_id,
+                user_info=data.get("data", {}).get("user_info", {}),
+                created_at=data.get("timestamp", datetime.now().isoformat()),
+                last_activity=data.get("timestamp", datetime.now().isoformat()),
+            )
+            logger.info(f"Session created: {session_id} on {agent_id}")
 
-        # 現在の状態を送信
-        await self.send_current_status(websocket)
+        elif event == "closed":
+            self.active_sessions.pop(session_id, None)
+            self.command_analyzer.remove_session(session_id)
+            logger.info(f"Session closed: {session_id}")
 
-        async for message in websocket:
-            await self.handle_admin_message(websocket, message)
+        elif event == "updated":
+            if session_id in self.active_sessions:
+                self.active_sessions[session_id].last_activity = data.get(
+                    "timestamp", datetime.now().isoformat()
+                )
 
-    async def handle_agent_connection(self, websocket: WebSocketServerProtocol):
-        """AgentServer接続ハンドラー"""
-        agent_id = None
+        elif event == "block_confirmed":
+            block_id = data.get("block_id")
+            confirmed = data.get("confirmed_sessions", [])
+            logger.info(f"Block confirmed by {agent_id}: {block_id} ({len(confirmed)} sessions)")
+            await self._notify_admins(
+                "block_confirmation",
+                {"block_id": block_id, "agent_id": agent_id, "confirmed_sessions": confirmed},
+            )
 
-        async for message in websocket:
-            try:
-                data = json.loads(message)
+        elif event == "unblock_request":
+            user_action = data.get("user_action", "unknown")
+            logger.info(f"Unblock request: session={session_id} action={user_action}")
 
-                # 初回接続時にAgentServer IDを登録
-                if data.get("type") == "agent_register":
-                    agent_id = data.get("agent_id", f"agent_{len(self.agent_servers)}")
-                    self.agent_servers[agent_id] = websocket
-                    logger.info(f"AgentServer registered: {agent_id}")
+            # Auto-approve Ctrl+D unblock
+            if user_action == "ctrl_d":
+                await self.execute_unblock_session(session_id, admin_user="system_auto_unblock")
 
-                    # 登録確認を送信
-                    await websocket.send(
-                        json.dumps(
-                            {
-                                "type": "registration_confirmed",
-                                "agent_id": agent_id,
-                                "timestamp": datetime.now().isoformat(),
-                            }
-                        )
-                    )
+            await self._notify_admins(
+                "unblock_request",
+                {
+                    "session_id": session_id,
+                    "agent_id": agent_id,
+                    "user_action": user_action,
+                },
+            )
 
-                await self.handle_agent_message(websocket, data, agent_id)
+    async def _handle_terminal_event(self, subject: str, data: Dict[str, Any]) -> None:
+        """Handle terminal I/O events - route to analyzers."""
+        event = data.get("event", "")
 
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON from agent: {e}")
-            except Exception as e:
-                logger.error(f"Error handling agent message: {e}")
+        if event == "input":
+            # Command log analysis
+            await self.command_analyzer.handle_terminal_input(subject, data)
+            # Security threat detection
+            await self.threat_detector.analyze_input(subject, data)
 
-        # 接続終了時にAgentServerを削除
-        if agent_id and agent_id in self.agent_servers:
-            del self.agent_servers[agent_id]
-            logger.info(f"AgentServer disconnected: {agent_id}")
+        elif event == "output":
+            await self.command_analyzer.handle_terminal_output(subject, data)
 
-    async def handle_admin_message(self, websocket: WebSocketServerProtocol, message: str):
-        """管理者メッセージハンドラー"""
-        try:
-            data = json.loads(message)
-            message_type = data.get("type")
+    async def _handle_agent_status(self, subject: str, data: Dict[str, Any]) -> None:
+        """Handle agent heartbeat/status updates."""
+        agent_id = data.get("agent_id", "")
+        status = data.get("status", "unknown")
 
-            if message_type == "block_all_sessions":
-                await self.execute_block_all(data)
-            elif message_type == "block_session":
-                await self.execute_block_session(data)
-            elif message_type == "unblock_session":
-                await self.execute_unblock_session(data)
-            elif message_type == "get_status":
-                await self.send_current_status(websocket)
-            elif message_type == "get_block_history":
-                await self.send_block_history(websocket)
-            else:
-                logger.warning(f"Unknown admin message type: {message_type}")
+        self.agents[agent_id] = AgentInfo(
+            agent_id=agent_id,
+            status=status,
+            active_sessions=data.get("active_sessions", 0),
+            last_heartbeat=data.get("timestamp", datetime.now().isoformat()),
+        )
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from admin: {e}")
-        except Exception as e:
-            logger.error(f"Error handling admin message: {e}")
+        if status == "registered":
+            logger.info(f"Agent registered: {agent_id}")
+        elif status == "disconnecting":
+            logger.info(f"Agent disconnecting: {agent_id}")
 
-    async def handle_agent_message(
-        self, websocket: WebSocketServerProtocol, data: Dict, agent_id: str
-    ):
-        """AgentServerメッセージハンドラー"""
-        message_type = data.get("type")
+    # --- Control commands (ControlServer → AgentServer) ---
 
-        if message_type == "session_update":
-            await self.update_session_info(data, agent_id)
-        elif message_type == "block_confirmation":
-            await self.handle_block_confirmation(data, agent_id)
-        elif message_type == "unblock_request":
-            await self.handle_unblock_request(data, agent_id)
-        else:
-            logger.debug(f"Received message from {agent_id}: {message_type}")
-
-    async def execute_block_all(self, data: Dict):
-        """全セッション一括ブロック実行"""
+    async def execute_block_all(
+        self, reason: str = "Emergency block", admin_user: Optional[str] = None
+    ) -> str:
+        """Block all sessions across all agents."""
         block_id = str(uuid.uuid4())
-        reason = data.get("reason", "管理者による緊急ブロック")
-        admin_user = data.get("admin_user")
 
         block_command = BlockCommand(
             block_id=block_id,
@@ -209,41 +217,42 @@ class CentralController:
             timestamp=datetime.now().isoformat(),
         )
 
-        # ブロックコマンドを記録
         self.active_blocks[block_id] = block_command
         self.block_history.append(block_command)
 
         logger.warning(f"Executing block all sessions: {reason} (ID: {block_id})")
 
-        # 全AgentServerに一括ブロック指示を送信
-        block_message = {
-            "type": "emergency_block",
-            "block_id": block_id,
-            "severity": "admin_initiated",
-            "message": f"管理者による緊急ブロック: {reason}",
-            "action": "block_all_sessions",
-            "affected_sessions": block_command.affected_sessions,
-            "timestamp": block_command.timestamp,
-        }
-
-        await self.broadcast_to_agents(block_message)
-
-        # 管理者クライアントに実行確認を送信
-        await self.broadcast_to_admins(
-            {"type": "block_executed", "block_command": asdict(block_command)}
+        # Broadcast to all agents
+        await self._nats.publish(
+            Subjects.control_broadcast(),
+            {
+                "command": "emergency_block",
+                "block_id": block_id,
+                "action": "block_all_sessions",
+                "message": f"Emergency block: {reason}",
+                "affected_sessions": block_command.affected_sessions,
+                "timestamp": block_command.timestamp,
+            },
         )
 
-    async def execute_block_session(self, data: Dict):
-        """個別セッションブロック実行"""
-        session_id = data.get("session_id")
-        reason = data.get("reason", "管理者による個別ブロック")
-        admin_user = data.get("admin_user")
+        await self._notify_admins("block_executed", {"block_command": asdict(block_command)})
+        return block_id
 
+    async def execute_block_session(
+        self,
+        session_id: str,
+        reason: str = "Session blocked by administrator",
+        admin_user: Optional[str] = None,
+    ) -> Optional[str]:
+        """Block a specific session."""
         if session_id not in self.active_sessions:
             logger.warning(f"Session not found for blocking: {session_id}")
-            return
+            return None
 
         block_id = str(uuid.uuid4())
+        session_info = self.active_sessions[session_id]
+        agent_id = session_info.agent_server_id
+
         block_command = BlockCommand(
             block_id=block_id,
             block_type="admin_initiated",
@@ -256,31 +265,26 @@ class CentralController:
         self.active_blocks[block_id] = block_command
         self.block_history.append(block_command)
 
-        # 該当AgentServerに個別ブロック指示を送信
-        session_info = self.active_sessions[session_id]
-        agent_id = session_info.agent_server_id
-
-        if agent_id in self.agent_servers:
-            block_message = {
-                "type": "emergency_block",
+        # Send to specific agent
+        await self._nats.publish(
+            Subjects.control_command(agent_id),
+            {
+                "command": "block_session",
                 "block_id": block_id,
-                "severity": "admin_initiated",
-                "message": f"管理者による個別ブロック: {reason}",
-                "action": "block_session",
-                "affected_sessions": [session_id],
+                "session_id": session_id,
+                "message": f"Blocked by administrator: {reason}",
                 "timestamp": block_command.timestamp,
-            }
+            },
+        )
 
-            await self.agent_servers[agent_id].send(json.dumps(block_message))
+        logger.info(f"Blocked session {session_id}: {reason}")
+        return block_id
 
-        logger.info(f"Executed block session {session_id}: {reason}")
-
-    async def execute_unblock_session(self, data: Dict):
-        """セッションブロック解除実行"""
-        session_id = data.get("session_id")
-        admin_user = data.get("admin_user")
-
-        # アクティブなブロックを検索
+    async def execute_unblock_session(
+        self, session_id: str, admin_user: Optional[str] = None
+    ) -> bool:
+        """Unblock a session."""
+        # Find active block
         block_to_remove = None
         for block_id, block_cmd in self.active_blocks.items():
             if session_id in block_cmd.affected_sessions:
@@ -289,181 +293,62 @@ class CentralController:
 
         if not block_to_remove:
             logger.warning(f"No active block found for session: {session_id}")
-            return
+            return False
 
-        # ブロックを削除
         del self.active_blocks[block_to_remove]
 
-        # 該当AgentServerにブロック解除指示を送信
         if session_id in self.active_sessions:
-            session_info = self.active_sessions[session_id]
-            agent_id = session_info.agent_server_id
-
-            if agent_id in self.agent_servers:
-                unblock_message = {
-                    "type": "unblock_session",
+            agent_id = self.active_sessions[session_id].agent_server_id
+            await self._nats.publish(
+                Subjects.control_command(agent_id),
+                {
+                    "command": "unblock_session",
                     "session_id": session_id,
                     "admin_user": admin_user,
                     "timestamp": datetime.now().isoformat(),
-                }
-
-                await self.agent_servers[agent_id].send(json.dumps(unblock_message))
-
-        logger.info(f"Executed unblock session {session_id} by {admin_user}")
-
-    async def update_session_info(self, data: Dict, agent_id: str):
-        """セッション情報更新"""
-        session_data = data.get("session", {})
-        session_id = session_data.get("session_id")
-
-        if not session_id:
-            return
-
-        session_info = SessionInfo(
-            session_id=session_id,
-            agent_server_id=agent_id,
-            user_info=session_data.get("user_info", {}),
-            created_at=session_data.get("created_at", datetime.now().isoformat()),
-            last_activity=datetime.now().isoformat(),
-        )
-
-        self.active_sessions[session_id] = session_info
-
-    async def broadcast_to_agents(self, message: Dict):
-        """全AgentServerに一括送信"""
-        if not self.agent_servers:
-            logger.warning("No AgentServers connected for broadcast")
-            return
-
-        message_json = json.dumps(message)
-
-        # 全AgentServerに並行送信
-        tasks = []
-        for agent_id, websocket in self.agent_servers.items():
-            tasks.append(self.safe_send(websocket, message_json, agent_id))
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # 送信結果をログ出力
-        success_count = sum(1 for r in results if r is True)
-        logger.info(f"Broadcast sent to {success_count}/{len(tasks)} AgentServers")
-
-    async def broadcast_to_admins(self, message: Dict):
-        """全管理者クライアントに一括送信"""
-        if not self.admin_clients:
-            return
-
-        message_json = json.dumps(message)
-
-        tasks = []
-        for websocket in self.admin_clients.copy():
-            tasks.append(self.safe_send(websocket, message_json, "admin"))
-
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def safe_send(
-        self, websocket: WebSocketServerProtocol, message: str, client_id: str
-    ) -> bool:
-        """安全なメッセージ送信"""
-        try:
-            await websocket.send(message)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send message to {client_id}: {e}")
-            # 接続が切れている場合は削除
-            self._remove_connection(websocket)
-            return False
-
-    def _remove_connection(self, websocket: WebSocketServerProtocol):
-        """接続を削除"""
-        # AgentServerから削除
-        agent_to_remove = None
-        for agent_id, ws in self.agent_servers.items():
-            if ws == websocket:
-                agent_to_remove = agent_id
-                break
-        if agent_to_remove:
-            del self.agent_servers[agent_to_remove]
-
-        # 管理者クライアントから削除
-        self.admin_clients.discard(websocket)
-
-    async def send_current_status(self, websocket: WebSocketServerProtocol):
-        """現在の状態を送信"""
-        status = {
-            "type": "current_status",
-            "timestamp": datetime.now().isoformat(),
-            "agent_servers": len(self.agent_servers),
-            "active_sessions": len(self.active_sessions),
-            "active_blocks": len(self.active_blocks),
-            "sessions": [asdict(session) for session in self.active_sessions.values()],
-            "blocks": [asdict(block) for block in self.active_blocks.values()],
-        }
-
-        await websocket.send(json.dumps(status))
-
-    async def send_block_history(self, websocket: WebSocketServerProtocol):
-        """ブロック履歴を送信"""
-        history = {
-            "type": "block_history",
-            "timestamp": datetime.now().isoformat(),
-            "total_blocks": len(self.block_history),
-            "history": [asdict(block) for block in self.block_history[-50:]],  # 最新50件
-        }
-
-        await websocket.send(json.dumps(history))
-
-    async def handle_block_confirmation(self, data: Dict, agent_id: str):
-        """ブロック確認処理"""
-        block_id = data.get("block_id")
-        confirmed_sessions = data.get("confirmed_sessions", [])
-
-        logger.info(
-            f"Block confirmation from {agent_id}: {block_id}, sessions: {len(confirmed_sessions)}"
-        )
-
-        # 管理者クライアントに確認を通知
-        await self.broadcast_to_admins(
-            {
-                "type": "block_confirmation",
-                "block_id": block_id,
-                "agent_id": agent_id,
-                "confirmed_sessions": confirmed_sessions,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
-
-    async def handle_unblock_request(self, data: Dict, agent_id: str):
-        """ブロック解除要求処理"""
-        session_id = data.get("session_id")
-        user_action = data.get("user_action", "unknown")
-
-        logger.info(f"Unblock request from {agent_id}: session {session_id}, action: {user_action}")
-
-        # Ctrl+Dによる解除の場合は自動承認
-        if user_action == "ctrl_d":
-            await self.execute_unblock_session(
-                {"session_id": session_id, "admin_user": "system_auto_unblock"}
+                },
             )
 
-        # 管理者クライアントに解除要求を通知
-        await self.broadcast_to_admins(
-            {
-                "type": "unblock_request",
-                "session_id": session_id,
-                "agent_id": agent_id,
-                "user_action": user_action,
-                "timestamp": datetime.now().isoformat(),
-            }
-        )
+        logger.info(f"Unblocked session {session_id} by {admin_user}")
+        return True
+
+    # --- Admin notifications ---
+
+    async def _notify_admins(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Notify registered admin callbacks."""
+        notification = {
+            "type": event_type,
+            "timestamp": datetime.now().isoformat(),
+            **data,
+        }
+        for callback in self._admin_callbacks:
+            try:
+                await callback(notification)
+            except Exception as e:
+                logger.error(f"Admin callback error: {e}")
+
+    # --- Status & reporting ---
 
     def get_status_summary(self) -> Dict:
-        """状態サマリーを取得"""
+        """Get system status summary."""
         return {
-            "agent_servers_count": len(self.agent_servers),
-            "admin_clients_count": len(self.admin_clients),
+            "agent_servers_count": len(self.agents),
             "active_sessions_count": len(self.active_sessions),
             "active_blocks_count": len(self.active_blocks),
             "total_block_history": len(self.block_history),
+            "command_log_stats": self.command_analyzer.get_statistics(),
+            "threat_stats": self.threat_detector.get_statistics(),
             "last_activity": datetime.now().isoformat(),
         }
+
+    def get_agents(self) -> List[Dict]:
+        """Get connected agents info."""
+        return [asdict(info) for info in self.agents.values()]
+
+    def get_sessions(self) -> List[Dict]:
+        """Get active sessions info."""
+        return [asdict(info) for info in self.active_sessions.values()]
+
+    def get_block_history(self, limit: int = 50) -> List[Dict]:
+        """Get block history."""
+        return [asdict(block) for block in self.block_history[-limit:]]

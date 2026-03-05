@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-ControlServer - システム制御・管理サーバー
+ControlServer - Central control and analysis server.
 
-複数ターミナルの一括制御とログ解析を行うサーバー
+Subscribes to AgentServer events via NATS and performs
+real-time command log analysis and security threat detection.
 """
 
 import asyncio
@@ -15,7 +16,6 @@ import uvloop
 
 from .central_controller import CentralController
 
-# ログ設定
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -23,53 +23,49 @@ logger = logging.getLogger(__name__)
 
 
 class ControlServerApp:
-    """ControlServerアプリケーション"""
+    """ControlServer application."""
 
-    def __init__(self, host: str = "localhost", port: int = 8765):
-        self.host = host
-        self.port = port
+    def __init__(self, nats_url: str = "nats://localhost:4222"):
+        self.nats_url = nats_url
         self.controller = None
 
     async def start(self):
-        """サーバー開始"""
-        logger.info(f"ControlServer starting on {self.host}:{self.port}")
+        """Start server."""
+        logger.info(f"ControlServer starting with NATS: {self.nats_url}")
 
-        # CentralControllerを初期化
-        self.controller = CentralController(host=self.host, port=self.port)
-
-        # サーバー開始
+        self.controller = CentralController(nats_url=self.nats_url)
         await self.controller.start()
 
-        # 状態監視ループ
+        # Status monitoring loop
         while True:
-            await asyncio.sleep(30)  # 30秒間隔で状態をログ出力
+            await asyncio.sleep(30)
             status = self.controller.get_status_summary()
+            threat_stats = status["threat_stats"]
             logger.info(
                 f"Status: {status['agent_servers_count']} agents, "
                 f"{status['active_sessions_count']} sessions, "
-                f"{status['active_blocks_count']} active blocks"
+                f"{status['active_blocks_count']} active blocks, "
+                f"threats: {threat_stats['total_threats_detected']}"
             )
 
     async def stop(self):
-        """サーバー停止"""
+        """Stop server."""
         if self.controller:
             await self.controller.stop()
         logger.info("ControlServer stopped")
 
 
-async def main_async(host: str, port: int, debug: bool):
-    """非同期メイン関数"""
+async def main_async(nats_url: str, debug: bool):
+    """Async main function."""
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    app = ControlServerApp(host=host, port=port)
+    app = ControlServerApp(nats_url=nats_url)
 
-    # シグナルハンドラー設定
     def signal_handler():
         logger.info("Received shutdown signal")
         asyncio.create_task(app.stop())
 
-    # Windowsでは SIGTERM のみ対応
     if sys.platform != "win32":
         loop = asyncio.get_event_loop()
         for sig in [signal.SIGTERM, signal.SIGINT]:
@@ -84,30 +80,28 @@ async def main_async(host: str, port: int, debug: bool):
 
 
 @click.command()
-@click.option("--host", default="localhost", help="Host to bind to")
-@click.option("--port", default=8765, help="Port to bind to")
+@click.option("--nats-url", default="nats://localhost:4222", help="NATS server URL")
 @click.option("--debug", is_flag=True, help="Enable debug mode")
-def main(host: str, port: int, debug: bool):
-    """ControlServer - システム制御・管理サーバー
+def main(nats_url: str, debug: bool):
+    """ControlServer - Central control and analysis server.
 
-    複数ターミナルの一括制御機能を提供します。
+    Subscribes to AgentServer events via NATS and performs
+    real-time command log analysis and security threat detection.
 
-    使用例:
-        # 基本起動
-        aetherterm-control
+    Usage:
+        # Basic startup
+        aetherterm-controlserver
 
-        # デバッグモードで起動
-        aetherterm-control --debug
+        # Debug mode
+        aetherterm-controlserver --debug
 
-        # カスタムポートで起動
-        aetherterm-control --port 9000
+        # Custom NATS URL
+        aetherterm-controlserver --nats-url nats://nats-server:4222
     """
-
-    # uvloopを使用してパフォーマンス向上
     uvloop.install()
 
     try:
-        asyncio.run(main_async(host, port, debug))
+        asyncio.run(main_async(nats_url, debug))
     except KeyboardInterrupt:
         logger.info("Application interrupted by user")
     except Exception as e:
