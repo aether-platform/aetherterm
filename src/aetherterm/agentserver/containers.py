@@ -6,7 +6,13 @@ from dependency_injector import containers, providers
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from aetherterm.agentserver.adapters.outbound.memory_terminal_repo import InMemoryTerminalRepository
+from aetherterm.agentserver.adapters.outbound.socketio_broadcaster import SocketIOBroadcaster
 from aetherterm.agentserver.ai_services import create_ai_service, set_ai_service
+from aetherterm.agentserver.application.use_cases.blocker_use_cases import BlockerUseCases
+from aetherterm.agentserver.application.use_cases.terminal_use_cases import TerminalUseCases
+from aetherterm.agentserver.domain.services.session_blocker import SessionBlockerService
+from aetherterm.agentserver.domain.services.threat_detection import ThreatDetectionService
 
 
 def _create_fastapi_app(static_path):
@@ -34,7 +40,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     sio = providers.Singleton(
         socketio.AsyncServer,
         async_mode="asgi",
-        cors_allowed_origins="*",  # Default to allow all origins, can be configured
+        cors_allowed_origins="*",
     )
 
     # Static files path
@@ -67,8 +73,31 @@ class ApplicationContainer(containers.DeclarativeContainer):
         model=config.ai_model,
     )
 
-    # Terminal factory removed - terminals are created directly in socket handlers
-    # to avoid dependency injection complexity with multiple required parameters
+    # --- Clean Architecture layers ---
+
+    # Domain Services
+    threat_detector = providers.Singleton(ThreatDetectionService)
+    session_blocker = providers.Singleton(SessionBlockerService)
+
+    # Adapters (outbound)
+    broadcaster = providers.Singleton(SocketIOBroadcaster, sio=sio)
+    terminal_repo = providers.Singleton(InMemoryTerminalRepository)
+
+    # Use Cases
+    terminal_use_cases = providers.Singleton(
+        TerminalUseCases,
+        terminal_repo=terminal_repo,
+        broadcaster=broadcaster,
+        threat_detector=threat_detector,
+        session_blocker=session_blocker,
+    )
+
+    blocker_use_cases = providers.Singleton(
+        BlockerUseCases,
+        session_blocker=session_blocker,
+        broadcaster=broadcaster,
+        terminal_repo=terminal_repo,
+    )
 
 
 def configure_container(config=None):
@@ -82,7 +111,7 @@ def configure_container(config=None):
         "debug": False,
         "more": False,
         "ai_mode": "streaming",
-        "ai_provider": "mock",  # Default to mock for testing
+        "ai_provider": "mock",
         "ai_api_key": os.getenv("ANTHROPIC_API_KEY"),
         "ai_model": "claude-3-5-sonnet-20241022",
     }
@@ -99,6 +128,8 @@ def configure_container(config=None):
             "aetherterm.agentserver.routes",
             "aetherterm.agentserver.server",
             "aetherterm.agentserver.socket_handlers.terminal_handlers",
+            "aetherterm.agentserver.socket_handlers.blocker_handlers",
+            "aetherterm.agentserver.socket_handlers.ai_handlers",
         ]
     )
 
@@ -106,10 +137,13 @@ def configure_container(config=None):
     try:
         ai_service_instance = container.ai_service()
         set_ai_service(ai_service_instance)
-        logging.getLogger("aetherterm.agentserver.containers").info(f"AI service initialized with provider: {final_config.get('ai_provider', 'unknown')}")
+        logging.getLogger("aetherterm.agentserver.containers").info(
+            f"AI service initialized with provider: {final_config.get('ai_provider', 'unknown')}"
+        )
     except Exception as e:
-        logging.getLogger("aetherterm.agentserver.containers").error(f"Failed to initialize AI service: {e}")
-        # Fallback to mock service
+        logging.getLogger("aetherterm.agentserver.containers").error(
+            f"Failed to initialize AI service: {e}"
+        )
         from aetherterm.agentserver.ai_services import MockAIService
         set_ai_service(MockAIService())
     return container

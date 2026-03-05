@@ -1,17 +1,26 @@
 """
 Block/Unblock Socket.IO event handlers.
+
+薄いアダプター層として、BlockerUseCases に処理を委譲します。
 """
 
 import logging
 
-from aetherterm.agentserver.auto_blocker import get_auto_blocker
+from dependency_injector.wiring import Provide, inject
+
+from aetherterm.agentserver.containers import ApplicationContainer
 
 from .helpers import get_sio
 
 log = logging.getLogger("aetherterm.socket_handlers")
 
 
-async def unblock_request(sid, data):
+@inject
+async def unblock_request(
+    sid,
+    data,
+    blocker_use_cases=Provide[ApplicationContainer.blocker_use_cases],
+):
     """Handle unblock request from client."""
     sio = get_sio()
     try:
@@ -25,8 +34,7 @@ async def unblock_request(sid, data):
             )
             return
 
-        auto_blocker = get_auto_blocker()
-        success = auto_blocker.unblock_session(session_id, unlock_key)
+        success = await blocker_use_cases.unblock_session(session_id, unlock_key)
 
         if success:
             await sio.emit(
@@ -55,7 +63,12 @@ async def unblock_request(sid, data):
         await sio.emit("unblock_response", {"status": "error", "error": str(e)}, room=sid)
 
 
-async def get_block_status(sid, data):
+@inject
+async def get_block_status(
+    sid,
+    data,
+    blocker_use_cases=Provide[ApplicationContainer.blocker_use_cases],
+):
     """Handle block status request from client."""
     sio = get_sio()
     try:
@@ -70,9 +83,8 @@ async def get_block_status(sid, data):
             )
             return
 
-        auto_blocker = get_auto_blocker()
-        is_blocked = auto_blocker.is_session_blocked(session_id)
-        block_state = auto_blocker.get_block_state(session_id)
+        is_blocked = blocker_use_cases.is_session_blocked(session_id)
+        block_state = blocker_use_cases.get_block_state(session_id)
 
         response_data = {"status": "success", "session_id": session_id, "is_blocked": is_blocked}
 

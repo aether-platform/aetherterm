@@ -485,7 +485,6 @@ def create_factory_app(**kwargs):
 
 def setup_app(**kwargs):
     """Setup the application and prepare it for running."""
-    from aetherterm.agentserver.auto_blocker import set_socket_io_instance
     from aetherterm.agentserver.utils import prepare_ssl_certs
 
     prepare_ssl_certs(**kwargs)
@@ -493,8 +492,6 @@ def setup_app(**kwargs):
     asgi_app, sio, container, config = create_factory_app(**kwargs)
 
     _register_socket_handlers(sio)
-
-    set_socket_io_instance(sio)
 
     log.info("AetherTerm AgentServer application setup complete")
 

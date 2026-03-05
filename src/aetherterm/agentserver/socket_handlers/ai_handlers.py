@@ -1,17 +1,27 @@
 """
 AI-related Socket.IO event handlers.
+
+薄いアダプター層として、AIサービスとターミナルリポジトリに処理を委譲します。
 """
 
 import logging
 
-from aetherterm.agentserver.ai_services import get_ai_service
+from dependency_injector.wiring import Provide, inject
 
-from .helpers import get_sio, get_terminal_context
+from aetherterm.agentserver.ai_services import get_ai_service
+from aetherterm.agentserver.containers import ApplicationContainer
+
+from .helpers import get_sio
 
 log = logging.getLogger("aetherterm.socket_handlers")
 
 
-async def ai_chat_message(sid, data):
+@inject
+async def ai_chat_message(
+    sid,
+    data,
+    terminal_use_cases=Provide[ApplicationContainer.terminal_use_cases],
+):
     """Handle AI chat messages with terminal context."""
     sio = get_sio()
     try:
@@ -35,7 +45,11 @@ async def ai_chat_message(sid, data):
             )
             return
 
-        terminal_context = get_terminal_context(terminal_session) if terminal_session else None
+        terminal_context = (
+            terminal_use_cases.get_terminal_context(terminal_session)
+            if terminal_session
+            else None
+        )
 
         messages = [{"role": "user", "content": message}]
 
@@ -73,7 +87,12 @@ async def ai_chat_message(sid, data):
         )
 
 
-async def ai_terminal_analysis(sid, data):
+@inject
+async def ai_terminal_analysis(
+    sid,
+    data,
+    terminal_use_cases=Provide[ApplicationContainer.terminal_use_cases],
+):
     """Analyze terminal commands and provide AI suggestions."""
     sio = get_sio()
     try:
@@ -97,7 +116,11 @@ async def ai_terminal_analysis(sid, data):
             )
             return
 
-        terminal_context = get_terminal_context(terminal_session) if terminal_session else None
+        terminal_context = (
+            terminal_use_cases.get_terminal_context(terminal_session)
+            if terminal_session
+            else None
+        )
 
         analysis_prompt = f"""Please analyze this terminal command and provide helpful information:
 

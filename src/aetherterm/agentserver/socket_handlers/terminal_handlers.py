@@ -1,5 +1,8 @@
 """
 Terminal-related Socket.IO event handlers.
+
+薄いアダプター層として、Socket.IOイベントを受け取り、
+ユースケースに処理を委譲します。
 """
 
 import asyncio
@@ -10,13 +13,11 @@ import jinja2
 from dependency_injector.wiring import Provide, inject
 
 from aetherterm.agentserver import utils
-from aetherterm.agentserver.auto_blocker import BlockReason, get_auto_blocker
 from aetherterm.agentserver.containers import ApplicationContainer
-from aetherterm.agentserver.log_analyzer import SeverityLevel, get_log_analyzer
 from aetherterm.agentserver.terminals.asyncio_terminal import AsyncioTerminal
 from aetherterm.agentserver.utils import User
 
-from .helpers import check_session_ownership, get_sio, get_user_info_from_environ
+from .helpers import get_sio, get_user_info_from_environ
 
 log = logging.getLogger("aetherterm.socket_handlers")
 
@@ -102,7 +103,7 @@ async def create_terminal(
                 log.info(f"Attempted to connect to closed session {session_id}")
                 environ = getattr(sio, "environ", {}) if sio else {}
                 current_user_info = get_user_info_from_environ(environ)
-                is_owner = check_session_ownership(session_id, current_user_info)
+                is_owner = _check_session_ownership(session_id, current_user_info)
 
                 await sio.emit(
                     "terminal_closed",
@@ -120,7 +121,7 @@ async def create_terminal(
             log.info(f"Attempted to connect to previously closed session {session_id}")
             environ = getattr(sio, "environ", {}) if sio else {}
             current_user_info = get_user_info_from_environ(environ)
-            is_owner = check_session_ownership(session_id, current_user_info)
+            is_owner = _check_session_ownership(session_id, current_user_info)
 
             await sio.emit(
                 "terminal_closed",
@@ -223,57 +224,37 @@ async def terminal_resize(sid, data):
         log.error(f"Error handling terminal resize: {e}")
 
 
-def broadcast_to_session(session_id, message):
-    """Broadcast message to all clients connected to a session."""
-    sio = get_sio()
-    if not sio:
-        log.warning("sio_instance is None, cannot broadcast message")
-        return
+@inject
+def broadcast_to_session(
+    session_id,
+    message,
+    terminal_use_cases=Provide[ApplicationContainer.terminal_use_cases],
+):
+    """Broadcast message to all clients connected to a session.
 
-    terminal = AsyncioTerminal.sessions.get(session_id)
-    client_sids = list(terminal.client_sids) if terminal and hasattr(terminal, "client_sids") else []
+    TerminalUseCases に処理を委譲し、脅威検出・ブロック・ブロードキャストを実行。
+    """
+    asyncio.create_task(
+        terminal_use_cases.broadcast_terminal_output(session_id, message)
+    )
 
-    if message is not None:
-        # Real-time log analysis
-        log_analyzer = get_log_analyzer()
-        auto_blocker = get_auto_blocker()
 
-        detection_result = log_analyzer.analyze_output(session_id, message)
+def _check_session_ownership(session_id, current_user_info):
+    """Check if the current user is the owner of the session."""
+    from aetherterm.agentserver.domain.entities import SessionOwner, UserInfo, check_session_ownership
 
-        if detection_result and detection_result.should_block:
-            block_reason = (
-                BlockReason.CRITICAL_KEYWORD
-                if detection_result.severity == SeverityLevel.CRITICAL
-                else BlockReason.MULTIPLE_WARNINGS
-            )
+    if session_id not in AsyncioTerminal.session_owners:
+        return False
 
-            success = auto_blocker.block_session(
-                session_id=session_id,
-                reason=block_reason,
-                message=detection_result.message,
-                alert_message=detection_result.alert_message,
-                detected_keywords=detection_result.detected_keywords,
-            )
-
-            if success:
-                log.warning(
-                    f"Session {session_id} automatically blocked due to: {detection_result.message}"
-                )
-
-        log.debug(
-            f"Broadcasting terminal output for session {session_id} to {len(client_sids)} clients: {repr(message)}"
-        )
-        for client_sid in client_sids:
-            asyncio.create_task(
-                sio.emit(
-                    "terminal_output", {"session": session_id, "data": message}, room=client_sid
-                )
-            )
-    else:
-        log.info(
-            f"Broadcasting terminal closed for session {session_id} to {len(client_sids)} clients"
-        )
-        for client_sid in client_sids:
-            asyncio.create_task(
-                sio.emit("terminal_closed", {"session": session_id}, room=client_sid)
-            )
+    owner_info = AsyncioTerminal.session_owners[session_id]
+    owner = SessionOwner(
+        remote_addr=owner_info.get("remote_addr"),
+        remote_user=owner_info.get("remote_user"),
+        user_name=owner_info.get("user_name"),
+        created_at=owner_info.get("created_at", 0),
+    )
+    user_info = UserInfo(
+        remote_addr=current_user_info.get("remote_addr"),
+        remote_user=current_user_info.get("remote_user"),
+    )
+    return check_session_ownership(owner, user_info)
