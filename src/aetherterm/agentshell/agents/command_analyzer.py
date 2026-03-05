@@ -3,6 +3,8 @@ Linuxコマンドアナライザーエージェント
 
 リアルタイムでLinuxコマンドを解析し、安全性チェックと
 改善提案を行うエージェントです。
+LangChainのメモリ機能と連携してコンテキストを考慮した判定を、
+AIプロバイダーを通じたLLM分析で高度な解析を実現します。
 """
 
 import asyncio
@@ -26,6 +28,28 @@ from .base import AgentInterface
 logger = logging.getLogger(__name__)
 
 
+class LLMAnalysisConfig:
+    """LLM解析設定"""
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        provider: Optional[Any] = None,
+        system_prompt: str = "",
+    ):
+        self.enabled = enabled
+        self.provider = provider
+        self.system_prompt = system_prompt or (
+            "あなたはLinuxコマンドのセキュリティ専門家です。"
+            "ユーザーが入力したコマンドを解析し、安全性を評価してください。"
+            "以下の観点で分析してください：\n"
+            "1. コマンドの目的と動作\n"
+            "2. 潜在的なリスクや危険性\n"
+            "3. より安全な代替案（もしあれば）\n"
+            "4. 過去のコマンドとの関連性"
+        )
+
+
 class CommandRisk(str, Enum):
     """コマンドのリスクレベル"""
     SAFE = "safe"
@@ -46,27 +70,39 @@ class CommandTaskType(str, Enum):
 class CommandAnalyzerAgent(AgentInterface):
     """
     Linuxコマンドアナライザーエージェント
-    
+
     コマンドの解析、安全性チェック、改善提案を行います。
     LangChainのメモリ機能と連携して、コンテキストを考慮した
-    判定を実現します。
+    判定を実現します。AIプロバイダーが設定されている場合は
+    LLMを使用した高度な解析も実行します。
     """
-    
-    def __init__(self, agent_id: str):
+
+    def __init__(
+        self,
+        agent_id: str,
+        llm_config: Optional[LLMAnalysisConfig] = None,
+    ):
         """
         初期化
-        
+
         Args:
             agent_id: エージェントID
+            llm_config: LLM解析設定（省略時はローカル解析のみ）
         """
         super().__init__(agent_id)
         self._status = AgentStatus.IDLE
         self._current_task: Optional[TaskData] = None
-        
+
+        # LLM設定
+        self._llm_config = llm_config or LLMAnalysisConfig()
+
         # コマンド履歴
         self._command_history: List[Dict[str, Any]] = []
         self._max_history = 1000
-        
+
+        # 学習済みパターン（過去の判定から学習）
+        self._learned_patterns: Dict[str, CommandRisk] = {}
+
         # パターン定義
         self._patterns = {
             "file_ops": re.compile(r'\b(rm|mv|cp|touch|mkdir|chmod|chown|ln|dd)\b'),
@@ -648,6 +684,185 @@ class CommandAnalyzerAgent(AgentInterface):
                 task_id=self._current_task.task_id,
                 percentage=percentage,
                 message=message,
-                details={}
+                details={},
             )
             self._progress_callback(progress_data)
+
+    # === LLM統合メソッド（POCから統合） ===
+
+    async def analyze_with_llm(self, command: str) -> Dict[str, Any]:
+        """
+        LLMを使用した高度なコマンド解析
+
+        ローカル解析とAIプロバイダーの解析結果を統合し、
+        より精度の高い判定を行います。
+
+        Args:
+            command: 解析するコマンド
+
+        Returns:
+            Dict[str, Any]: ローカル解析とLLM解析の統合結果
+        """
+        # ローカル解析を実行
+        local_analysis = self._analyze_single_command(command)
+        local_safety = self._check_command_safety(command, local_analysis)
+        local_improvement = self._suggest_command_improvement(command, local_analysis, local_safety)
+
+        result = {
+            "command": command,
+            "local_analysis": local_analysis,
+            "safety": local_safety,
+            "improvement": local_improvement,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        # LLMが有効な場合はAI解析も実行
+        if self._llm_config.enabled and self._llm_config.provider:
+            try:
+                ai_analysis = await self._run_llm_analysis(command, local_analysis, local_safety)
+                result["ai_analysis"] = ai_analysis
+
+                # LLMの結果をローカル判定と統合
+                result = self._merge_analysis_results(result, ai_analysis)
+            except Exception as e:
+                logger.warning(f"LLM解析中にエラーが発生しました（ローカル結果を使用）: {e}")
+                result["ai_analysis_error"] = str(e)
+
+        # 学習パターンの更新
+        self._update_learned_patterns(command, result)
+
+        # 履歴に追加
+        self._add_to_history(result)
+
+        return result
+
+    async def _run_llm_analysis(
+        self,
+        command: str,
+        local_analysis: Dict[str, Any],
+        local_safety: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        AIプロバイダーを使用してLLM解析を実行
+
+        Args:
+            command: 解析するコマンド
+            local_analysis: ローカル解析結果
+            local_safety: ローカル安全性判定
+
+        Returns:
+            Dict[str, Any]: LLM解析結果
+        """
+        provider = self._llm_config.provider
+
+        # コマンドの履歴コンテキストを構築
+        recent_commands = [h.get("command", "") for h in self._command_history[-5:]]
+        context = {
+            "recent_commands": recent_commands,
+            "local_risk_level": local_safety.get("risk_level", "unknown"),
+            "local_issues": local_safety.get("issues", []),
+            "categories": local_analysis.get("categories", []),
+        }
+
+        # AIプロバイダーのanalyze_command_outputを使用
+        ai_result = await provider.analyze_command_output(
+            command=command,
+            output=f"ローカル解析結果: リスク={local_safety.get('risk_level')}, "
+            f"カテゴリ={local_analysis.get('categories', [])}",
+            exit_code=0,
+            context=context,
+        )
+
+        return ai_result
+
+    def _merge_analysis_results(
+        self,
+        result: Dict[str, Any],
+        ai_analysis: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        ローカル解析とLLM解析の結果を統合
+
+        より厳しい判定を採用し、両方の洞察を統合します。
+
+        Args:
+            result: ローカル解析結果
+            ai_analysis: LLM解析結果
+
+        Returns:
+            Dict[str, Any]: 統合された結果
+        """
+        # AI解析からの警告をローカルの問題リストに追加
+        ai_warnings = ai_analysis.get("warnings", [])
+        if ai_warnings:
+            current_issues = result.get("safety", {}).get("issues", [])
+            for warning in ai_warnings:
+                if warning not in current_issues:
+                    current_issues.append(f"[AI] {warning}")
+            result["safety"]["issues"] = current_issues
+
+        # AI解析からの推奨事項を改善提案に追加
+        ai_recommendations = ai_analysis.get("recommendations", [])
+        if ai_recommendations:
+            current_suggestions = result.get("improvement", {}).get("suggestions", [])
+            for rec in ai_recommendations:
+                if rec not in current_suggestions:
+                    current_suggestions.append(f"[AI] {rec}")
+            result["improvement"]["suggestions"] = current_suggestions
+            result["improvement"]["has_improvements"] = True
+
+        # AI解析が高いseverityを報告した場合、リスクレベルをエスカレーション
+        ai_severity = ai_analysis.get("severity", "low")
+        if ai_severity == "high" and result["safety"]["risk_level"] in [
+            CommandRisk.SAFE,
+            CommandRisk.CAUTION,
+        ]:
+            result["safety"]["risk_level"] = CommandRisk.DANGEROUS
+            result["safety"]["is_safe"] = False
+            result["safety"]["requires_confirmation"] = True
+
+        result["analysis_sources"] = ["local", "llm"]
+        return result
+
+    def _update_learned_patterns(self, command: str, result: Dict[str, Any]) -> None:
+        """
+        解析結果から学習パターンを更新
+
+        過去の判定結果を蓄積し、類似コマンドの判定精度を向上させます。
+
+        Args:
+            command: 解析したコマンド
+            result: 解析結果
+        """
+        # コマンドの先頭部分をパターンキーとして使用
+        parts = command.strip().split()
+        if not parts:
+            return
+
+        # sudoを除去してベースコマンドを取得
+        base_parts = [p for p in parts[:3] if p != "sudo"]
+        if not base_parts:
+            return
+
+        pattern_key = " ".join(base_parts)
+        risk_level = result.get("safety", {}).get("risk_level", CommandRisk.SAFE)
+
+        # 既存のパターンよりリスクが高い場合のみ更新
+        existing_risk = self._learned_patterns.get(pattern_key)
+        risk_order = [CommandRisk.SAFE, CommandRisk.CAUTION, CommandRisk.DANGEROUS, CommandRisk.CRITICAL]
+        if existing_risk is None or risk_order.index(risk_level) > risk_order.index(existing_risk):
+            self._learned_patterns[pattern_key] = risk_level
+
+    def get_learned_patterns(self) -> Dict[str, str]:
+        """学習済みパターンを取得"""
+        return {k: v.value if isinstance(v, CommandRisk) else v for k, v in self._learned_patterns.items()}
+
+    def configure_llm(self, llm_config: LLMAnalysisConfig) -> None:
+        """
+        LLM設定を動的に変更
+
+        Args:
+            llm_config: 新しいLLM解析設定
+        """
+        self._llm_config = llm_config
+        logger.info(f"LLM解析設定を更新しました: enabled={llm_config.enabled}")

@@ -329,33 +329,223 @@ class LangChainAgent(AgentInterface):
         return result
 
     async def _analyze_task(self, task: TaskData, context: Dict[str, Any]) -> Dict[str, Any]:
-        """分析タスクを実行"""
-        await self._notify_progress(0.2, "コンテキストを分析中...")
+        """
+        分析タスクを実行
 
-        # ここで実際の分析ロジックを実装
-        # 今回はデモとして簡単な実装
-        analysis_result = {
-            "summary": f"{task.description}の分析結果",
-            "context_items": len(context.get("relevant_memories", [])),
+        コンテキストとメモリ情報を活用して、タスク内容を多角的に分析します。
+        コマンド解析の場合はCommandAnalyzerAgentと連携します。
+        """
+        await self._notify_progress(0.1, "コンテキストを収集中...")
+
+        description = task.description
+        parameters = task.parameters or {}
+
+        # コンテキスト情報を構築
+        relevant_memories = context.get("relevant_memories", [])
+        recent_conversations = context.get("recent_conversations", [])
+        task_history_items = context.get("task_history", [])
+
+        await self._notify_progress(0.3, "メモリから関連情報を取得中...")
+
+        # 分析対象に応じた処理
+        analysis_type = parameters.get("analysis_type", "general")
+        result: Dict[str, Any] = {}
+
+        if analysis_type == "command" and "command" in parameters:
+            # コマンド解析：CommandAnalyzerAgentと同様のパターン解析
+            result = await self._analyze_command_with_context(
+                parameters["command"], context
+            )
+
+        elif analysis_type == "code" and "code" in parameters:
+            # コード分析
+            result = self._analyze_code(parameters["code"], context)
+
+        elif analysis_type == "workflow":
+            # ワークフロー分析
+            result = self._analyze_workflow(description, task_history_items)
+
+        else:
+            # 汎用分析
+            result = {
+                "type": "general_analysis",
+                "description": description,
+                "context_items_used": len(relevant_memories),
+                "related_conversations": len(recent_conversations),
+                "insights": [],
+                "recommendations": [],
+            }
+
+            # コンテキストから洞察を生成
+            if relevant_memories:
+                result["insights"].append(
+                    f"メモリから{len(relevant_memories)}件の関連情報を発見"
+                )
+                for mem in relevant_memories[:3]:
+                    content = mem.get("content", "")
+                    if content:
+                        result["insights"].append(f"関連: {content[:100]}")
+
+            if task_history_items:
+                # 過去のタスク結果から推奨事項を生成
+                failed_tasks = [t for t in task_history_items if t.get("status") == "error"]
+                if failed_tasks:
+                    result["recommendations"].append(
+                        f"直近で{len(failed_tasks)}件のタスクが失敗しています。関連する問題がないか確認してください"
+                    )
+
+                completed_types = set(t.get("task_type", "") for t in task_history_items if t.get("status") == "completed")
+                if completed_types:
+                    result["recommendations"].append(
+                        f"完了済みタスクタイプ: {', '.join(completed_types)}"
+                    )
+
+        result["summary"] = f"{description}の分析完了（コンテキスト{len(relevant_memories)}件使用）"
+
+        # 結果をメモリに保存
+        await self._store_conversation(
+            f"分析結果: {result.get('summary', '')}",
+            ConversationType.ASSISTANT_OUTPUT,
+        )
+
+        await self._notify_progress(1.0, "分析が完了しました")
+        return result
+
+    async def _analyze_command_with_context(
+        self, command: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        コンテキストを考慮したコマンド解析
+
+        メモリ内の過去のコマンド履歴と比較し、
+        コンテキスト認識型のリスク判定を行います。
+        """
+        import re
+
+        # 基本的な危険パターン（POCのCommandAnalysisToolから統合）
+        danger_patterns = {
+            "root_delete": re.compile(r"rm\s+.*(-rf|-fr).*\s+/\s*($|\s)"),
+            "format_disk": re.compile(r"(mkfs|format|fdisk)"),
+            "dd_system": re.compile(r"dd.*of=/dev/(sda|hda|nvme0n1)"),
+            "fork_bomb": re.compile(
+                r":\(\)\{:\|:&\};:|:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"
+            ),
+            "system_files": re.compile(r"(rm|dd|>).*(etc|bin|boot|sys)"),
+        }
+
+        issues = []
+        risk_level = "safe"
+
+        for pattern_name, pattern in danger_patterns.items():
+            if pattern.search(command):
+                if pattern_name == "fork_bomb":
+                    issues.append("フォーク爆弾を検出しました")
+                    risk_level = "critical"
+                elif pattern_name == "root_delete":
+                    issues.append("ルートディレクトリの削除は非常に危険です")
+                    risk_level = "critical"
+                elif pattern_name == "dd_system":
+                    issues.append("システムディスクへの直接書き込みは危険です")
+                    risk_level = "critical"
+                elif pattern_name == "format_disk":
+                    issues.append("ディスクのフォーマット操作を検出しました")
+                    risk_level = "dangerous"
+                elif pattern_name == "system_files":
+                    issues.append("システムファイルへの破壊的操作を検出しました")
+                    if risk_level not in ("critical",):
+                        risk_level = "dangerous"
+
+        # コンテキストベースの分析
+        recent_conversations = context.get("recent_conversations", [])
+        context_insights = []
+        if recent_conversations:
+            for conv in recent_conversations[-3:]:
+                content = conv.get("content", "")
+                if "cd" in content and "rm" in command:
+                    context_insights.append(
+                        "直前にディレクトリ変更があります。現在位置を確認してください"
+                    )
+
+        return {
+            "type": "command_analysis",
+            "command": command,
+            "risk_level": risk_level,
+            "issues": issues,
+            "context_insights": context_insights,
+            "requires_confirmation": risk_level in ("dangerous", "critical"),
+        }
+
+    def _analyze_code(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """コード分析"""
+        lines = code.strip().split("\n")
+        return {
+            "type": "code_analysis",
+            "line_count": len(lines),
+            "has_imports": any(line.strip().startswith(("import ", "from ")) for line in lines),
+            "has_classes": any("class " in line for line in lines),
+            "has_functions": any("def " in line for line in lines),
+            "context_items_used": len(context.get("relevant_memories", [])),
+        }
+
+    def _analyze_workflow(
+        self, description: str, task_history: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """ワークフロー分析"""
+        completed = [t for t in task_history if t.get("status") == "completed"]
+        failed = [t for t in task_history if t.get("status") == "error"]
+
+        return {
+            "type": "workflow_analysis",
+            "description": description,
+            "total_tasks": len(task_history),
+            "completed_tasks": len(completed),
+            "failed_tasks": len(failed),
+            "success_rate": len(completed) / len(task_history) if task_history else 0,
             "recommendations": [
-                "コードの構造を改善することを推奨",
-                "テストカバレッジを向上させることを推奨",
+                "失敗タスクのリトライを検討してください" if failed else "全タスクが正常に完了しています"
             ],
         }
 
-        await self._notify_progress(1.0, "分析が完了しました")
-        return analysis_result
-
     async def _summarize_task(self, task: TaskData, context: Dict[str, Any]) -> Dict[str, Any]:
-        """要約タスクを実行"""
-        await self._notify_progress(0.2, "情報を収集中...")
+        """
+        要約タスクを実行
 
-        # ここで実際の要約ロジックを実装
+        メモリから関連情報を収集し、コンテキストを考慮した要約を生成します。
+        """
+        await self._notify_progress(0.1, "情報を収集中...")
+
+        relevant_memories = context.get("relevant_memories", [])
+        recent_conversations = context.get("recent_conversations", [])
+
+        # 会話履歴からキーポイントを抽出
+        key_points = []
+        for conv in recent_conversations:
+            content = conv.get("content", "")
+            if len(content) > 10:
+                key_points.append(content[:200])
+
+        await self._notify_progress(0.5, "要約を生成中...")
+
+        # メモリから追加の情報を取得
+        memory_insights = []
+        for mem in relevant_memories[:5]:
+            content = mem.get("content", "")
+            if content:
+                memory_insights.append(content[:150])
+
         summary_result = {
-            "summary": f"{task.description}の要約",
-            "key_points": ["重要なポイント1", "重要なポイント2"],
-            "context_used": len(context.get("relevant_memories", [])),
+            "summary": f"{task.description}の要約（{len(recent_conversations)}件の会話から生成）",
+            "key_points": key_points[:10],
+            "memory_insights": memory_insights,
+            "context_used": len(relevant_memories),
+            "conversation_count": len(recent_conversations),
         }
+
+        # 結果をメモリに保存
+        await self._store_conversation(
+            f"要約生成完了: {summary_result['summary']}",
+            ConversationType.ASSISTANT_OUTPUT,
+        )
 
         await self._notify_progress(1.0, "要約が完了しました")
         return summary_result
@@ -363,15 +553,74 @@ class LangChainAgent(AgentInterface):
     async def _create_documentation(
         self, task: TaskData, context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """ドキュメント作成タスクを実行"""
-        await self._notify_progress(0.2, "ドキュメントを生成中...")
+        """
+        ドキュメント作成タスクを実行
 
-        # ここで実際のドキュメント生成ロジックを実装
+        メモリとコンテキストから情報を収集し、構造化されたドキュメントを生成します。
+        """
+        await self._notify_progress(0.1, "ドキュメント構造を計画中...")
+
+        description = task.description
+        parameters = task.parameters or {}
+        doc_format = parameters.get("format", "markdown")
+
+        relevant_memories = context.get("relevant_memories", [])
+        task_history = context.get("task_history", [])
+
+        await self._notify_progress(0.3, "コンテンツを収集中...")
+
+        # ドキュメントのセクションを構築
+        sections = ["概要"]
+        content_parts = [f"# {description}\n"]
+
+        # 概要セクション
+        content_parts.append("## 概要\n")
+        if relevant_memories:
+            content_parts.append("関連する情報に基づいて作成されたドキュメントです。\n")
+        else:
+            content_parts.append("新規作成されたドキュメントです。\n")
+
+        # タスク履歴がある場合は実行ログセクションを追加
+        if task_history:
+            sections.append("実行ログ")
+            content_parts.append("\n## 実行ログ\n")
+            for t in task_history[-5:]:
+                status = t.get("status", "unknown")
+                task_type = t.get("task_type", "unknown")
+                content_parts.append(f"- **{task_type}**: {status}\n")
+
+        # メモリからの関連情報セクション
+        if relevant_memories:
+            sections.append("関連情報")
+            content_parts.append("\n## 関連情報\n")
+            for mem in relevant_memories[:5]:
+                content = mem.get("content", "")
+                if content:
+                    content_parts.append(f"- {content[:200]}\n")
+
+        # API リファレンスセクション（パラメータで指定された場合）
+        if parameters.get("include_api_reference"):
+            sections.append("API リファレンス")
+            content_parts.append("\n## API リファレンス\n")
+            content_parts.append("（API仕様に基づいて自動生成）\n")
+
+        await self._notify_progress(0.7, "ドキュメントを組み立て中...")
+
+        doc_content = "\n".join(content_parts)
+
         doc_result = {
-            "documentation": f"# {task.description}\n\n## 概要\n\nドキュメントの内容...",
-            "format": "markdown",
-            "sections": ["概要", "使用方法", "API リファレンス"],
+            "documentation": doc_content,
+            "format": doc_format,
+            "sections": sections,
+            "context_used": len(relevant_memories),
+            "word_count": len(doc_content.split()),
         }
+
+        # 結果をメモリに保存
+        await self._store_conversation(
+            f"ドキュメント作成完了: {description} ({len(sections)}セクション)",
+            ConversationType.ASSISTANT_OUTPUT,
+        )
 
         await self._notify_progress(1.0, "ドキュメント作成が完了しました")
         return doc_result

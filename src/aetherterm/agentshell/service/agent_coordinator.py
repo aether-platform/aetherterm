@@ -70,11 +70,23 @@ class InterAgentRequest:
 class AgentCoordinator:
     """
     エージェントコーディネーター
-    
+
     複数のエージェント間の作業を調整し、
     競合を解決してスムーズな協調作業を実現します。
+    セキュリティ意識のある判定と過去の決定からの学習機能を備えます。
     """
-    
+
+    # セキュリティ：危険なキーワード（POCから統合）
+    DANGEROUS_KEYWORDS = frozenset([
+        "delete", "drop", "remove", "production", "prod",
+        "truncate", "destroy", "format", "purge",
+    ])
+
+    # セキュリティ：保護対象環境パターン
+    PROTECTED_ENVIRONMENTS = frozenset([
+        "production", "prod", "main", "master", "live",
+    ])
+
     def __init__(self):
         self._active_agents: Dict[str, Dict[str, Any]] = {}
         self._task_dependencies: Dict[UUID, TaskDependency] = {}
@@ -82,6 +94,17 @@ class AgentCoordinator:
         self._pending_requests: List[InterAgentRequest] = []
         self._conflict_history: List[ConflictResolution] = []
         self._coordination_rules: List[Dict[str, Any]] = []
+
+        # 学習：過去の解決パターンの成功率（POCから統合）
+        self._resolution_success_rates: Dict[str, Dict[str, float]] = {}
+        # 学習：エージェントタイプ別の優先度マップ
+        self._agent_type_priorities: Dict[str, int] = {
+            "security": 100,
+            "monitoring": 80,
+            "analysis": 60,
+            "code_generation": 50,
+            "documentation": 30,
+        }
         
     async def register_agent_task(
         self,
@@ -631,10 +654,10 @@ class AgentCoordinator:
     def get_agent_relationships(self) -> Dict[str, List[str]]:
         """エージェント間の関係を取得"""
         relationships = {}
-        
+
         for agent_id in self._active_agents:
             relationships[agent_id] = []
-            
+
             # 依存関係から関係を抽出
             for task_dep in self._task_dependencies.values():
                 agent_tasks = self._active_agents[agent_id]["tasks"]
@@ -646,5 +669,152 @@ class AgentCoordinator:
                             for dep_id in task_dep.depends_on:
                                 if any(task.id == dep_id for task in other_tasks.values()):
                                     relationships[agent_id].append(other_agent)
-                                    
+
         return relationships
+
+    # === セキュリティ機能（POCから統合） ===
+
+    async def check_security_risk(
+        self,
+        agent_id: str,
+        action_description: str,
+        target_environment: str = "",
+    ) -> Dict[str, Any]:
+        """
+        エージェントのアクションに対するセキュリティリスクを評価
+
+        危険なキーワードと保護対象環境のチェックを行い、
+        自動的にブロックまたはエスカレーションします。
+
+        Args:
+            agent_id: アクションを実行するエージェントID
+            action_description: アクションの説明
+            target_environment: 対象環境名
+
+        Returns:
+            Dict[str, Any]: セキュリティ評価結果
+        """
+        action_lower = action_description.lower()
+        env_lower = target_environment.lower()
+
+        result = {
+            "allowed": True,
+            "risk_level": "low",
+            "warnings": [],
+            "blocked_reason": None,
+        }
+
+        # 危険キーワードチェック
+        found_dangerous = [
+            kw for kw in self.DANGEROUS_KEYWORDS if kw in action_lower
+        ]
+        if found_dangerous:
+            result["warnings"].append(
+                f"危険なキーワードを検出: {', '.join(found_dangerous)}"
+            )
+            result["risk_level"] = "high"
+
+        # 保護対象環境チェック
+        is_protected = any(env in env_lower for env in self.PROTECTED_ENVIRONMENTS)
+        if is_protected and found_dangerous:
+            result["allowed"] = False
+            result["risk_level"] = "critical"
+            result["blocked_reason"] = (
+                f"保護対象環境 '{target_environment}' での危険な操作はブロックされました"
+            )
+            logger.warning(
+                f"セキュリティブロック: エージェント {agent_id} の操作を拒否 - "
+                f"{result['blocked_reason']}"
+            )
+
+        # エージェントタイプによる優先判定
+        agent_info = self._active_agents.get(agent_id, {})
+        agent_type = agent_info.get("agent_type", "")
+        if agent_type == "security":
+            # セキュリティエージェントは信頼度が高い
+            if result["risk_level"] == "high":
+                result["risk_level"] = "medium"
+                result["warnings"].append(
+                    "セキュリティエージェントによる操作のため信頼度を調整"
+                )
+
+        return result
+
+    # === 学習機能（POCから統合） ===
+
+    def record_resolution_outcome(
+        self,
+        conflict_type: ConflictType,
+        strategy: str,
+        success: bool,
+    ) -> None:
+        """
+        競合解決の結果を記録し、将来の解決戦略の選択に活用
+
+        Args:
+            conflict_type: 競合タイプ
+            strategy: 使用した解決戦略
+            success: 解決が成功したかどうか
+        """
+        key = conflict_type.value
+        if key not in self._resolution_success_rates:
+            self._resolution_success_rates[key] = {}
+
+        if strategy not in self._resolution_success_rates[key]:
+            self._resolution_success_rates[key][strategy] = 0.5  # 初期値
+
+        # 指数移動平均で更新
+        current = self._resolution_success_rates[key][strategy]
+        alpha = 0.3  # 学習率
+        new_value = alpha * (1.0 if success else 0.0) + (1.0 - alpha) * current
+        self._resolution_success_rates[key][strategy] = new_value
+
+        logger.info(
+            f"解決パターン学習: {conflict_type.value}/{strategy} -> "
+            f"成功率 {new_value:.2f}"
+        )
+
+    def get_best_resolution_strategy(
+        self,
+        conflict_type: ConflictType,
+    ) -> Optional[str]:
+        """
+        過去の学習データに基づいて最適な解決戦略を推薦
+
+        Args:
+            conflict_type: 競合タイプ
+
+        Returns:
+            Optional[str]: 推薦される解決戦略、またはNone
+        """
+        key = conflict_type.value
+        strategies = self._resolution_success_rates.get(key, {})
+        if not strategies:
+            return None
+
+        best_strategy = max(strategies, key=strategies.get)
+        best_rate = strategies[best_strategy]
+
+        if best_rate > 0.6:  # 成功率60%以上の場合のみ推薦
+            return best_strategy
+        return None
+
+    def set_agent_type_priority(self, agent_type: str, priority: int) -> None:
+        """
+        エージェントタイプの優先度を設定
+
+        Args:
+            agent_type: エージェントタイプ
+            priority: 優先度（0-100、高いほど優先）
+        """
+        self._agent_type_priorities[agent_type] = max(0, min(100, priority))
+
+    def get_resolution_statistics(self) -> Dict[str, Any]:
+        """解決パターンの学習統計を取得"""
+        return {
+            "success_rates": dict(self._resolution_success_rates),
+            "total_conflicts_resolved": len(self._conflict_history),
+            "agent_type_priorities": dict(self._agent_type_priorities),
+            "active_agents": len(self._active_agents),
+            "resource_locks": len(self._resource_locks),
+        }

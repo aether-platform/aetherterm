@@ -8,7 +8,7 @@ AIエージェント統合モジュール
 from .base import AgentInterface, AgentCapability, AgentTask, AgentResult
 from .openhands import OpenHandsAgent
 from .langchain_agent import LangChainAgent
-from .command_analyzer import CommandAnalyzerAgent
+from .command_analyzer import CommandAnalyzerAgent, LLMAnalysisConfig
 from .manager import AgentManager
 
 __all__ = [
@@ -19,5 +19,6 @@ __all__ = [
     "OpenHandsAgent",
     "LangChainAgent",
     "CommandAnalyzerAgent",
+    "LLMAnalysisConfig",
     "AgentManager",
 ]
