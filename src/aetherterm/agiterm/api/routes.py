@@ -1,6 +1,7 @@
 """REST API routes for WorkWithAGI SDK."""
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -47,6 +48,20 @@ class SessionResponse(BaseModel):
     tool: str
     label: str
     ws_url: str
+
+
+class AddPaneRequest(BaseModel):
+    tool: str = "bash"
+    role: str = ""
+    cols: int = 80
+    rows: int = 24
+
+
+class PaneResponse(BaseModel):
+    pane_id: str
+    tool: str
+    role: str
+    title: str
 
 
 # --- Endpoints ---
@@ -138,3 +153,58 @@ async def resize_session(
         raise HTTPException(status_code=404, detail="Session not found")
     session.pty_session.resize(cols, rows)
     return {"status": "resized", "cols": cols, "rows": rows}
+
+
+# --- Pane management (workspace multi-pane) ---
+
+
+@router.post("/sessions/{session_id}/panes", response_model=PaneResponse)
+async def add_pane(
+    session_id: str,
+    req: AddPaneRequest,
+    tenant: Tenant = Depends(get_tenant),
+):
+    """Add a new pane to a session workspace."""
+    try:
+        pane = await _sessions.add_pane(
+            session_id=session_id,
+            tenant_id=tenant.tenant_id,
+            tool=req.tool,
+            role=req.role,
+            cols=req.cols,
+            rows=req.rows,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return PaneResponse(
+        pane_id=pane.pane_id,
+        tool=pane.tool,
+        role=pane.role,
+        title=pane.title,
+    )
+
+
+@router.delete("/sessions/{session_id}/panes/{pane_id}")
+async def remove_pane(
+    session_id: str,
+    pane_id: str,
+    tenant: Tenant = Depends(get_tenant),
+):
+    """Remove a pane from a session workspace."""
+    ok = await _sessions.remove_pane(session_id, tenant.tenant_id, pane_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pane not found")
+    return {"status": "removed", "pane_id": pane_id}
+
+
+@router.get("/sessions/{session_id}/layout")
+async def get_layout(
+    session_id: str,
+    tenant: Tenant = Depends(get_tenant),
+):
+    """Get the current layout tree for a session workspace."""
+    layout = _sessions.get_layout(session_id, tenant.tenant_id)
+    if layout is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session_id": session_id, "layout": layout}

@@ -9,6 +9,7 @@ from aetherterm.agiterm.auth.api_key import APIKeyAuthenticator
 from aetherterm.agiterm.sessions.manager import SDKSessionManager
 from aetherterm.agiterm.api.routes import router, init_routes
 from aetherterm.agiterm.api.ws_handler import handle_sdk_websocket
+from aetherterm.agiterm.api.ws_workspace import handle_workspace_websocket
 
 log = logging.getLogger("agiterm.server")
 
@@ -49,10 +50,15 @@ def create_app(
     init_routes(auth, sessions)
     app.include_router(router)
 
-    # WebSocket endpoint for terminal sessions
+    # WebSocket endpoint for single-PTY terminal sessions (backward compatible)
     @app.websocket("/ws/sdk/{session_id}")
     async def ws_sdk(websocket: WebSocket, session_id: str):
         await handle_sdk_websocket(websocket, session_id, auth, sessions)
+
+    # WebSocket endpoint for workspace multi-pane sessions
+    @app.websocket("/ws/workspace/{session_id}")
+    async def ws_workspace(websocket: WebSocket, session_id: str):
+        await handle_workspace_websocket(websocket, session_id, auth, sessions)
 
     @app.on_event("startup")
     async def startup():
