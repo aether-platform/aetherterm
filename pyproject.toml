@@ -38,15 +38,15 @@ dependencies = [
     "click",
     "websockets",
     "httpx",
-    # ZMQ Agent間通信
-    "pyzmq>=25.0.0",
-    "msgpack>=1.0.0",
+    # NATS Agent間通信
+    "nats-py>=2.9.0",
     # LLM integration for log analysis
     "litellm>=1.0.0",
 ]
 
 [project.optional-dependencies]
-nats = ["nats-py>=2.9.0"]
+
+mcp = ["mcp>=1.0.0"]  # MCP server for non-Claude agent messaging
 themes = ["libsass"]
 dev = ["ruff", "pre-commit", "mypy", "pytest", "pytest-cov", "pytest-asyncio"]
 test = [
@@ -76,6 +76,11 @@ aetherterm-shell-monitor = "aetherterm.agentshell.pty_monitor.main:main"
 aetherterm-dummy-ai = "aetherterm.agentshell.pty_monitor.dummy_ai_server:main"
 aetherterm-generate-ssl = "aetherterm.scripts.generate_ssl_certs:main"
 aetherterm-tmux = "aetherterm.scripts.tmux_cli:tmux"
+agiterm-server = "aetherterm.agiterm.main:main"
+aetherterm-tmux-shim = "aetherterm.agentserver.tmux_shim:main"
+aetherterm-tmux-mcp = "aetherterm.agentshell.tmux_mcp:main"
+aetherterm-tmux-bridge = "aetherterm.agentshell.tmux_bridge:main"
+aetherterm-wm = "aetherterm.agentserver.wm_cli:main"
 
 [project.entry-points."jupyter_serverproxy_servers"]
 term = "aetherterm.scripts.jupyter_proxy:setup_aetherterm"
