@@ -48,28 +48,14 @@ class SDKSessionManager:
         """Create a new PTY session for a tenant user."""
         session_id = f"sdk-{uuid.uuid4().hex[:12]}"
 
-        # Fork a PTY process
-        pid, master_fd = pty.openpty()
-        child_pid = os.fork()
+        # Fork a PTY process using pty.fork() for correct terminal setup
+        child_pid, master_fd = pty.fork()
 
         if child_pid == 0:
-            # Child process
-            os.setsid()
-            os.close(master_fd)
-
-            # Set up slave as controlling terminal
-            slave_fd = os.open(os.ttyname(pid), os.O_RDWR)
-            os.dup2(slave_fd, 0)
-            os.dup2(slave_fd, 1)
-            os.dup2(slave_fd, 2)
-            os.close(slave_fd)
-            os.close(pid)
-
+            # Child process — exec the shell
             os.execvp(shell, [shell])
 
         # Parent process
-        os.close(pid)
-
         pty_session = PTYSession(
             session_id=session_id,
             master_fd=master_fd,
