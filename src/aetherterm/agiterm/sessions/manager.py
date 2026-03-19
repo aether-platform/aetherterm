@@ -1,4 +1,4 @@
-"""SDK session manager — thin wrapper around PTYSessionManager for multi-tenant use.
+"""SDK session manager — multi-tenant PTY management using shared core.
 
 Supports skill injection: before spawning a Claude Code session, the manager
 can write SKILL.md files and CLAUDE.md context into the session workspace so
@@ -10,14 +10,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import pty
 import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from aetherterm.agentserver.core.sessions.manager import PTYSession, PTYSessionManager
+from aetherterm.core.pane.layout import LayoutEngine
+from aetherterm.core.pty import PTYManager, PTYSession
 
 log = logging.getLogger("agiterm.sessions")
 
@@ -98,7 +98,7 @@ TOOL_PRESETS: dict[str, dict] = {
         "env": {"TERM": "xterm-256color"},
     },
     "codex": {
-        "cmd": ["codex"],
+        "cmd": ["codex", "--full-auto"],
         "label": "OpenAI Codex CLI",
         "env": {"TERM": "xterm-256color"},
     },
@@ -113,36 +113,6 @@ TOOL_PRESETS: dict[str, dict] = {
         "env": {"TERM": "xterm-256color"},
     },
 }
-
-
-# ---------------------------------------------------------------------------
-# Layout tree helpers
-# ---------------------------------------------------------------------------
-
-def _build_balanced_layout(pane_ids: list[str], direction: str = "hsplit") -> dict[str, Any]:
-    """Build a balanced binary tree layout from a list of pane IDs.
-
-    The tree alternates between hsplit and vsplit at each depth level to
-    produce a tiled layout similar to tmux's balanced-tiling.
-
-    Returns a dict representing the tree node:
-      - Leaf:     {"type": "leaf", "pane_id": "..."}
-      - Internal: {"type": "hsplit"|"vsplit", "children": [left, right]}
-    """
-    if not pane_ids:
-        return {}
-    if len(pane_ids) == 1:
-        return {"type": "leaf", "pane_id": pane_ids[0]}
-
-    mid = len(pane_ids) // 2
-    next_dir = "vsplit" if direction == "hsplit" else "hsplit"
-    return {
-        "type": direction,
-        "children": [
-            _build_balanced_layout(pane_ids[:mid], next_dir),
-            _build_balanced_layout(pane_ids[mid:], next_dir),
-        ],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -180,13 +150,13 @@ class SDKSessionManager:
     """Manages PTY sessions with tenant isolation.
 
     Each session is owned by a tenant + user pair.
-    Reuses the core PTYSession for actual PTY operations.
+    Uses the shared core PTYManager for PTY lifecycle.
     """
 
     def __init__(self, sandbox_image: str = "") -> None:
         self._sessions: dict[str, SDKSession] = {}
-        self._pty_manager = PTYSessionManager()
-        self._sandbox_image = sandbox_image  # Docker image for sandboxed sessions
+        self._pty_manager = PTYManager()
+        self._sandbox_image = sandbox_image
 
     @staticmethod
     def available_tools() -> dict[str, str]:
@@ -202,6 +172,51 @@ class SDKSessionManager:
             }
         return result
 
+    @staticmethod
+    def _trust_workspace(tool: str, workspace: str) -> None:
+        """Pre-trust a workspace directory for AI CLI tools.
+
+        - Codex: Add [projects."<path>"] trust_level = "trusted" to ~/.codex/config.toml
+        - Claude: Add to trustedDirectories in ~/.claude/settings.json
+        """
+        import json
+
+        home = os.path.expanduser("~")
+
+        if tool == "codex":
+            config_path = os.path.join(home, ".codex", "config.toml")
+            try:
+                content = ""
+                if os.path.exists(config_path):
+                    with open(config_path) as f:
+                        content = f.read()
+
+                section = f'[projects."{workspace}"]\ntrust_level = "trusted"\n'
+                if workspace not in content:
+                    with open(config_path, "a") as f:
+                        f.write(f"\n{section}")
+                    log.debug("Codex trust added for %s", workspace)
+            except OSError as e:
+                log.warning("Failed to configure Codex trust: %s", e)
+
+        elif tool == "claude":
+            settings_path = os.path.join(home, ".claude", "settings.json")
+            try:
+                settings: dict = {}
+                if os.path.exists(settings_path):
+                    with open(settings_path) as f:
+                        settings = json.load(f)
+
+                trusted = settings.get("trustedDirectories", [])
+                if workspace not in trusted:
+                    trusted.append(workspace)
+                    settings["trustedDirectories"] = trusted
+                    with open(settings_path, "w") as f:
+                        json.dump(settings, f, indent=2)
+                    log.debug("Claude trust added for %s", workspace)
+            except (OSError, json.JSONDecodeError) as e:
+                log.warning("Failed to configure Claude trust: %s", e)
+
     def _build_command(self, tool: str, sandbox: bool) -> list[str]:
         """Build the command to execute for a session."""
         preset = TOOL_PRESETS.get(tool)
@@ -211,10 +226,9 @@ class SDKSessionManager:
         cmd = list(preset["cmd"])
 
         if sandbox and self._sandbox_image:
-            # Wrap in Docker for isolation
             docker_cmd = [
                 "docker", "run", "--rm", "-it",
-                "--network=none",  # No network access in sandbox
+                "--network=none",
                 "--memory=512m",
                 "--cpus=1",
                 "--pids-limit=100",
@@ -234,6 +248,7 @@ class SDKSessionManager:
         cols: int = 80,
         rows: int = 24,
         label: str = "",
+        prompt: str = "",
         skills: list[SkillSource] | None = None,
         workspace: str = "",
         auth_token: str = "",
@@ -241,19 +256,11 @@ class SDKSessionManager:
     ) -> SDKSession:
         """Create a new PTY session for a tenant user.
 
-        Args:
-            tool: One of "bash", "claude", "codex", "opencode", "gemini"
-            sandbox: If True, run inside a Docker container for isolation
-            skills: Skill packages to inject before starting the session
-            workspace: Working directory for the session (auto-created if empty)
-            auth_token: OIDC Bearer token (LogTo) for API authentication
-            api_base_url: Secretary.IO API base URL for skill API calls
-
         Lifecycle:
             1. Provision workspace directory
             2. Inject skills (SKILL.md + CLAUDE.md) into workspace
-            3. Inject auth credentials as environment variables
-            4. Spawn PTY process with tool command
+            3. Inject auth credentials as files
+            4. Spawn PTY process via shared core PTYManager
         """
         session_id = f"sdk-{uuid.uuid4().hex[:12]}"
 
@@ -268,35 +275,40 @@ class SDKSessionManager:
             skill_env = inject_skills(workspace, skills)
             log.info("Injected %d skills into %s", len(skills), workspace)
 
-        # Phase 3: Inject auth credentials
-        auth_env: dict[str, str] = {}
+        # Phase 3: Inject auth credentials as files (0600 permissions)
+        creds_dir = os.path.join(workspace, ".agiterm", "credentials")
+        os.makedirs(creds_dir, mode=0o700, exist_ok=True)
         if auth_token:
-            auth_env["SECRETARY_AUTH_TOKEN"] = auth_token
+            token_path = os.path.join(creds_dir, "token")
+            with open(token_path, "w") as f:
+                f.write(auth_token)
+            os.chmod(token_path, 0o600)
         if api_base_url:
-            auth_env["SECRETARY_API_URL"] = api_base_url
+            url_path = os.path.join(creds_dir, "api_url")
+            with open(url_path, "w") as f:
+                f.write(api_base_url)
+            os.chmod(url_path, 0o600)
+
+        auth_env: dict[str, str] = {
+            "AGITERM_CREDENTIALS_DIR": creds_dir,
+        }
+
+        # Pre-trust workspace for AI CLI tools
+        self._trust_workspace(tool, workspace)
 
         cmd = self._build_command(tool, sandbox)
         preset = TOOL_PRESETS.get(tool, TOOL_PRESETS["bash"])
         extra_env = {**preset.get("env", {}), **skill_env, **auth_env}
 
-        # Phase 4: Spawn PTY
-        child_pid, master_fd = pty.fork()
-
-        if child_pid == 0:
-            # Child process
-            os.chdir(workspace)
-            for k, v in extra_env.items():
-                os.environ[k] = v
-            os.environ.setdefault("TERM", "xterm-256color")
-            os.execvp(cmd[0], cmd)
-
-        # Parent process
-        pty_session = PTYSession(
+        # Phase 4: Spawn PTY via shared core
+        pty_session = await self._pty_manager.spawn(
             session_id=session_id,
-            master_fd=master_fd,
-            pid=child_pid,
+            cmd=cmd,
+            env=extra_env,
+            cwd=workspace,
+            cols=cols,
+            rows=rows,
         )
-        pty_session.resize(cols, rows)
 
         if not label:
             label = preset.get("label", tool)
@@ -315,6 +327,15 @@ class SDKSessionManager:
             "Created session %s tool=%s sandbox=%s tenant=%s user=%s",
             session_id, tool, sandbox, tenant_id, user_id,
         )
+
+        # Schedule prompt injection after tool starts up
+        if prompt:
+            asyncio.get_event_loop().call_later(
+                1.5,  # Delay to let the shell/tool initialize
+                lambda: pty_session.write(prompt.encode() + b"\n"),
+            )
+            log.info("Scheduled prompt for session %s: %s", session_id, prompt[:80])
+
         return sdk_session
 
     def get_session(
@@ -345,15 +366,12 @@ class SDKSessionManager:
         if not session:
             return False
 
-        try:
-            os.kill(session.pty_session.pid, 9)
-        except OSError:
-            pass
+        # Kill primary PTY via shared core
+        await self._pty_manager.kill(session_id)
 
-        try:
-            os.close(session.pty_session.master_fd)
-        except OSError:
-            pass
+        # Kill pane PTYs
+        for pane in session.panes:
+            await self._pty_manager.kill(pane.pane_id)
 
         del self._sessions[session_id]
         log.info("Destroyed session %s", session_id)
@@ -363,29 +381,11 @@ class SDKSessionManager:
         self,
         session: SDKSession,
     ) -> asyncio.Queue[bytes]:
-        """Create an output queue for a session (for WebSocket streaming)."""
-        queue: asyncio.Queue[bytes] = asyncio.Queue()
-        session.pty_session.clients.add(queue)
+        """Create an output queue for a session (for WebSocket streaming).
 
-        loop = asyncio.get_event_loop()
-        loop.add_reader(
-            session.pty_session.master_fd,
-            self._on_pty_output,
-            session.pty_session,
-        )
-
-        return queue
-
-    def _on_pty_output(self, pty_session: PTYSession) -> None:
-        """Callback when PTY has output ready."""
-        try:
-            data = os.read(pty_session.master_fd, 65536)
-            if data:
-                pty_session.history.extend(data)
-                for queue in pty_session.clients:
-                    queue.put_nowait(data)
-        except OSError:
-            pass
+        The shared core PTYManager handles the read loop; we just subscribe.
+        """
+        return session.pty_session.subscribe()
 
     # ------------------------------------------------------------------
     # Pane management (workspace multi-pane support)
@@ -402,10 +402,7 @@ class SDKSessionManager:
     ) -> Pane:
         """Add a new pane to an existing session.
 
-        Spawns a new PTY process and attaches it to the session's pane list.
-        The layout is automatically rebalanced.
-
-        Raises ValueError if session not found or tool unknown.
+        Spawns a new PTY process via shared core and attaches to the session.
         """
         session = self.get_session(session_id, tenant_id)
         if not session:
@@ -417,27 +414,17 @@ class SDKSessionManager:
                 f"Unknown tool: {tool}. Available: {list(TOOL_PRESETS.keys())}"
             )
 
+        pane_id = f"pane-{uuid.uuid4().hex[:8]}"
         cmd = list(preset["cmd"])
         extra_env = preset.get("env", {})
 
-        pane_id = f"pane-{uuid.uuid4().hex[:8]}"
-
-        child_pid, master_fd = pty.fork()
-
-        if child_pid == 0:
-            # Child process
-            for k, v in extra_env.items():
-                os.environ[k] = v
-            os.environ.setdefault("TERM", "xterm-256color")
-            os.execvp(cmd[0], cmd)
-
-        # Parent process
-        pane_pty = PTYSession(
+        pane_pty = await self._pty_manager.spawn(
             session_id=pane_id,
-            master_fd=master_fd,
-            pid=child_pid,
+            cmd=cmd,
+            env=extra_env,
+            cols=cols,
+            rows=rows,
         )
-        pane_pty.resize(cols, rows)
 
         title = role if role else preset.get("label", tool)
 
@@ -452,10 +439,7 @@ class SDKSessionManager:
         session.panes.append(pane)
         log.info(
             "Added pane %s tool=%s role=%s to session=%s",
-            pane_id,
-            tool,
-            role,
-            session_id,
+            pane_id, tool, role, session_id,
         )
         return pane
 
@@ -465,26 +449,14 @@ class SDKSessionManager:
         tenant_id: str,
         pane_id: str,
     ) -> bool:
-        """Remove a pane from a session and kill its PTY process.
-
-        Returns True if the pane was found and removed, False otherwise.
-        """
+        """Remove a pane from a session and kill its PTY process."""
         session = self.get_session(session_id, tenant_id)
         if not session:
             return False
 
         for i, pane in enumerate(session.panes):
             if pane.pane_id == pane_id:
-                # Kill the PTY
-                try:
-                    os.kill(pane.pty_session.pid, 9)
-                except OSError:
-                    pass
-                try:
-                    os.close(pane.pty_session.master_fd)
-                except OSError:
-                    pass
-
+                await self._pty_manager.kill(pane_id)
                 session.panes.pop(i)
                 log.info("Removed pane %s from session=%s", pane_id, session_id)
                 return True
@@ -496,17 +468,15 @@ class SDKSessionManager:
         session_id: str,
         tenant_id: str,
     ) -> dict[str, Any] | None:
-        """Return the current layout as a balanced binary tree.
-
-        Returns None if the session is not found.
-        Returns an empty dict if there are no panes.
-        """
+        """Return the current layout as a balanced binary tree."""
         session = self.get_session(session_id, tenant_id)
         if not session:
             return None
 
         pane_ids = [p.pane_id for p in session.panes]
-        return _build_balanced_layout(pane_ids)
+        if not pane_ids:
+            return {}
+        return LayoutEngine.build_balanced(pane_ids).to_dict()
 
     def get_panes(
         self,

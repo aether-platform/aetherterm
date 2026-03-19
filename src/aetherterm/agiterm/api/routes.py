@@ -1,6 +1,7 @@
 """REST API routes for WorkWithAGI SDK."""
 
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,6 +40,8 @@ class CreateSessionRequest(BaseModel):
     cols: int = 80
     rows: int = 24
     label: str = ""
+    prompt: str = ""
+    skill_ids: list[str] = []
 
 
 class SessionResponse(BaseModel):
@@ -91,6 +94,21 @@ async def create_session(
             detail=f"Max sessions ({tenant.max_sessions}) reached",
         )
 
+    # Resolve skills via SkillRegistry if skill_ids provided
+    skills = None
+    if req.skill_ids:
+        registry_url = os.environ.get("SKILL_REGISTRY_URL", "")
+        if registry_url:
+            from aetherterm.knowledgehub.client import SkillRegistryClient
+
+            client = SkillRegistryClient(base_url=registry_url)
+            try:
+                skills = await client.resolve(tenant.tenant_id, req.skill_ids)
+            except Exception as e:
+                log.warning("SkillRegistry resolve failed: %s", e)
+        else:
+            log.warning("skill_ids requested but SKILL_REGISTRY_URL not set")
+
     try:
         session = await _sessions.create_session(
             tenant_id=tenant.tenant_id,
@@ -100,6 +118,8 @@ async def create_session(
             cols=req.cols,
             rows=req.rows,
             label=req.label,
+            prompt=req.prompt,
+            skills=skills,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
