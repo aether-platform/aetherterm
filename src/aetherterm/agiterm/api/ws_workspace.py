@@ -64,7 +64,28 @@ async def handle_workspace_websocket(
     pane_tasks: dict[str, asyncio.Task] = {}
     pane_queues: dict[str, asyncio.Queue[bytes]] = {}
 
+    # Workspace event listener — receives events from add_pane/remove_pane
+    async def on_workspace_event(event_type: str, data: dict) -> None:
+        try:
+            await websocket.send_text(json.dumps({"type": event_type, **data}))
+
+            # Auto-start reader for newly added panes
+            if event_type == "pane_added":
+                pane_id = data.get("pane_id")
+                if pane_id and pane_id not in pane_tasks:
+                    pane = sessions.get_pane(session_id, tenant.tenant_id, pane_id)
+                    if pane:
+                        _start_pane_reader(
+                            pane_id, pane.pty_session, websocket,
+                            sessions, pane_tasks, pane_queues,
+                        )
+        except Exception:
+            log.debug("Failed to send workspace event: %s", event_type)
+
     try:
+        # Register listener for live updates from REST API
+        session.add_workspace_listener(on_workspace_event)
+
         # Send initial layout sync
         layout = sessions.get_layout(session_id, tenant.tenant_id)
         if layout is not None:
@@ -93,6 +114,7 @@ async def handle_workspace_websocket(
     except Exception:
         log.exception("Workspace WebSocket error: session=%s", session_id)
     finally:
+        session.remove_workspace_listener(on_workspace_event)
         # Cancel all pane output tasks
         for task in pane_tasks.values():
             task.cancel()

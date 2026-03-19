@@ -144,6 +144,27 @@ class SDKSession:
     label: str = ""
     # Workspace panes — ordered list preserves insertion order for layout
     panes: list[Pane] = field(default_factory=list)
+    # Workspace event listeners (WebSocket handlers register here)
+    _workspace_listeners: list = field(default_factory=list)
+
+    def add_workspace_listener(self, callback) -> None:
+        """Register a callback(event_type, data) for workspace changes."""
+        self._workspace_listeners.append(callback)
+
+    def remove_workspace_listener(self, callback) -> None:
+        """Unregister a workspace listener."""
+        try:
+            self._workspace_listeners.remove(callback)
+        except ValueError:
+            pass
+
+    async def notify_workspace(self, event_type: str, data: dict) -> None:
+        """Notify all workspace listeners of an event."""
+        for cb in list(self._workspace_listeners):
+            try:
+                await cb(event_type, data)
+            except Exception:
+                pass
 
 
 class SDKSessionManager:
@@ -441,6 +462,14 @@ class SDKSessionManager:
             "Added pane %s tool=%s role=%s to session=%s",
             pane_id, tool, role, session_id,
         )
+
+        # Notify workspace listeners
+        layout = self.get_layout(session_id, tenant_id)
+        await session.notify_workspace("pane_added", {
+            "pane_id": pane_id, "role": role, "tool": tool, "title": title,
+        })
+        await session.notify_workspace("layout", {"tree": layout})
+
         return pane
 
     async def remove_pane(
@@ -459,6 +488,12 @@ class SDKSessionManager:
                 await self._pty_manager.kill(pane_id)
                 session.panes.pop(i)
                 log.info("Removed pane %s from session=%s", pane_id, session_id)
+
+                # Notify workspace listeners
+                await session.notify_workspace("pane_removed", {"pane_id": pane_id})
+                layout = self.get_layout(session_id, tenant_id)
+                await session.notify_workspace("layout", {"tree": layout})
+
                 return True
 
         return False
