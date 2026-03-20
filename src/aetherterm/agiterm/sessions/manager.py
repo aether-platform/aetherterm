@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from aetherterm.agiterm.sandbox import SandboxBackend, create_backend
 from aetherterm.core.pane.layout import LayoutEngine
 from aetherterm.core.pty import PTYManager, PTYSession
 
@@ -93,7 +94,7 @@ TOOL_PRESETS: dict[str, dict] = {
         "env": {},
     },
     "claude": {
-        "cmd": ["claude"],
+        "cmd": ["claude", "--dangerously-skip-permissions"],
         "label": "Claude Code",
         "env": {"TERM": "xterm-256color"},
     },
@@ -142,6 +143,8 @@ class SDKSession:
     pty_session: PTYSession
     created_at: float = field(default_factory=lambda: __import__("time").time())
     label: str = ""
+    backend_type: str = "cri"
+    runtime_handler: str = ""
     # Workspace panes — ordered list preserves insertion order for layout
     panes: list[Pane] = field(default_factory=list)
     # Workspace event listeners (WebSocket handlers register here)
@@ -174,10 +177,10 @@ class SDKSessionManager:
     Uses the shared core PTYManager for PTY lifecycle.
     """
 
-    def __init__(self, sandbox_image: str = "") -> None:
+    def __init__(self, sandbox_backend: SandboxBackend | None = None) -> None:
         self._sessions: dict[str, SDKSession] = {}
         self._pty_manager = PTYManager()
-        self._sandbox_image = sandbox_image
+        self._backend = sandbox_backend or create_backend()
 
     @staticmethod
     def available_tools() -> dict[str, str]:
@@ -238,34 +241,20 @@ class SDKSessionManager:
             except (OSError, json.JSONDecodeError) as e:
                 log.warning("Failed to configure Claude trust: %s", e)
 
-    def _build_command(self, tool: str, sandbox: bool) -> list[str]:
-        """Build the command to execute for a session."""
+    def _resolve_command(self, tool: str, username: str) -> list[str]:
+        """Resolve the command for a session, wrapping via CRI sandbox backend."""
         preset = TOOL_PRESETS.get(tool)
         if not preset:
             raise ValueError(f"Unknown tool: {tool}. Available: {list(TOOL_PRESETS.keys())}")
 
         cmd = list(preset["cmd"])
-
-        if sandbox and self._sandbox_image:
-            docker_cmd = [
-                "docker", "run", "--rm", "-it",
-                "--network=none",
-                "--memory=512m",
-                "--cpus=1",
-                "--pids-limit=100",
-                f"--name=agi-sandbox-{uuid.uuid4().hex[:8]}",
-                self._sandbox_image,
-            ] + cmd
-            return docker_cmd
-
-        return cmd
+        return self._backend.wrap_command(username, cmd)
 
     async def create_session(
         self,
         tenant_id: str,
         user_id: str,
         tool: str = "bash",
-        sandbox: bool = False,
         cols: int = 80,
         rows: int = 24,
         label: str = "",
@@ -274,6 +263,7 @@ class SDKSessionManager:
         workspace: str = "",
         auth_token: str = "",
         api_base_url: str = "",
+        runtime_handler: str = "",
     ) -> SDKSession:
         """Create a new PTY session for a tenant user.
 
@@ -281,23 +271,25 @@ class SDKSessionManager:
             1. Provision workspace directory
             2. Inject skills (SKILL.md + CLAUDE.md) into workspace
             3. Inject auth credentials as files
-            4. Spawn PTY process via shared core PTYManager
+            4. Prepare sandbox (if sandbox=True and CRI available)
+            5. Spawn PTY process via shared core PTYManager
         """
         session_id = f"sdk-{uuid.uuid4().hex[:12]}"
 
-        # Phase 1: Provision workspace
+        # Phase 1: Host workspace (mounted as /workspace in CRI container)
+        host_workspace = f"/tmp/aetherterm-workspaces/{user_id}"
+        os.makedirs(host_workspace, exist_ok=True)
         if not workspace:
-            workspace = os.path.join("/tmp", "agiterm-sessions", session_id)
-        os.makedirs(workspace, exist_ok=True)
+            workspace = "/workspace"
 
-        # Phase 2: Inject skills
+        # Phase 2: Inject skills (into host workspace, visible in container)
         skill_env: dict[str, str] = {}
         if skills:
-            skill_env = inject_skills(workspace, skills)
-            log.info("Injected %d skills into %s", len(skills), workspace)
+            skill_env = inject_skills(host_workspace, skills)
+            log.info("Injected %d skills into %s", len(skills), host_workspace)
 
-        # Phase 3: Inject auth credentials as files (0600 permissions)
-        creds_dir = os.path.join(workspace, ".agiterm", "credentials")
+        # Phase 3: Inject auth credentials
+        creds_dir = os.path.join(host_workspace, ".agiterm", "credentials")
         os.makedirs(creds_dir, mode=0o700, exist_ok=True)
         if auth_token:
             token_path = os.path.join(creds_dir, "token")
@@ -317,11 +309,21 @@ class SDKSessionManager:
         # Pre-trust workspace for AI CLI tools
         self._trust_workspace(tool, workspace)
 
-        cmd = self._build_command(tool, sandbox)
         preset = TOOL_PRESETS.get(tool, TOOL_PRESETS["bash"])
         extra_env = {**preset.get("env", {}), **skill_env, **auth_env}
 
-        # Phase 4: Spawn PTY via shared core
+        # Phase 4: Prepare CRI sandbox (PodSandbox + Container)
+        await self._backend.prepare(
+            username=user_id,
+            session_id=session_id,
+            image=os.environ.get("SANDBOX_IMAGE", "aetherterm-sandbox:latest"),
+            env=extra_env,
+            runtime_handler=runtime_handler,
+        )
+
+        cmd = self._resolve_command(tool, user_id)
+
+        # Phase 5: Spawn PTY via shared core
         pty_session = await self._pty_manager.spawn(
             session_id=session_id,
             cmd=cmd,
@@ -341,18 +343,20 @@ class SDKSessionManager:
             tool=tool,
             pty_session=pty_session,
             label=label,
+            backend_type=self._backend.backend_type,
+            runtime_handler=runtime_handler,
         )
 
         self._sessions[session_id] = sdk_session
         log.info(
-            "Created session %s tool=%s sandbox=%s tenant=%s user=%s",
-            session_id, tool, sandbox, tenant_id, user_id,
+            "Created session %s tool=%s backend=%s tenant=%s user=%s",
+            session_id, tool, self._backend.backend_type, tenant_id, user_id,
         )
 
         # Schedule prompt injection after tool starts up
         if prompt:
             asyncio.get_event_loop().call_later(
-                1.5,  # Delay to let the shell/tool initialize
+                1.5,
                 lambda: pty_session.write(prompt.encode() + b"\n"),
             )
             log.info("Scheduled prompt for session %s: %s", session_id, prompt[:80])
@@ -393,6 +397,9 @@ class SDKSessionManager:
         # Kill pane PTYs
         for pane in session.panes:
             await self._pty_manager.kill(pane.pane_id)
+
+        # Cleanup CRI sandbox (PodSandbox + Container)
+        await self._backend.cleanup(session.user_id, session_id)
 
         del self._sessions[session_id]
         log.info("Destroyed session %s", session_id)

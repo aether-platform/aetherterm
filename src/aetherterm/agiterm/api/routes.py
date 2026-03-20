@@ -36,12 +36,12 @@ def get_tenant(api_key: str = Depends(api_key_header)) -> Tenant:
 class CreateSessionRequest(BaseModel):
     user_id: str
     tool: str = "bash"
-    sandbox: bool = False
     cols: int = 80
     rows: int = 24
     label: str = ""
     prompt: str = ""
     skill_ids: list[str] = []
+    runtime_handler: str = ""
 
 
 class SessionResponse(BaseModel):
@@ -51,6 +51,7 @@ class SessionResponse(BaseModel):
     tool: str
     label: str
     ws_url: str
+    backend_type: str = "direct"
 
 
 class AddPaneRequest(BaseModel):
@@ -94,32 +95,32 @@ async def create_session(
             detail=f"Max sessions ({tenant.max_sessions}) reached",
         )
 
-    # Resolve skills via SkillRegistry if skill_ids provided
+    # Resolve skills via KnowledgeHub if skill_ids provided
     skills = None
     if req.skill_ids:
-        registry_url = os.environ.get("SKILL_REGISTRY_URL", "")
-        if registry_url:
-            from aetherterm.knowledgehub.client import SkillRegistryClient
+        hub_url = os.environ.get("KNOWLEDGEHUB_URL", "")
+        if hub_url:
+            from aetherterm.knowledgehub.client import KnowledgeHubClient
 
-            client = SkillRegistryClient(base_url=registry_url)
+            client = KnowledgeHubClient(base_url=hub_url)
             try:
                 skills = await client.resolve(tenant.tenant_id, req.skill_ids)
             except Exception as e:
-                log.warning("SkillRegistry resolve failed: %s", e)
+                log.warning("KnowledgeHub resolve failed: %s", e)
         else:
-            log.warning("skill_ids requested but SKILL_REGISTRY_URL not set")
+            log.warning("skill_ids requested but KNOWLEDGEHUB_URL not set")
 
     try:
         session = await _sessions.create_session(
             tenant_id=tenant.tenant_id,
             user_id=req.user_id,
             tool=req.tool,
-            sandbox=req.sandbox,
             cols=req.cols,
             rows=req.rows,
             label=req.label,
             prompt=req.prompt,
             skills=skills,
+            runtime_handler=req.runtime_handler,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -131,6 +132,7 @@ async def create_session(
         tool=session.tool,
         label=session.label,
         ws_url=f"/ws/sdk/{session.session_id}",
+        backend_type=session.backend_type,
     )
 
 

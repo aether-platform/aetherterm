@@ -47,6 +47,18 @@ dependencies = [
 [project.optional-dependencies]
 
 mcp = ["mcp>=1.0.0"]  # MCP server for non-Claude agent messaging
+knowledge = [  # KnowledgeHub RAG — ChromaDB (default backend)
+    "chromadb>=0.5.0",
+    "docling>=2.0.0",
+]
+knowledge-qdrant = [  # KnowledgeHub RAG — Qdrant backend
+    "qdrant-client>=1.7.0",
+    "docling>=2.0.0",
+]
+cri = [  # CRI sandbox (containerd)
+    "container-runtime-interface-api>=0.1.0",
+    "grpcio>=1.60.0",
+]
 themes = ["libsass"]
 dev = ["ruff", "pre-commit", "mypy", "pytest", "pytest-cov", "pytest-asyncio"]
 test = [
@@ -81,6 +93,7 @@ aetherterm-tmux-shim = "aetherterm.agentserver.tmux_shim:main"
 aetherterm-tmux-mcp = "aetherterm.agentshell.tmux_mcp:main"
 aetherterm-tmux-bridge = "aetherterm.agentshell.tmux_bridge:main"
 aetherterm-wm = "aetherterm.agentserver.wm_cli:main"
+aetherterm-knowledgehub = "aetherterm.knowledgehub.main:main"
 
 [project.entry-points."jupyter_serverproxy_servers"]
 term = "aetherterm.scripts.jupyter_proxy:setup_aetherterm"
@@ -105,7 +118,8 @@ aetherterm = [
     "agentserver/web/__init__.py",
     "agentserver/bin/*",
     "agentserver/terminals/*.py",
-    "aetherterm.conf.default"
+    "aetherterm.conf.default",
+    "knowledgehub/platform_skills/*/*.md",
 ]
 
 [tool.pytest.ini_options]
