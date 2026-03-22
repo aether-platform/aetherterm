@@ -177,10 +177,46 @@ class SDKSessionManager:
     Uses the shared core PTYManager for PTY lifecycle.
     """
 
-    def __init__(self, sandbox_backend: SandboxBackend | None = None) -> None:
+    def __init__(
+        self,
+        sandbox_backend: SandboxBackend | None = None,
+        litellm_proxy_url: str = "",
+    ) -> None:
         self._sessions: dict[str, SDKSession] = {}
         self._pty_manager = PTYManager()
         self._backend = sandbox_backend or create_backend()
+        self._litellm_proxy_url = litellm_proxy_url or os.environ.get(
+            "LITELLM_PROXY_URL", ""
+        )
+
+    # Map of tool name → env var that overrides the API base URL
+    _PROXY_ENV_MAP: dict[str, str] = {
+        "claude": "ANTHROPIC_BASE_URL",
+        "codex": "OPENAI_BASE_URL",
+        "opencode": "OPENAI_BASE_URL",
+        "gemini": "GEMINI_API_BASE_URL",
+    }
+
+    def _litellm_env_for_tool(self, tool: str, tenant_id: str = "") -> dict[str, str]:
+        """Return env vars to route a tool's API calls through the LiteLLM proxy.
+
+        Returns an empty dict when no proxy is configured or the tool is not
+        an AI CLI (e.g. plain bash).
+        """
+        if not self._litellm_proxy_url:
+            return {}
+
+        env_var = self._PROXY_ENV_MAP.get(tool)
+        if not env_var:
+            return {}
+
+        env: dict[str, str] = {env_var: self._litellm_proxy_url}
+
+        # Expose tenant/team ID so the proxy can attribute usage
+        if tenant_id:
+            env["LITELLM_TEAM_ID"] = tenant_id
+
+        return env
 
     @staticmethod
     def available_tools() -> dict[str, str]:
@@ -310,7 +346,8 @@ class SDKSessionManager:
         self._trust_workspace(tool, workspace)
 
         preset = TOOL_PRESETS.get(tool, TOOL_PRESETS["bash"])
-        extra_env = {**preset.get("env", {}), **skill_env, **auth_env}
+        proxy_env = self._litellm_env_for_tool(tool, tenant_id)
+        extra_env = {**preset.get("env", {}), **skill_env, **auth_env, **proxy_env}
 
         # Phase 4: Prepare CRI sandbox (PodSandbox + Container)
         await self._backend.prepare(

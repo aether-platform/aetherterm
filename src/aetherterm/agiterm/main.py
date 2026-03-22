@@ -26,7 +26,13 @@ from aetherterm.agiterm.sessions.manager import SDKSessionManager
     multiple=True,
     help="Register API key in format tenant_id:name:key (repeatable)",
 )
-def main(host: str, port: int, debug: bool, api_key: tuple[str, ...]):
+@click.option(
+    "--litellm-proxy",
+    default="",
+    envvar="LITELLM_PROXY_URL",
+    help="LiteLLM proxy URL for AI CLI tool API routing (env: LITELLM_PROXY_URL)",
+)
+def main(host: str, port: int, debug: bool, api_key: tuple[str, ...], litellm_proxy: str):
     """Start the WorkWithAGI SDK server."""
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
@@ -36,7 +42,10 @@ def main(host: str, port: int, debug: bool, api_key: tuple[str, ...]):
     log = logging.getLogger("agiterm")
 
     auth = APIKeyAuthenticator()
-    sessions = SDKSessionManager()
+    sessions = SDKSessionManager(litellm_proxy_url=litellm_proxy)
+
+    if litellm_proxy:
+        log.info("LiteLLM proxy enabled: %s", litellm_proxy)
 
     # Register API keys from CLI args
     for key_spec in api_key:
