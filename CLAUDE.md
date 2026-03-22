@@ -229,7 +229,7 @@ make check-outdated
 ### AgentShell (AI-Assisted Terminal)
 - **Entry Points**:
   - `src/aetherterm/agentshell/main.py` - Primary entry point (standalone wrapper)
-  - `src/aetherterm/agentshell/main_zmq.py` - ZMQ observer mode (connects to running terminal via PUB/SUB)
+
 - **Terminal Controller**: `src/aetherterm/agentshell/controller/terminal_controller.py`
 - **PTY Handling**: `src/aetherterm/agentshell/pty/` - Sync and async PTY implementations
 - **PTY Monitor**: `src/aetherterm/agentshell/pty_monitor/` - Real-time monitoring

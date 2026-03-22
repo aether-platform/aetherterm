@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ARG UID=1000
+ARG GID=1000
+
+RUN groupadd -g $GID aetherterm 2>/dev/null || true \
+ && useradd -m -u $UID -g $GID -s /bin/bash aetherterm \
+ && apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    curl git build-essential openssh-client procps \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir uv uvicorn
+
+WORKDIR /app
+RUN mkdir -p /tmp/aetherterm-wm-${UID} /tmp/aetherterm-shim-${UID} \
+ && chown -R aetherterm:aetherterm /tmp/aetherterm-wm-${UID} /tmp/aetherterm-shim-${UID}
+
+RUN mkdir -p /home/aetherterm/.cache/uv /home/aetherterm/.local \
+ && chown -R aetherterm:aetherterm /home/aetherterm
+
+USER aetherterm
+ENV PATH="/home/aetherterm/.local/bin:${PATH}"
+
+EXPOSE 57575
+
+COPY docker-entrypoint.dev.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["entrypoint.sh"]
+CMD ["aetherterm-agentserver", "--host=0.0.0.0", "--port=57575", "--unsecure", "--debug"]

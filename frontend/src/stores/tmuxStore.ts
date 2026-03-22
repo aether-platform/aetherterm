@@ -28,7 +28,6 @@ export interface TmuxPaneState {
   title: string
   exit_code: number | null
   created_at: number
-  zmq_topic: string
   history_size: number
   role: string
   mode?: 'terminal' | 'agent-inbox' | 'agent-tasks'

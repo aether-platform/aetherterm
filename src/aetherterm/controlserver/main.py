@@ -48,13 +48,13 @@ class ControlServerApp:
         """サーバー開始"""
         logger.info(f"ControlServer starting on {self.host}:{self.port}")
 
-        # CentralControllerを初期化（ZMQはController内部で管理）
+        # CentralControllerを初期化（NATSはController内部で管理）
         self.controller = CentralController(
             host=self.host,
             port=self.port,
         )
 
-        # WebSocket + ZMQ サーバー開始
+        # WebSocket + NATS サーバー開始
         await self.controller.start()
 
         # REST API サーバー開始

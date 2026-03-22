@@ -12,20 +12,21 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
 import websockets
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 from websockets.server import WebSocketServerProtocol
 
 from aetherterm.common.models import BlockCommand, LogAnalysisResult, SessionInfo
 
 from .blocking_manager import BlockingManager
+from .health_monitor import HealthMonitor
 from .llm_analyzer import LLMLogAnalyzer
 from .log_analysis_config import LogAnalysisConfig
 from .log_analysis_pipeline import LogAnalysisPipeline
 from .log_buffer import LogBufferManager
 from .log_pattern_compressor import LogPatternCompressor
-from .zmq_controller import ZMQController
+from .metrics_collector import MetricsCollector
+from .rest_api import create_rest_app as _create_rest_app
+from .nats_controller import NATSController
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +43,13 @@ class CentralController:
         self.host = host
         self.port = port
 
-        # 接続管理 — ZMQ agents + WebSocket admin clients
+        # 接続管理 — NATS agents + WebSocket admin clients
         self.agent_servers: Dict[str, WebSocketServerProtocol] = {}  # legacy WS agents
-        self.zmq_agents: Dict[str, str] = {}  # agent_id → status (ZMQ-registered)
+        self.nats_agents: Dict[str, str] = {}  # agent_id → status (NATS-registered)
         self.admin_clients: Set[WebSocketServerProtocol] = set()
 
-        # ZMQ transport (created in start())
-        self._zmq_controller: Optional[ZMQController] = None
+        # NATS transport (created in start())
+        self._nats_controller: Optional[NATSController] = None
 
         # 状態管理
         self.active_sessions: Dict[str, SessionInfo] = {}
@@ -77,6 +78,10 @@ class CentralController:
             on_flush=self._log_pipeline.on_log_flush,
         )
 
+        # Health monitor & Metrics collector
+        self._health_monitor = HealthMonitor(self)
+        self._metrics_collector = MetricsCollector(self)
+
         # WebSocketサーバー
         self.server = None
 
@@ -100,26 +105,32 @@ class CentralController:
         """中央制御サーバー開始"""
         logger.info(f"Starting CentralController on {self.host}:{self.port}")
 
-        # Start ZMQ controller (ROUTER + PUB + PULL sockets)
-        self._zmq_controller = ZMQController()
-        self._zmq_controller.on_log_received(self._handle_log_from_zmq)
-        self._zmq_controller.on_session_report(self._handle_session_report_from_zmq)
-        await self._zmq_controller.start()
-        logger.info("ZMQ controller started")
+        # Start NATS controller
+        self._nats_controller = NATSController()
+        self._nats_controller.on_log_received(self._handle_log_from_nats)
+        self._nats_controller.on_session_report(self._handle_session_report_from_nats)
+        await self._nats_controller.start()
+        logger.info("NATS controller started")
 
         # Start WebSocket server for admin UI
         self.server = await websockets.serve(self.handle_connection, self.host, self.port)
         await self._log_buffer_manager.start_timer()
 
+        # Start health monitor & metrics collector
+        await self._health_monitor.start()
+        await self._metrics_collector.start()
+
         logger.info(f"CentralController started on ws://{self.host}:{self.port}")
 
     async def stop(self):
         """中央制御サーバー停止"""
+        await self._metrics_collector.stop()
+        await self._health_monitor.stop()
         await self._log_buffer_manager.stop()
 
-        # Stop ZMQ controller
-        if self._zmq_controller:
-            await self._zmq_controller.stop()
+        # Stop NATS controller
+        if self._nats_controller:
+            await self._nats_controller.stop()
 
         if self.server:
             self.server.close()
@@ -178,6 +189,7 @@ class CentralController:
                 if data.get("type") == "agent_register":
                     agent_id = data.get("agent_id", f"agent_{len(self.agent_servers)}")
                     self.agent_servers[agent_id] = websocket
+                    self._health_monitor.register_agent(agent_id, transport="websocket")
                     logger.info(f"AgentServer registered: {agent_id}")
 
                     # 登録確認を送信
@@ -233,6 +245,10 @@ class CentralController:
         self, websocket: WebSocketServerProtocol, data: Dict, agent_id: str
     ):
         """AgentServerメッセージハンドラー"""
+        # Record activity as heartbeat
+        if agent_id:
+            self._health_monitor.record_heartbeat(agent_id)
+
         message_type = data.get("type")
 
         if message_type == "session_update":
@@ -284,15 +300,17 @@ class CentralController:
 
         self.active_sessions[session_id] = session_info
 
-    async def _handle_log_from_zmq(self, agent_server_id: str, log_entries: list) -> None:
-        """Handle log data received via ZMQ (SUB or PULL) from AgentServer/AgentShell.
+    async def _handle_log_from_nats(self, agent_server_id: str, log_entries: list) -> None:
+        """Handle log data received via NATS from AgentServer/AgentShell.
 
         log_entries may contain raw bytes (from PTY output) or structured dicts.
         Raw bytes are converted to structured entries for the analysis pipeline.
         """
-        # Track ZMQ agents
-        if agent_server_id and agent_server_id not in self.zmq_agents:
-            self.zmq_agents[agent_server_id] = "active"
+        # Track NATS agents
+        if agent_server_id and agent_server_id not in self.nats_agents:
+            self.nats_agents[agent_server_id] = "active"
+        if agent_server_id:
+            self._health_monitor.record_heartbeat(agent_server_id)
 
         # Normalize entries: raw bytes → structured dicts for LogPatternCompressor
         structured_entries = []
@@ -329,36 +347,38 @@ class CentralController:
             agent_server_id,
         )
 
-    async def _handle_session_report_from_zmq(self, agent_server_id: str, report: dict) -> None:
-        """Handle session report received via ZMQ from AgentServer."""
-        # Track ZMQ agents
-        if agent_server_id and agent_server_id not in self.zmq_agents:
-            self.zmq_agents[agent_server_id] = "active"
+    async def _handle_session_report_from_nats(self, agent_server_id: str, report: dict) -> None:
+        """Handle session report received via NATS from AgentServer."""
+        # Track NATS agents
+        if agent_server_id and agent_server_id not in self.nats_agents:
+            self.nats_agents[agent_server_id] = "active"
+        if agent_server_id:
+            self._health_monitor.record_heartbeat(agent_server_id)
 
         await self.update_session_info(report, agent_server_id)
 
     async def broadcast_to_agents(self, message: Dict):
-        """全AgentServerに一括送信（ZMQ + WebSocket）"""
+        """全AgentServerに一括送信（NATS + WebSocket）"""
         sent_count = 0
 
-        # ZMQ broadcast via ZMQController
-        if self._zmq_controller:
+        # NATS broadcast via NATSController
+        if self._nats_controller:
             msg_type_str = message.get("type", "")
             try:
                 if msg_type_str == "emergency_block":
-                    await self._zmq_controller.send_emergency_stop()
-                    sent_count += len(self.zmq_agents)
+                    await self._nats_controller.send_emergency_stop()
+                    sent_count += len(self.nats_agents)
                 elif msg_type_str == "unblock_session":
-                    await self._zmq_controller.send_unblock_input()
-                    sent_count += len(self.zmq_agents)
+                    await self._nats_controller.send_unblock_input()
+                    sent_count += len(self.nats_agents)
                 elif msg_type_str == "input_block":
-                    await self._zmq_controller.send_block_input()
-                    sent_count += len(self.zmq_agents)
+                    await self._nats_controller.send_block_input()
+                    sent_count += len(self.nats_agents)
                 elif msg_type_str == "input_allow":
-                    await self._zmq_controller.send_unblock_input()
-                    sent_count += len(self.zmq_agents)
+                    await self._nats_controller.send_unblock_input()
+                    sent_count += len(self.nats_agents)
             except Exception:
-                logger.exception("Failed to broadcast via ZMQ controller")
+                logger.exception("Failed to broadcast via NATS controller")
 
         # Legacy WebSocket broadcast
         if self.agent_servers:
@@ -369,7 +389,7 @@ class CentralController:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             sent_count += sum(1 for r in results if r is True)
 
-        if sent_count == 0 and not self.agent_servers and not self.zmq_agents:
+        if sent_count == 0 and not self.agent_servers and not self.nats_agents:
             logger.warning("No AgentServers connected for broadcast")
         else:
             logger.info(f"Broadcast sent to {sent_count} AgentServers")
@@ -563,23 +583,32 @@ class CentralController:
 
     def get_status_summary(self) -> Dict:
         """状態サマリーを取得"""
-        zmq_status = {
-            "connected": self._zmq_controller is not None,
-            "transport": "zmq-direct",
+        nats_status = {
+            "connected": self._nats_controller is not None,
+            "transport": "nats",
         }
-        zmq_detail = {}
-        if self._zmq_controller:
-            zmq_detail = self._zmq_controller.get_status()
+        nats_detail = {}
+        if self._nats_controller:
+            nats_detail = self._nats_controller.get_status()
+
+        health_summary = {}
+        if self._health_monitor:
+            health_summary = {
+                "total_agents": self._health_monitor.total_agents,
+                "healthy": self._health_monitor.get_healthy_count(),
+                "unhealthy": self._health_monitor.get_unhealthy_agents(),
+            }
 
         return {
-            "agent_servers_count": len(self.agent_servers) + len(self.zmq_agents),
+            "agent_servers_count": len(self.agent_servers) + len(self.nats_agents),
             "ws_agent_servers_count": len(self.agent_servers),
-            "zmq_agent_servers_count": len(self.zmq_agents),
+            "nats_agent_servers_count": len(self.nats_agents),
             "admin_clients_count": len(self.admin_clients),
             "active_sessions_count": len(self.active_sessions),
             "active_blocks_count": len(self.active_blocks),
             "total_block_history": len(self.block_history),
-            "zmq": {**zmq_status, **zmq_detail},
+            "nats": {**nats_status, **nats_detail},
+            "agent_health": health_summary,
             "last_activity": datetime.now().isoformat(),
         }
 
@@ -590,148 +619,6 @@ class CentralController:
     def create_rest_app(self) -> FastAPI:
         """Create a FastAPI app exposing REST admin endpoints.
 
-        Intended to be run alongside the WebSocket server (on a separate port).
+        Delegates to the extracted rest_api module.
         """
-        app = FastAPI(title="ControlServer Admin API")
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-
-        controller = self  # capture for closures
-
-        @app.get("/api/status")
-        async def api_status():
-            return JSONResponse(controller.get_status_summary())
-
-        @app.get("/api/sessions")
-        async def api_sessions():
-            if controller._zmq_controller:
-                sessions = controller._zmq_controller.list_sessions()
-                return JSONResponse([
-                    {
-                        "session_id": s.session_id,
-                        "agent_server_id": s.agent_server_id,
-                        "pane_ids": s.pane_ids,
-                        "shell_ids": s.shell_ids,
-                        "age_seconds": round(s.age_seconds, 1),
-                    }
-                    for s in sessions
-                ])
-            # Fallback to legacy active_sessions
-            return JSONResponse([
-                s.model_dump() for s in controller.active_sessions.values()
-            ])
-
-        @app.get("/api/shells")
-        async def api_shells():
-            if controller._zmq_controller:
-                shells = controller._zmq_controller.list_shells()
-                return JSONResponse([
-                    {
-                        "shell_id": s.shell_id,
-                        "session_id": s.session_id,
-                        "agent_server_id": s.agent_server_id,
-                    }
-                    for s in shells
-                ])
-            return JSONResponse([])
-
-        @app.post("/api/sessions/{session_id}/block")
-        async def api_block_session(session_id: str, request: Request):
-            body: dict[str, Any] = {}
-            if request.headers.get("content-type", "").startswith("application/json"):
-                body = await request.json()
-
-            reason = body.get("reason", "Admin-initiated block via REST API")
-
-            # Use ZMQ targeted block if available
-            if controller._zmq_controller:
-                await controller._zmq_controller.send_block_input(
-                    session_id=session_id, reason=reason
-                )
-
-            # Also record the block in legacy tracking
-            await controller.execute_block_session({
-                "session_id": session_id,
-                "reason": reason,
-                "admin_user": body.get("admin_user", "rest_api"),
-            })
-            return JSONResponse({"status": "blocked", "session_id": session_id})
-
-        @app.post("/api/sessions/{session_id}/unblock")
-        async def api_unblock_session(session_id: str, request: Request):
-            body: dict[str, Any] = {}
-            if request.headers.get("content-type", "").startswith("application/json"):
-                body = await request.json()
-
-            if controller._zmq_controller:
-                await controller._zmq_controller.send_unblock_input(
-                    session_id=session_id,
-                    admin_user=body.get("admin_user", "rest_api"),
-                )
-
-            await controller.execute_unblock_session({
-                "session_id": session_id,
-                "admin_user": body.get("admin_user", "rest_api"),
-            })
-            return JSONResponse({"status": "unblocked", "session_id": session_id})
-
-        @app.post("/api/sessions/{session_id}/kill")
-        async def api_kill_session(session_id: str):
-            if controller._zmq_controller:
-                info = controller._zmq_controller.get_session(session_id)
-                if info:
-                    await controller._zmq_controller.send_to_agent(
-                        info.agent_server_id,
-                        "kill_session",
-                        {"session_id": session_id},
-                    )
-                    return JSONResponse({"status": "kill_sent", "session_id": session_id})
-
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-
-        @app.post("/api/emergency-stop")
-        async def api_emergency_stop(request: Request):
-            body: dict[str, Any] = {}
-            if request.headers.get("content-type", "").startswith("application/json"):
-                body = await request.json()
-
-            reason = body.get("reason", "Emergency stop via REST API")
-
-            if controller._zmq_controller:
-                await controller._zmq_controller.send_emergency_stop(reason=reason)
-
-            await controller.execute_block_all({
-                "reason": reason,
-                "admin_user": body.get("admin_user", "rest_api"),
-            })
-            return JSONResponse({"status": "emergency_stop_triggered"})
-
-        @app.get("/api/analysis/{session_id}")
-        async def api_analysis_history(session_id: str):
-            history = controller._analysis_history.get(session_id, [])
-            return JSONResponse([
-                {
-                    "analysis_type": r.analysis_type,
-                    "anomalies": r.anomalies,
-                    "summary": r.summary,
-                    "risk_level": r.risk_level,
-                    "timestamp": r.timestamp,
-                    "model_used": r.model_used,
-                    "token_usage": r.token_usage,
-                }
-                for r in history
-            ])
-
-        @app.get("/api/blocks")
-        async def api_active_blocks():
-            return JSONResponse([b.model_dump() for b in controller.active_blocks.values()])
-
-        @app.get("/api/blocks/history")
-        async def api_block_history():
-            return JSONResponse([b.model_dump() for b in controller.block_history[-50:]])
-
-        return app
+        return _create_rest_app(self)

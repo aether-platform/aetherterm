@@ -19,9 +19,21 @@
 __version__ = "0.2.0"
 __author__ = "AetherTerm Team"
 
-from .config import WrapperConfig
-from .containers import WrapperApplication, get_application
-from .main import WrapperMain
+
+def __getattr__(name: str):
+    """Lazy imports to avoid pulling in heavy dependencies (opentelemetry etc.)
+    when only lightweight submodules like pty.pty_chain are needed."""
+    if name == "WrapperConfig":
+        from .config import WrapperConfig
+        return WrapperConfig
+    if name in ("WrapperApplication", "get_application"):
+        from .containers import WrapperApplication, get_application
+        return WrapperApplication if name == "WrapperApplication" else get_application
+    if name == "WrapperMain":
+        from .main import WrapperMain
+        return WrapperMain
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "WrapperApplication",

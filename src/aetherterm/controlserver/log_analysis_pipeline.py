@@ -5,13 +5,13 @@ pipeline.  Uses ``safe_create_task`` to avoid the bare ``asyncio.create_task`` a
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from aetherterm.common.models import LogAnalysisResult
-from aetherterm.common.zmq_utils import safe_create_task
 
 from .llm_analyzer import LLMLogAnalyzer
 from .log_analysis_config import LogAnalysisConfig
@@ -21,6 +21,22 @@ if TYPE_CHECKING:
     from .central_controller import CentralController
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_create_task(coro: Any, *, name: str | None = None, log: Any = None) -> asyncio.Task:
+    """Create an asyncio task that logs exceptions instead of silently dropping them."""
+    task = asyncio.create_task(coro, name=name)
+    _log = log or logger
+
+    def _done_callback(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc:
+            _log.error("Background task %s failed: %s", name or t.get_name(), exc, exc_info=exc)
+
+    task.add_done_callback(_done_callback)
+    return task
 
 
 class LogAnalysisPipeline:
@@ -45,7 +61,7 @@ class LogAnalysisPipeline:
 
     async def on_log_flush(self, session_id: str, entries: list[dict]) -> None:
         """Buffer flush callback: spawn analysis as a safe background task."""
-        safe_create_task(
+        _safe_create_task(
             self._analyze_and_dispatch(session_id, entries),
             name=f"log-analysis-{session_id}",
             logger=logger,
@@ -138,9 +154,9 @@ class LogAnalysisPipeline:
             f"{result.summary}"
         )
 
-        # Prefer ZMQ targeted block
-        if self._ctrl._zmq_controller:
-            await self._ctrl._zmq_controller.send_block_input(
+        # Prefer NATS targeted block
+        if self._ctrl._nats_controller:
+            await self._ctrl._nats_controller.send_block_input(
                 session_id=session_id, reason=reason
             )
 

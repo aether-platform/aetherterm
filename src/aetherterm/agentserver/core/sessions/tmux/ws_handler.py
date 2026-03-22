@@ -10,12 +10,13 @@ import asyncio
 import contextlib
 import json
 import logging
-import struct
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .....common.agent_protocol import AgentMessage, MessageType
+from aetherterm.common.agent_protocol import AgentMessage, MessageType
+from aetherterm.core.ws.framing import decode_binary_frame, encode_binary_frame
+
 from .session_registry import TmuxSessionRegistry
 from .status_bar import generate_status
 
@@ -23,22 +24,6 @@ if TYPE_CHECKING:
     from ...core.messaging.message_router import MessageRouter
 
 log = logging.getLogger("aetherterm.tmux.ws")
-
-
-def encode_binary_frame(pane_id: str, data: bytes) -> bytes:
-    """Encode a binary frame: [1 byte len][pane_id][data]."""
-    pane_bytes = pane_id.encode("utf-8")
-    return struct.pack("B", len(pane_bytes)) + pane_bytes + data
-
-
-def decode_binary_frame(frame: bytes) -> tuple[str, bytes]:
-    """Decode a binary frame back to (pane_id, data)."""
-    if not frame:
-        return ("", b"")
-    pane_id_len = frame[0]
-    pane_id = frame[1 : 1 + pane_id_len].decode("utf-8")
-    data = frame[1 + pane_id_len :]
-    return (pane_id, data)
 
 
 class TmuxWebSocketHandler:

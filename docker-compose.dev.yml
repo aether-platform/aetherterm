@@ -1,0 +1,32 @@
+# AetherTerm - Dev Server
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up --build
+#   docker compose -f docker-compose.dev.yml down
+#
+# Source is bind-mounted. Dependencies install on first startup.
+# Edit Python/Vue files on host, restart container to pick up changes.
+# For uvicorn --reload (Python hot-reload), set AETHERTERM_DEBUG=true.
+
+services:
+  aetherterm-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: aetherterm-dev
+    ports:
+      - "57575:57575"
+    volumes:
+      - .:/app
+      - dev-uv-cache:/home/aetherterm/.cache/uv
+      - dev-node-modules:/app/frontend/node_modules
+    environment:
+      AETHERTERM_HOST: "0.0.0.0"
+      AETHERTERM_PORT: "57575"
+      AETHERTERM_UNSECURE: "true"
+      AETHERTERM_DEBUG: "true"
+    restart: unless-stopped
+
+volumes:
+  dev-uv-cache:
+  dev-node-modules:

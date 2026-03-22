@@ -31,15 +31,20 @@ AGENTSHELL_ARGS ?=
 run-agentshell:
 	uv run aetherterm-agentshell $(AGENTSHELL_ARGS)
 
-# AgentShell ZMQ Observer (connects to running terminal)
-AGENTSHELL_ZMQ_ARGS ?= --session default
-run-agentshell-zmq:
-	uv run aetherterm-agentshell-zmq $(AGENTSHELL_ZMQ_ARGS)
 
 # ControlServer (Central Management)
 CONTROLSERVER_ARGS ?= --port=8765
 run-controlserver:
 	uv run aetherterm-controlserver $(CONTROLSERVER_ARGS)
+
+# Window Manager CLI
+WM_ARGS ?=
+wm:
+	uv run aetherterm-wm $(WM_ARGS)
+
+# tmux Bridge
+run-tmux-bridge:
+	uv run aetherterm-tmux-bridge start
 
 lint:
 	uv run ruff check src/
@@ -69,6 +74,16 @@ build-frontend:
 
 DOCKER_IMAGE ?= ghcr.io/aether-platform/aetherterm
 DOCKER_TAG   ?= latest
+
+# Dev server (lightweight container, bind-mount source)
+dev:
+	docker compose -f docker-compose.dev.yml up --build
+
+dev-down:
+	docker compose -f docker-compose.dev.yml down
+
+dev-logs:
+	docker compose -f docker-compose.dev.yml logs -f
 
 # Local build (native arch only)
 docker-build:

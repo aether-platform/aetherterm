@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, Request
 
 if TYPE_CHECKING:
-    from ..core.control_bridge import ControlBridge
+    from ..core.nats_bridge import NATSControlBridge
     from ..core.sessions.tmux.session_registry import TmuxSessionRegistry
     from .handlers import ControlCommandHandler
 
@@ -32,8 +32,8 @@ def get_tmux_registry(request: Request) -> TmuxSessionRegistry | None:
     return getattr(request.app.state, "tmux_registry", None)
 
 
-def get_control_bridge(request: Request) -> ControlBridge | None:
-    """Retrieve the ControlBridge from app state (None if unavailable)."""
+def get_control_bridge(request: Request) -> NATSControlBridge | None:
+    """Retrieve the NATSControlBridge from app state (None if unavailable)."""
     return getattr(request.app.state, "control_bridge", None)
 
 
@@ -47,5 +47,5 @@ def get_control_handler(request: Request) -> ControlCommandHandler | None:
 # ---------------------------------------------------------------------------
 
 TmuxRegistryDep = Annotated["TmuxSessionRegistry | None", Depends(get_tmux_registry)]
-ControlBridgeDep = Annotated["ControlBridge | None", Depends(get_control_bridge)]
+ControlBridgeDep = Annotated["NATSControlBridge | None", Depends(get_control_bridge)]
 ControlHandlerDep = Annotated["ControlCommandHandler | None", Depends(get_control_handler)]

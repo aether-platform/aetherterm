@@ -4,6 +4,6 @@
 共有コンポーネントを提供します。
 
 Submodules:
-    zmq_utils  -- pack/unpack/envelope helpers and constants for ZMQ messaging
-    models     -- Pydantic data models shared across components
+    nats_transport -- NATS connection, subject constants, message helpers
+    models         -- Pydantic data models shared across components
 """

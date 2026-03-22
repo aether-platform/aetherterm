@@ -3,6 +3,7 @@
 AgentShell、AgentServer、OpenHands間の通信プロトコルを定義します。
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -49,7 +50,7 @@ class MessageType(str, Enum):
     SYNC_REQUEST = "sync_request"
     SYNC_RESPONSE = "sync_response"
 
-    # ターミナルI/O（ZMQ PTY Chaining用）
+    # ターミナルI/O（PTY Chaining用）
     TERMINAL_OUTPUT = "terminal_output"
     TERMINAL_INPUT = "terminal_input"
 
@@ -57,7 +58,7 @@ class MessageType(str, Enum):
     COMMAND_INJECT = "command_inject"
     OUTPUT_INJECT = "output_inject"
 
-    # Agent Discovery（ZMQブローカー経由）
+    # Agent Discovery（NATS経由）
     AGENT_DISCOVERY = "agent_discovery"
     AGENT_DISCOVERY_RESPONSE = "agent_discovery_response"
 
@@ -143,6 +144,15 @@ class AgentMessage:
             correlation_id=UUID(data["correlation_id"]) if data.get("correlation_id") else None,
             reply_to=UUID(data["reply_to"]) if data.get("reply_to") else None,
         )
+
+    def encode(self) -> bytes:
+        """Serialize to JSON bytes for NATS publish."""
+        return json.dumps(self.to_dict()).encode("utf-8")
+
+    @classmethod
+    def decode(cls, data: bytes) -> "AgentMessage":
+        """Deserialize from JSON bytes received via NATS."""
+        return cls.from_dict(json.loads(data.decode("utf-8")))
 
 
 @dataclass
@@ -446,4 +456,24 @@ class MessageBuilder:
             to_agent="",
             message_type=MessageType.TASK_CLAIM,
             payload={"task_id": task_id},
+        )
+
+    @staticmethod
+    def register(agent_id: str, role: str) -> AgentMessage:
+        """エージェント登録メッセージを生成"""
+        return AgentMessage(
+            from_agent=agent_id,
+            to_agent="",
+            message_type=MessageType.AGENT_REGISTER,
+            payload={"role": role, "agent_id": agent_id},
+        )
+
+    @staticmethod
+    def heartbeat(agent_id: str) -> AgentMessage:
+        """ハートビートメッセージを生成"""
+        return AgentMessage(
+            from_agent=agent_id,
+            to_agent="",
+            message_type=MessageType.AGENT_HEARTBEAT,
+            payload={"agent_id": agent_id},
         )

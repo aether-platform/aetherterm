@@ -12,16 +12,41 @@ from pydantic import BaseModel, Field, computed_field
 
 
 # ---------------------------------------------------------------------------
-# ZMQ session mapping models (used by ZMQController & ControlBridge)
+# Session mapping models (used by NATSController & NATSControlBridge)
 # ---------------------------------------------------------------------------
+
+class PaneDetail(BaseModel):
+    """Detail information for a single pane."""
+
+    pane_id: str
+    status: str = "running"  # running / exited / blocked
+    role: str = ""
+    title: str = ""
+    cols: int = 80
+    rows: int = 24
+    exit_code: Optional[int] = None
+    created_at: float = Field(default_factory=time.time)
+
+
+class WindowDetail(BaseModel):
+    """Detail information for a single window."""
+
+    window_id: str
+    name: str = ""
+    active_pane_id: str = ""
+    panes: List[PaneDetail] = Field(default_factory=list)
+
 
 class PtySessionInfo(BaseModel):
     """A PTY session managed by an AgentServer."""
 
     session_id: str
     agent_server_id: str
+    name: str = ""
+    user_info: Dict = Field(default_factory=dict)
     pane_ids: List[str] = Field(default_factory=list)
     shell_ids: List[str] = Field(default_factory=list)
+    windows: List[WindowDetail] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
     last_activity: float = Field(default_factory=time.time)
 

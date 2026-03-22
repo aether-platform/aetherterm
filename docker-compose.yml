@@ -1,7 +1,7 @@
 # AetherTerm - Docker Compose
 #
 # Usage:
-#   docker compose up --build                          # Terminal server (ZMQ enabled)
+#   docker compose up --build                          # Terminal server
 #   docker compose --profile agent up --build          # Terminal + AgentShell observer
 #   docker compose logs -f                             # Follow logs
 #   docker compose down                                # Stop and remove

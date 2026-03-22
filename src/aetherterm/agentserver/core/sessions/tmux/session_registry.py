@@ -27,6 +27,7 @@ from .models import (
     TmuxWindow,
 )
 from .preset_layouts import PRESET_LAYOUTS
+from .wm_socket import default_socket_path
 
 log = logging.getLogger("aetherterm.tmux.registry")
 
@@ -431,6 +432,9 @@ class TmuxSessionRegistry:
 
             child_env = os.environ.copy()
             child_env["TERM"] = "xterm-256color"
+            # Expose WM socket as TMUX env so tmux-shim can discover it
+            child_env["TMUX"] = f"{default_socket_path()},0,0"
+            child_env["WM_SOCKET"] = default_socket_path()
             # Auto-set agent connectivity vars
             child_env["PANE_ID"] = pane_id
             child_env["AGENT_ID"] = pane_id
@@ -453,7 +457,6 @@ class TmuxSessionRegistry:
         pane.master_fd = master_fd
         pane.child_pid = pid
         pane.env = env or {}
-        pane.zmq_topic = f"pane.output.{pane.pane_id}"
         # NOTE: read task is NOT started here. Callers must call
         # _start_read_loop() AFTER the pane is added to window.panes
         # so that session_id lookup succeeds.

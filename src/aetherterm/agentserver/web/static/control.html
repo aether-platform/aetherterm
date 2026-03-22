@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ControlServer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0d1117; color: #c9d1d9;
+            display: flex; flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #161b22; border-bottom: 1px solid #30363d;
+            padding: 0 16px; display: flex; align-items: center;
+            height: 42px; flex-shrink: 0; gap: 12px;
+        }
+        .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #f85149; transition: background 0.3s; }
+        .ws-dot.connected { background: #3fb950; }
+        .header .title { font-size: 14px; font-weight: 600; color: #f0f6fc; }
+        .header .spacer { flex: 1; }
+        .header .badge { font-size: 11px; color: #8b949e; background: #21262d; padding: 2px 8px; border-radius: 4px; }
+
+        /* Main layout */
+        .main { flex: 1; display: flex; overflow: hidden; }
+
+        /* Server list (left) */
+        .server-panel {
+            width: 280px; flex-shrink: 0;
+            background: #0d1117; border-right: 1px solid #30363d;
+            display: flex; flex-direction: column;
+        }
+        .panel-header {
+            padding: 10px 12px; font-size: 11px; font-weight: 600;
+            color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 8px;
+        }
+        .panel-header .count {
+            background: #30363d; color: #c9d1d9; padding: 1px 6px;
+            border-radius: 10px; font-size: 10px;
+        }
+        .server-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+        .server-item {
+            padding: 8px 12px; cursor: pointer; border-left: 3px solid transparent;
+            transition: background 0.15s;
+        }
+        .server-item:hover { background: #161b22; }
+        .server-item.selected { background: #161b22; border-left-color: #58a6ff; }
+        .server-item .srv-header { display: flex; align-items: center; gap: 8px; }
+        .server-item .srv-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .server-item .srv-dot.alive { background: #3fb950; }
+        .server-item .srv-dot.dead { background: #f85149; }
+        .server-item .srv-id { font-size: 12px; font-weight: 500; color: #f0f6fc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .server-item .srv-session { font-size: 10px; color: #8b949e; margin-left: auto; }
+        .server-item .srv-agents { font-size: 11px; color: #8b949e; margin-top: 4px; padding-left: 14px; }
+        .agent-chip {
+            display: inline-block; font-size: 10px; padding: 1px 6px;
+            border-radius: 3px; margin: 1px 2px;
+            background: #21262d; color: #c9d1d9;
+        }
+        .agent-chip.active { background: #0d419d; color: #a5d6ff; }
+
+        /* Detail area (center) */
+        .detail-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Tabs */
+        .tab-bar {
+            display: flex; gap: 0; border-bottom: 1px solid #30363d;
+            background: #161b22; flex-shrink: 0;
+        }
+        .tab {
+            padding: 8px 16px; font-size: 12px; color: #8b949e;
+            cursor: pointer; border-bottom: 2px solid transparent;
+            transition: color 0.15s;
+        }
+        .tab:hover { color: #c9d1d9; }
+        .tab.active { color: #f0f6fc; border-bottom-color: #58a6ff; }
+
+        /* Tab content */
+        .tab-content { flex: 1; overflow: hidden; display: none; flex-direction: column; }
+        .tab-content.active { display: flex; }
+
+        /* Agents tab */
+        .agents-grid { padding: 12px; overflow-y: auto; flex: 1; }
+        .agent-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px;
+        }
+        .agent-card .avatar {
+            width: 36px; height: 36px; border-radius: 6px; background: #21262d;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 600; color: #58a6ff; flex-shrink: 0;
+        }
+        .agent-card .info { flex: 1; min-width: 0; }
+        .agent-card .name { font-size: 13px; font-weight: 500; color: #f0f6fc; }
+        .agent-card .meta { font-size: 11px; color: #8b949e; }
+        .agent-card .actions { display: flex; gap: 4px; }
+        .btn {
+            padding: 4px 10px; font-size: 11px; border: 1px solid #30363d;
+            border-radius: 4px; background: #21262d; color: #c9d1d9;
+            cursor: pointer; white-space: nowrap;
+        }
+        .btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .btn.danger { border-color: #f85149; color: #f85149; }
+        .btn.danger:hover { background: #f8514922; }
+
+        /* Timeline tab */
+        .timeline-list { flex: 1; overflow-y: auto; padding: 8px 12px; font-family: 'Cascadia Code', 'Fira Code', monospace; }
+        .tl-entry {
+            padding: 3px 0; font-size: 11px; line-height: 1.5;
+            border-bottom: 1px solid #21262d08;
+        }
+        .tl-ts { color: #6e7681; }
+        .tl-server { color: #d2a8ff; }
+        .tl-type { color: #79c0ff; }
+        .tl-from { color: #7ee787; }
+        .tl-detail { color: #c9d1d9; }
+
+        /* Command tab */
+        .command-area { padding: 16px; overflow-y: auto; flex: 1; }
+        .cmd-section { margin-bottom: 16px; }
+        .cmd-section h3 { font-size: 12px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .cmd-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+        .cmd-input {
+            padding: 6px 10px; font-size: 12px; border: 1px solid #30363d;
+            border-radius: 4px; background: #0d1117; color: #c9d1d9;
+            font-family: inherit; flex: 1;
+        }
+        .cmd-input:focus { outline: none; border-color: #58a6ff; }
+        .btn.primary { background: #238636; border-color: #238636; color: #fff; }
+        .btn.primary:hover { background: #2ea043; }
+
+        /* Empty state */
+        .empty-state {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 8px; color: #484f58;
+        }
+        .empty-state .icon { font-size: 32px; }
+        .empty-state .text { font-size: 13px; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="ws-dot" id="wsDot"></div>
+    <div class="title">ControlServer</div>
+    <div class="spacer"></div>
+    <div class="badge" id="natsUrl">NATS: --</div>
+    <div class="badge" id="serverCount">0 servers</div>
+</div>
+
+<div class="main">
+    <!-- Server list -->
+    <div class="server-panel">
+        <div class="panel-header">
+            Agent Servers
+            <span class="count" id="panelCount">0</span>
+        </div>
+        <div class="server-list" id="serverList"></div>
+    </div>
+
+    <!-- Detail -->
+    <div class="detail-panel">
+        <div class="tab-bar">
+            <div class="tab active" data-tab="agents">Agents</div>
+            <div class="tab" data-tab="timeline">Timeline</div>
+            <div class="tab" data-tab="command">Command</div>
+        </div>
+
+        <div class="tab-content active" id="tab-agents">
+            <div class="agents-grid" id="agentsGrid">
+                <div class="empty-state">
+                    <div class="icon">&#9671;</div>
+                    <div class="text">Select an AgentServer to view agents</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-timeline">
+            <div class="timeline-list" id="timelineList"></div>
+        </div>
+
+        <div class="tab-content" id="tab-command">
+            <div class="command-area" id="commandArea">
+                <div class="empty-state">
+                    <div class="icon">&#9881;</div>
+                    <div class="text">Select an AgentServer to send commands</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const state = {
+    servers: {},
+    timeline: [],
+    selectedServer: null,
+    ws: null,
+};
+
+// --- WebSocket ---
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    state.ws = new WebSocket(`${proto}://${location.host}/ws`);
+    state.ws.onopen = () => {
+        document.getElementById('wsDot').classList.add('connected');
+    };
+    state.ws.onclose = () => {
+        document.getElementById('wsDot').classList.remove('connected');
+        setTimeout(connectWS, 2000);
+    };
+    state.ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        handleMessage(data);
+    };
+}
+
+function handleMessage(data) {
+    switch (data.type) {
+        case 'snapshot':
+            data.servers.forEach(s => { state.servers[s.server_id] = s; });
+            state.timeline = data.timeline || [];
+            if (data.nats_url) document.getElementById('natsUrl').textContent = 'NATS: ' + data.nats_url;
+            renderAll();
+            break;
+        case 'server_update':
+            state.servers[data.server.server_id] = data.server;
+            renderServerList();
+            if (state.selectedServer === data.server.server_id) renderAgents();
+            break;
+        case 'heartbeat':
+            if (state.servers[data.server_id]) {
+                state.servers[data.server_id].last_heartbeat = data.ts;
+                state.servers[data.server_id].alive = true;
+            }
+            renderServerList();
+            break;
+        case 'timeline':
+            (data.entries || []).forEach(e => {
+                e._server_id = data.server_id;
+                state.timeline.push(e);
+            });
+            if (state.timeline.length > 5000) state.timeline = state.timeline.slice(-5000);
+            renderTimeline();
+            break;
+        case 'agents_update':
+            if (state.servers[data.server_id]) {
+                state.servers[data.server_id].agents = data.agents;
+            }
+            if (state.selectedServer === data.server_id) renderAgents();
+            renderServerList();
+            break;
+    }
+}
+
+// --- Render ---
+function renderAll() {
+    renderServerList();
+    renderAgents();
+    renderTimeline();
+    renderCommand();
+}
+
+function renderServerList() {
+    const el = document.getElementById('serverList');
+    const ids = Object.keys(state.servers);
+    document.getElementById('serverCount').textContent = `${ids.length} server${ids.length !== 1 ? 's' : ''}`;
+    document.getElementById('panelCount').textContent = ids.length;
+
+    el.innerHTML = ids.map(id => {
+        const s = state.servers[id];
+        const agentCount = Object.keys(s.agents || {}).length;
+        const agentChips = Object.entries(s.agents || {}).slice(0, 5).map(([aid, info]) =>
+            `<span class="agent-chip ${info.status === 'active' ? 'active' : ''}">${aid.length > 12 ? aid.slice(0, 12) + '..' : aid}</span>`
+        ).join('');
+        return `<div class="server-item ${state.selectedServer === id ? 'selected' : ''}" onclick="selectServer('${id}')">
+            <div class="srv-header">
+                <div class="srv-dot ${s.alive ? 'alive' : 'dead'}"></div>
+                <div class="srv-id">${id}</div>
+                <div class="srv-session">${s.session_name || 'default'}</div>
+            </div>
+            ${agentChips ? `<div class="srv-agents">${agentChips}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function selectServer(id) {
+    state.selectedServer = id;
+    renderAll();
+}
+
+function renderAgents() {
+    const el = document.getElementById('agentsGrid');
+    const srv = state.servers[state.selectedServer];
+    if (!srv) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">&#9671;</div><div class="text">Select an AgentServer to view agents</div></div>';
+        return;
+    }
+    const agents = Object.entries(srv.agents || {});
+    if (!agents.length) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">&#9671;</div><div class="text">No agents registered</div></div>';
+        return;
+    }
+    el.innerHTML = agents.map(([aid, info]) => {
+        const initial = (info.role || aid)[0].toUpperCase();
+        return `<div class="agent-card">
+            <div class="avatar">${initial}</div>
+            <div class="info">
+                <div class="name">${aid}</div>
+                <div class="meta">${info.role || 'unknown'} &middot; ${info.status || 'unknown'} &middot; ${info.line_count || 0} lines</div>
+            </div>
+            <div class="actions">
+                <button class="btn" onclick="injectAgent('${aid}')">Inject</button>
+                <button class="btn danger" onclick="blockAgent('${aid}')">Block</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderTimeline() {
+    const el = document.getElementById('timelineList');
+    let entries = state.timeline;
+    if (state.selectedServer) {
+        entries = entries.filter(e => e._server_id === state.selectedServer);
+    }
+    const recent = entries.slice(-300);
+    el.innerHTML = recent.map(e => {
+        const ts = (e.ts || '').slice(11, 19);
+        return `<div class="tl-entry">
+            <span class="tl-ts">${ts}</span>
+            <span class="tl-server">[${(e._server_id || '').slice(0, 12)}]</span>
+            <span class="tl-type">${e.type || ''}</span>
+            <span class="tl-from">${e.from_agent || ''}</span>
+            <span class="tl-detail">${e.detail || ''}</span>
+        </div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+function renderCommand() {
+    const el = document.getElementById('commandArea');
+    if (!state.selectedServer) {
+        el.innerHTML = '<div class="empty-state"><div class="icon">&#9881;</div><div class="text">Select an AgentServer to send commands</div></div>';
+        return;
+    }
+    el.innerHTML = `
+        <div class="cmd-section">
+            <h3>Agent Control</h3>
+            <div class="cmd-row">
+                <input class="cmd-input" id="cmdAgentId" placeholder="agent_id" style="max-width:200px">
+                <button class="btn danger" onclick="blockAgent(document.getElementById('cmdAgentId').value)">Block</button>
+                <button class="btn" onclick="unblockAgent(document.getElementById('cmdAgentId').value)">Unblock</button>
+            </div>
+        </div>
+        <div class="cmd-section">
+            <h3>Input Injection</h3>
+            <div class="cmd-row">
+                <input class="cmd-input" id="injectTarget" placeholder="agent_id or pane_id" style="max-width:200px">
+                <input class="cmd-input" id="injectInput" placeholder="command to inject">
+                <button class="btn primary" onclick="sendInject()">Send</button>
+            </div>
+        </div>
+        <div class="cmd-section">
+            <h3>Broadcast</h3>
+            <div class="cmd-row">
+                <button class="btn danger" onclick="pauseAll()">Pause All Agents</button>
+            </div>
+        </div>
+        <div class="cmd-section">
+            <h3>Custom Command</h3>
+            <div class="cmd-row">
+                <input class="cmd-input" id="customCmd" placeholder='{"action":"...", ...}'>
+                <button class="btn primary" onclick="sendCustom()">Send</button>
+            </div>
+        </div>
+    `;
+}
+
+// --- Actions ---
+function sendCommand(serverId, command) {
+    if (!state.ws || state.ws.readyState !== 1) return;
+    state.ws.send(JSON.stringify({
+        action: 'command',
+        server_id: serverId,
+        command: command,
+    }));
+}
+
+function blockAgent(agentId) {
+    if (!state.selectedServer || !agentId) return;
+    sendCommand(state.selectedServer, { action: 'block', agent_id: agentId });
+}
+
+function unblockAgent(agentId) {
+    if (!state.selectedServer || !agentId) return;
+    sendCommand(state.selectedServer, { action: 'unblock', agent_id: agentId });
+}
+
+function injectAgent(agentId) {
+    const input = prompt(`Inject input to ${agentId}:`);
+    if (!input || !state.selectedServer) return;
+    sendCommand(state.selectedServer, { action: 'inject', agent_id: agentId, input: input });
+}
+
+function sendInject() {
+    const target = document.getElementById('injectTarget').value;
+    const input = document.getElementById('injectInput').value;
+    if (!target || !input || !state.selectedServer) return;
+    sendCommand(state.selectedServer, { action: 'inject', agent_id: target, input: input });
+    document.getElementById('injectInput').value = '';
+}
+
+function pauseAll() {
+    if (!state.selectedServer) return;
+    if (!confirm('Pause all agents on this server?')) return;
+    sendCommand(state.selectedServer, { action: 'pause_all' });
+}
+
+function sendCustom() {
+    const raw = document.getElementById('customCmd').value;
+    if (!raw || !state.selectedServer) return;
+    try {
+        const cmd = JSON.parse(raw);
+        sendCommand(state.selectedServer, cmd);
+        document.getElementById('customCmd').value = '';
+    } catch (e) { alert('Invalid JSON'); }
+}
+
+// --- Tabs ---
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+});
+
+// --- Init ---
+connectWS();
+</script>
+</body>
+</html>

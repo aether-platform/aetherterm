@@ -43,6 +43,7 @@
       <span v-if="totalUnread > 0" class="unread-badge" :title="`${totalUnread} unread messages`">
         {{ totalUnread > 99 ? '99+' : totalUnread }}
       </span>
+      <span class="discussion-btn" @click="openDiscussion" title="Start Discussion">Discuss</span>
       <span class="clock">{{ clock }}</span>
     </div>
   </div>
@@ -51,11 +52,13 @@
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, ref } from 'vue'
   import { useAgentMessagingStore } from '../../stores/agentMessagingStore'
+  import { useDiscussionStore } from '../../stores/discussionStore'
   import { useTmuxStore } from '../../stores/tmuxStore'
   import { useUIModeStore } from '../../stores/uiModeStore'
 
   const tmuxStore = useTmuxStore()
   const messagingStore = useAgentMessagingStore()
+  const discussionStore = useDiscussionStore()
   const uiModeStore = useUIModeStore()
   const clock = ref('')
   let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -107,6 +110,10 @@
   function openAgentSidebar() {
     uiModeStore.setInteractionMode('pilot')
     uiModeStore.setSidebarTab('agents')
+  }
+
+  function openDiscussion() {
+    discussionStore.openWizard()
   }
 
   function updateClock() {
@@ -248,6 +255,21 @@
 
   .pane-info {
     opacity: 0.7;
+  }
+
+  .discussion-btn {
+    color: #a855f7;
+    font-weight: 600;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 6px;
+    border-radius: 3px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .discussion-btn:hover {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
   }
 
   .clock {

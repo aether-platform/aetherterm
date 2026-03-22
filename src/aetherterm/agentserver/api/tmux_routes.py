@@ -1,14 +1,21 @@
 """REST API endpoints for tmux session/window/pane management.
 
 Provides a full CRUD REST interface mirroring the WebSocket tmux commands.
+Includes discussion orchestration, timeline, and inter-agent messaging.
 """
 
+import asyncio
 import logging
+import shutil
+import sys
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from ...common.agent_protocol import AgentMessage, MessageType
+from ..core.activity import get_session_log, summarize_timeline
+from ..core.discussion import build_discussion_prompt
 from .dependencies import TmuxRegistryDep
 
 router = APIRouter(prefix="/api/tmux", tags=["tmux"])
@@ -403,3 +410,236 @@ async def project_setup(body: ProjectSetupRequest, tmux_registry: TmuxRegistryDe
         "session_name": session.name,
         "windows": result_windows,
     }
+
+
+# --- Helpers ---
+
+
+def _build_claude_cmd() -> list[str] | None:
+    """Build the command list to launch Claude Code with tmux teammate mode.
+
+    Returns None if ``claude`` is not found on PATH.
+    """
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        return None
+    return [
+        claude_path,
+        "--dangerously-skip-permissions",
+        "--teammate-mode", "tmux",
+    ]
+
+
+# --- Discussion ---
+
+
+class DiscussionRequest(BaseModel):
+    topic: str
+    scale: str = "le"
+    role: str = "both"
+
+
+@router.post("/sessions/{session_id}/discussion")
+async def start_discussion(
+    session_id: str, body: DiscussionRequest, tmux_registry: TmuxRegistryDep
+):
+    """Start a multi-agent discussion by sending prompt to parent pane."""
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+
+    if body.scale not in ("sme", "le"):
+        raise HTTPException(status_code=400, detail="scale must be sme or le")
+    if body.role not in ("both", "biz", "dev"):
+        raise HTTPException(status_code=400, detail="role must be both, biz, or dev")
+
+    # Find parent pane (role == "parent")
+    parent_pane_id = None
+    parent_window_id = None
+    for window in session.windows.values():
+        for pane in window.panes.values():
+            if pane.role == "parent":
+                parent_pane_id = pane.pane_id
+                parent_window_id = window.window_id
+                break
+        if parent_pane_id:
+            break
+
+    if not parent_pane_id:
+        # Auto-create parent window with claude agent
+        parent_cmd = _build_claude_cmd()
+        if not parent_cmd:
+            parent_cmd = [
+                sys.executable, "-m", "aetherterm.agentshell.main",
+                "--agent-id", "parent", "--role", "parent",
+            ]
+
+        parent_window = await reg.create_window(
+            session_id, name="parent", cmd=parent_cmd, role="parent",
+        )
+        if parent_window is None:
+            raise HTTPException(status_code=500, detail="Failed to create parent pane")
+
+        parent_pane_id = next(iter(parent_window.panes))
+        parent_window_id = parent_window.window_id
+
+        # Wait for shell to initialize
+        await asyncio.sleep(2)
+
+    prompt = build_discussion_prompt(
+        topic=body.topic, scale=body.scale, role=body.role, session_id=session_id,
+    )
+
+    # Write prompt to parent PTY
+    data = prompt.replace("\n", "\r").encode()
+    ok = reg.write_to_pane(session_id, parent_window_id, parent_pane_id, data)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to write to parent PTY")
+
+    # Send Enter
+    await asyncio.sleep(0.5)
+    reg.write_to_pane(session_id, parent_window_id, parent_pane_id, b"\r")
+
+    activity = get_session_log(session.name or session_id)
+    activity.add(
+        "discussion_start", source="ui", target="parent",
+        detail=f"Discussion started: {body.topic[:80]}",
+        meta={"topic": body.topic, "scale": body.scale, "role": body.role},
+    )
+
+    return {"ok": True, "topic": body.topic, "scale": body.scale, "role": body.role}
+
+
+# --- Timeline ---
+
+
+@router.get("/sessions/{session_id}/timeline")
+async def session_timeline(
+    session_id: str, tmux_registry: TmuxRegistryDep,
+    since_id: int = 0, limit: int = 200,
+):
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+    return get_session_log(session.name or session_id).entries(since_id=since_id, limit=limit)
+
+
+@router.post("/sessions/{session_id}/timeline/summarize")
+async def session_timeline_summarize(session_id: str, tmux_registry: TmuxRegistryDep):
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+    entries = get_session_log(session.name or session_id).entries(limit=100)
+    if not entries:
+        return {"summary": "No activity to summarize."}
+    return await summarize_timeline(entries)
+
+
+class TimelinePostRequest(BaseModel):
+    type: str = "summary"
+    source: str = "parent"
+    detail: str
+    meta: dict = Field(default_factory=dict)
+
+
+@router.post("/sessions/{session_id}/timeline/post")
+async def session_timeline_post(
+    session_id: str, body: TimelinePostRequest, tmux_registry: TmuxRegistryDep
+):
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+    activity = get_session_log(session.name or session_id)
+    activity.add(body.type, source=body.source, target="", detail=body.detail, meta=body.meta)
+    return {"ok": True, "id": activity._counter}
+
+
+# --- Inter-agent messaging ---
+
+
+class MessageRequest(BaseModel):
+    from_agent: str = "ui"
+    to_agent: str = ""
+    content: str
+    message_type: str = "dm"
+
+
+@router.post("/sessions/{session_id}/message")
+async def send_message(
+    session_id: str, body: MessageRequest, tmux_registry: TmuxRegistryDep, request: Request
+):
+    """Send a message between agents via MessageRouter."""
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+
+    if not body.content:
+        raise HTTPException(status_code=400, detail="content required")
+
+    activity = get_session_log(session.name or session_id)
+
+    message_router = getattr(request.app.state, "message_router", None)
+
+    if message_router:
+        if body.message_type == "broadcast":
+            msg = AgentMessage(
+                from_agent=body.from_agent,
+                to_agent="",
+                message_type=MessageType.AGENT_BROADCAST,
+                payload={"content": body.content},
+            )
+            await message_router.route_message(msg)
+            activity.add(
+                "agent_broadcast", source=body.from_agent, target="all",
+                detail=body.content[:100], meta={"content": body.content},
+            )
+        else:
+            msg = AgentMessage(
+                from_agent=body.from_agent,
+                to_agent=body.to_agent,
+                message_type=MessageType.AGENT_DM,
+                payload={"content": body.content},
+            )
+            await message_router.route_message(msg)
+            activity.add(
+                "agent_dm", source=body.from_agent, target=body.to_agent,
+                detail=body.content[:100], meta={"content": body.content},
+            )
+        return {"ok": True, "via": "message_router"}
+    else:
+        event_type = "agent_broadcast" if body.message_type == "broadcast" else "agent_dm"
+        activity.add(
+            event_type, source=body.from_agent, target=body.to_agent or "all",
+            detail=body.content[:100], meta={"content": body.content, "router": False},
+        )
+        return {"ok": True, "via": "local", "warning": "MessageRouter not available"}
+
+
+# --- Agents ---
+
+
+@router.get("/sessions/{session_id}/agents")
+async def session_agents(session_id: str, tmux_registry: TmuxRegistryDep, request: Request):
+    """List agents (panes with roles) in this session."""
+    reg = _require_registry(tmux_registry)
+    session = _get_session(reg, session_id)
+
+    agents = []
+    for window in session.windows.values():
+        for pane in window.panes.values():
+            agents.append({
+                "pane_id": pane.pane_id,
+                "window_id": window.window_id,
+                "role": pane.role,
+                "title": pane.title or pane.role,
+                "status": pane.status.value,
+            })
+
+    # Also include MessageRouter registered agents if available
+    message_router = getattr(request.app.state, "message_router", None)
+    if message_router:
+        router_agents = message_router.list_agents()
+        # Merge — add router info to pane-based agents
+        router_map = {a["agent_id"]: a for a in router_agents}
+        for agent in agents:
+            ri = router_map.get(agent["pane_id"])
+            if ri:
+                agent["is_idle"] = ri["is_idle"]
+                agent["queue_size"] = ri["queue_size"]
+
+    return agents

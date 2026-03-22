@@ -266,8 +266,8 @@ async def control_status(
     control_bridge: ControlBridgeDep = None,
     tmux_registry: TmuxRegistryDep = None,
 ):
-    """Get ControlBridge connection status and session counts."""
-    result: dict = {"connected": False, "sessions": 0, "transport": "zmq-direct"}
+    """Get NATSControlBridge connection status and session counts."""
+    result: dict = {"connected": False, "sessions": 0, "transport": "nats"}
     if control_bridge:
         result["connected"] = control_bridge.is_connected
         result["agent_server_id"] = getattr(control_bridge, "agent_server_id", "")

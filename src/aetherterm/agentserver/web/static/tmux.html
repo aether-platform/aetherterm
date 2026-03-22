@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tmux Workspace</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0d1117; color: #c9d1d9;
+            display: flex; flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #161b22; border-bottom: 1px solid #30363d;
+            padding: 0 12px; display: flex; align-items: center;
+            height: 36px; flex-shrink: 0; gap: 10px;
+        }
+        .ws-status { width: 7px; height: 7px; border-radius: 50%; background: #f85149; transition: background 0.3s; }
+        .ws-status.connected { background: #3fb950; }
+        .header .logo { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+        .header .spacer { flex: 1; }
+        .session-badge { font-size: 11px; color: #8b949e; background: #21262d; padding: 2px 8px; border-radius: 4px; }
+
+        .header-actions { display: flex; gap: 6px; }
+        .header-actions button, .header-actions a {
+            padding: 4px 10px; font-size: 11px; border: 1px solid #30363d; border-radius: 4px;
+            background: #21262d; color: #c9d1d9; cursor: pointer; white-space: nowrap; text-decoration: none;
+        }
+        .header-actions button:hover, .header-actions a:hover { border-color: #58a6ff; color: #58a6ff; }
+        .header-actions button.active { background: #30363d; color: #f0f6fc; border-color: #58a6ff; }
+        .header-actions button.primary { background: #238636; border-color: #238636; color: #fff; }
+        .header-actions button.primary:hover { background: #2ea043; }
+
+        /* Body layout: sidebar + main + timeline */
+        .body-layout { flex: 1; display: flex; overflow: hidden; }
+
+        /* Window sidebar (left) */
+        .window-sidebar {
+            width: 200px; flex-shrink: 0;
+            background: #0d1117; border-right: 1px solid #30363d;
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .window-sidebar .sidebar-header {
+            display: flex; align-items: center;
+            height: 32px; padding: 0 10px;
+            background: #161b22; border-bottom: 1px solid #30363d;
+            font-size: 11px; font-weight: 600; color: #8b949e;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            flex-shrink: 0; gap: 6px;
+        }
+        .window-sidebar .sidebar-header .spacer { flex: 1; }
+        .window-sidebar .sidebar-header .add-btn {
+            background: none; border: 1px solid #30363d; border-radius: 4px;
+            color: #8b949e; cursor: pointer; font-size: 11px; padding: 1px 6px; line-height: 1.2;
+        }
+        .window-sidebar .sidebar-header .add-btn:hover { color: #3fb950; border-color: #3fb950; }
+        .window-list {
+            flex: 1; overflow-y: auto;
+            scrollbar-width: thin; scrollbar-color: #30363d #0d1117;
+        }
+        .window-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; cursor: pointer;
+            border-bottom: 1px solid rgba(48,54,61,0.3);
+            transition: background 0.1s;
+        }
+        .window-item:hover { background: #161b22; }
+        .window-item.active { background: #1c2333; border-left: 2px solid #58a6ff; }
+        .window-item .win-icon {
+            width: 24px; height: 24px; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+            overflow: hidden;
+        }
+        .window-item .win-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .window-item .win-icon.is-shell {
+            border-radius: 4px; background: transparent !important;
+            border: 1px solid #30363d; color: #8b949e; font-size: 12px;
+        }
+        .window-item .win-icon.is-agent { border-radius: 6px; }
+        .window-item .win-info { flex: 1; min-width: 0; }
+        .window-item .win-title {
+            font-size: 12px; font-weight: 600; color: #f0f6fc;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .window-item .win-meta { font-size: 10px; color: #484f58; margin-top: 1px; }
+        .window-item .win-close {
+            background: none; border: none; color: #484f58;
+            cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1;
+            opacity: 0; transition: opacity 0.15s;
+        }
+        .window-item:hover .win-close { opacity: 1; }
+        .window-item .win-close:hover { color: #f85149; }
+
+        /* Main pane area */
+        .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+        /* Pane header (within window) */
+        .pane-bar {
+            display: flex; align-items: center;
+            height: 28px; padding: 0 10px;
+            background: #161b22; border-bottom: 1px solid #30363d;
+            font-size: 11px; flex-shrink: 0; gap: 6px;
+        }
+        .pane-bar .title { font-weight: 600; color: #f0f6fc; flex: 1; }
+        .pane-bar .badge {
+            font-size: 9px; padding: 1px 6px; border-radius: 6px;
+            color: #fff; font-weight: 600;
+        }
+        .pane-bar .pane-actions { display: flex; gap: 4px; }
+        .pane-bar .pane-actions button {
+            background: none; border: 1px solid #30363d; border-radius: 4px;
+            color: #8b949e; cursor: pointer; font-size: 10px; padding: 2px 8px;
+        }
+        .pane-bar .pane-actions button:hover { color: #58a6ff; border-color: #58a6ff; }
+        .pane-bar .pane-actions button.active { background: #30363d; color: #f0f6fc; border-color: #58a6ff; }
+
+        /* Float mode pane tab bar (separate row below pane-bar) */
+        .pane-tab-bar {
+            display: none; align-items: center;
+            height: 28px; padding: 0 10px; gap: 4px;
+            background: #0d1117; border-bottom: 1px solid #30363d;
+            flex-shrink: 0; overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .pane-tab-bar::-webkit-scrollbar { display: none; }
+        .pane-tab-bar.visible { display: flex; }
+        .pane-tab-bar .tab-label { font-size: 10px; color: #484f58; margin-right: 4px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
+        .pane-tab {
+            padding: 3px 12px; font-size: 11px; border: 1px solid #30363d; border-radius: 4px;
+            background: none; color: #8b949e; cursor: pointer; white-space: nowrap;
+            display: flex; align-items: center; gap: 5px;
+            transition: border-color 0.1s, background 0.1s;
+        }
+        .pane-tab:hover { border-color: #58a6ff; color: #c9d1d9; }
+        .pane-tab.active { background: #21262d; color: #f0f6fc; border-color: #58a6ff; }
+        .pane-tab .tab-dot {
+            width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+        }
+
+        /* Pane strip (panes inside a window) */
+        .pane-strip {
+            flex: 1; display: flex; flex-direction: row;
+            overflow-x: auto; overflow-y: hidden;
+            position: relative;
+        }
+
+        /* Split mode (shell): all panes side by side */
+        .pane-strip.mode-split .pane-cell {
+            flex: 1 0 400px; min-width: 400px;
+            display: flex; flex-direction: column;
+            border-right: 1px solid #21262d; overflow: hidden;
+        }
+        .pane-strip.mode-split .pane-cell:last-child { border-right: none; }
+
+        /* Split mode (agent): parent left, agents right (vertical stack) */
+        .pane-strip.mode-split-agent {
+            flex-direction: row;
+        }
+        .pane-strip.mode-split-agent .split-parent {
+            flex: 3; display: flex; flex-direction: column;
+            border-right: 4px solid #21262d; overflow: hidden; min-width: 400px;
+        }
+        .pane-strip.mode-split-agent .split-agents-wrap {
+            flex: 2; display: flex; flex-direction: row; position: relative;
+            overflow: hidden; min-width: 300px;
+        }
+        .pane-strip.mode-split-agent .split-agents {
+            flex: 1; display: flex; flex-direction: column;
+            overflow-y: auto; overflow-x: hidden;
+        }
+        .pane-strip.mode-split-agent .split-agents .pane-cell {
+            flex: 0 0 auto; min-height: 250px;
+            display: flex; flex-direction: column;
+            border-bottom: 1px solid #21262d; overflow: hidden;
+        }
+        .pane-strip.mode-split-agent .split-agents .pane-cell:last-child { border-bottom: none; }
+
+        /* Heatmap rail (vertical, right side of agents column) */
+        .heatmap-rail {
+            width: 36px; flex-shrink: 0;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 4px; padding: 6px 0;
+            background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(6px);
+            border-left: 1px solid #21262d;
+            overflow-y: auto; scrollbar-width: none;
+        }
+        .heatmap-rail::-webkit-scrollbar { display: none; }
+        .heatmap-rail .hm-dot {
+            width: 24px; height: 24px; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; font-weight: 700; color: #fff;
+            cursor: pointer; flex-shrink: 0;
+            transition: transform 0.1s, outline 0.15s;
+        }
+        .heatmap-rail .hm-dot:hover { transform: scale(1.15); }
+        .heatmap-rail .hm-dot.focused { outline: 2px solid #f0f6fc; outline-offset: 1px; }
+
+        /* Horizontal heatmap bar (float mode, below tab bar) */
+        .heatmap-bar {
+            display: none; align-items: center;
+            height: 26px; padding: 0 10px; gap: 4px;
+            background: #0d1117; border-bottom: 1px solid #21262d;
+            flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
+        }
+        .heatmap-bar::-webkit-scrollbar { display: none; }
+        .heatmap-bar.visible { display: flex; }
+        .heatmap-bar .hm-label { font-size: 9px; color: #484f58; margin-right: 4px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600; white-space: nowrap; }
+        .heatmap-cell {
+            min-width: 32px; height: 18px; border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 9px; font-weight: 600; color: #fff;
+            cursor: pointer; transition: outline 0.15s, transform 0.1s;
+            white-space: nowrap; padding: 0 6px; gap: 3px;
+        }
+        .heatmap-cell:hover { transform: scale(1.08); }
+        .heatmap-cell.active { outline: 2px solid #f0f6fc; outline-offset: 1px; }
+        .heatmap-cell .hm-lines { font-size: 8px; opacity: 0.7; }
+
+        /* Base pane cell */
+        .pane-cell {
+            display: flex; flex-direction: column; overflow: hidden;
+            min-width: 320px; min-height: 200px;
+        }
+
+        /* Float mode: parent floats over agent background */
+        .pane-strip.mode-float {
+            position: relative; overflow: hidden;
+        }
+        /* Background: agents side by side (ghost) */
+        .float-bg {
+            position: absolute; inset: 0; z-index: 0;
+            display: flex; flex-direction: row; overflow: hidden;
+            scrollbar-width: none;
+        }
+        .float-bg::-webkit-scrollbar { display: none; }
+        .float-bg .pane-cell { opacity: 0.5; min-width: 400px; flex: 1 0 400px; }
+        .float-bg .ghost-pulse {
+            width: 6px; height: 6px; border-radius: 50%; background: #3fb950;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.3; box-shadow: none; }
+            50% { opacity: 1; box-shadow: 0 0 6px #3fb950; }
+        }
+        /* Foreground: parent floating */
+        .float-fg {
+            position: absolute; inset: 20px; z-index: 2;
+            display: flex; flex-direction: column; overflow: hidden;
+            border: 1px solid #30363d; border-radius: 10px;
+            background: rgba(13, 17, 23, 0.40); backdrop-filter: blur(4px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .float-fg.behind {
+            opacity: 0.2; pointer-events: none; filter: blur(1px);
+        }
+        .float-fg .float-toggle-bar {
+            display: flex; align-items: center;
+            height: 26px; padding: 0 10px;
+            background: #161b22; border-bottom: 1px solid #58a6ff;
+            font-size: 11px; flex-shrink: 0; gap: 6px;
+            border-radius: 10px 10px 0 0;
+        }
+        .float-fg .float-toggle-bar .title { font-weight: 600; color: #f0f6fc; flex: 1; }
+        .float-fg .float-toggle-bar .ftb-btn {
+            background: none; border: 1px solid #30363d; border-radius: 4px;
+            color: #8b949e; cursor: pointer; font-size: 10px; padding: 2px 8px;
+        }
+        .float-fg .float-toggle-bar .ftb-btn:hover { color: #58a6ff; border-color: #58a6ff; }
+        /* Full children overlay (toggled) */
+        .float-children-full {
+            position: absolute; inset: 0; z-index: 3;
+            display: none; flex-direction: column; overflow: hidden;
+        }
+        .float-children-full.visible { display: flex; }
+        .float-children-full .back-bar {
+            display: flex; align-items: center;
+            height: 28px; padding: 0 10px;
+            background: #1f6feb; cursor: pointer;
+            font-size: 12px; font-weight: 600; color: #fff; flex-shrink: 0; gap: 6px;
+        }
+        .float-children-full .back-bar:hover { background: #388bfd; }
+        .float-children-full .children-body {
+            flex: 1; display: flex; flex-direction: row; overflow: hidden;
+            scrollbar-width: none;
+        }
+        .float-children-full .children-body::-webkit-scrollbar { display: none; }
+        .float-children-full .children-body .pane-cell { min-width: 400px; flex: 1 0 400px; }
+        .pane-cell .pane-cell-header {
+            display: flex; align-items: center;
+            height: 22px; padding: 0 8px;
+            background: #161b22; border-bottom: 1px solid #21262d;
+            font-size: 11px; color: #8b949e; flex-shrink: 0; gap: 6px;
+        }
+        .pane-cell .pane-cell-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pane-cell .pane-cell-role { font-size: 9px; padding: 1px 5px; border-radius: 6px; color: #fff; font-weight: 600; }
+        .pane-cell .pane-cell-btn {
+            background: none; border: none; color: #484f58;
+            cursor: pointer; font-size: 12px; padding: 0 2px; line-height: 1;
+        }
+        .pane-cell .pane-cell-btn:hover { color: #f85149; }
+
+        .terminal-wrap { flex: 1; overflow: hidden; }
+        .terminal-wrap .xterm { height: 100%; }
+
+        .empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #484f58; font-size: 13px; }
+
+        /* Timeline sidebar (right) */
+        .timeline-sidebar {
+            width: 280px; flex-shrink: 0;
+            background: #0d1117; border-left: 1px solid #30363d;
+            display: flex; flex-direction: column; overflow: hidden;
+            transition: width 0.2s; position: relative; min-width: 200px; max-width: 60vw;
+        }
+        .timeline-sidebar.collapsed { width: 0; border-left: none; min-width: 0; }
+        .timeline-sidebar.resizing { transition: none; }
+        .timeline-resize-handle {
+            position: absolute; left: -3px; top: 0; bottom: 0; width: 6px;
+            cursor: col-resize; z-index: 20;
+        }
+        .timeline-resize-handle:hover,
+        .timeline-resize-handle.active { background: #58a6ff; opacity: 0.5; }
+        .timeline-header {
+            display: flex; align-items: center;
+            height: 28px; padding: 0 10px;
+            background: #161b22; border-bottom: 1px solid #30363d;
+            flex-shrink: 0; gap: 6px;
+        }
+        .timeline-header .title { font-size: 11px; font-weight: 600; color: #f0f6fc; flex: 1; }
+        .timeline-header .close-btn {
+            background: none; border: none; color: #484f58; cursor: pointer;
+            font-size: 14px; line-height: 1; padding: 0 2px;
+        }
+        .timeline-header .close-btn:hover { color: #f85149; }
+        .timeline-tabs {
+            display: flex; flex-shrink: 0;
+            border-bottom: 1px solid #30363d;
+        }
+        .timeline-tabs button {
+            flex: 1; padding: 5px 0; font-size: 10px; font-weight: 600;
+            border: none; background: #0d1117; color: #8b949e; cursor: pointer;
+            border-bottom: 2px solid transparent; text-transform: uppercase; letter-spacing: 0.3px;
+        }
+        .timeline-tabs button:hover { color: #c9d1d9; }
+        .timeline-tabs button.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+        .timeline-summary {
+            flex: 1; overflow-y: auto; padding: 10px;
+            scrollbar-width: thin; scrollbar-color: #30363d #0d1117;
+            display: none;
+        }
+        .timeline-summary.visible { display: block; }
+        .tl-summary-content {
+            font-size: 12px; line-height: 1.5; color: #c9d1d9;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .tl-summary-empty { text-align: center; padding: 24px; color: #484f58; font-size: 12px; }
+        .tl-summary-btn {
+            display: block; width: 100%; margin-top: 8px;
+            padding: 6px; font-size: 11px; border: 1px solid #30363d; border-radius: 4px;
+            background: #21262d; color: #c9d1d9; cursor: pointer;
+        }
+        .tl-summary-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .tl-summary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .timeline-feed {
+            flex: 1; overflow-y: auto; padding: 8px 6px;
+            scrollbar-width: thin; scrollbar-color: #30363d #0d1117;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .timeline-feed::-webkit-scrollbar { width: 4px; }
+        .timeline-feed::-webkit-scrollbar-track { background: #0d1117; }
+        .timeline-feed::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+        /* Chat bubble layout */
+        .chat-msg { display: flex; flex-direction: column; max-width: 88%; word-break: break-word; }
+        .chat-msg.from-parent { align-self: flex-start; }
+        .chat-msg.from-agent { align-self: flex-end; }
+        .chat-msg.from-system { align-self: center; }
+        .chat-sender { font-size: 9px; font-weight: 600; margin-bottom: 2px; padding: 0 4px; }
+        .chat-msg.from-parent .chat-sender { color: #58a6ff; }
+        .chat-msg.from-agent .chat-sender { color: #3fb950; text-align: right; }
+        .chat-msg.from-system .chat-sender { color: #484f58; text-align: center; }
+        .chat-bubble { padding: 6px 10px; border-radius: 10px; font-size: 11px; line-height: 1.4; color: #c9d1d9; }
+        .chat-msg.from-parent .chat-bubble { background: #1c2333; border: 1px solid #263354; border-bottom-left-radius: 3px; }
+        .chat-msg.from-agent .chat-bubble { background: #1a2e1a; border: 1px solid #2a4a2a; border-bottom-right-radius: 3px; }
+        .chat-msg.from-system .chat-bubble {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 12px; font-size: 10px; color: #8b949e; padding: 3px 10px;
+        }
+        .chat-bubble .chat-type {
+            font-size: 8px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.4px; opacity: 0.7; margin-bottom: 2px;
+        }
+        .chat-bubble .chat-payload {
+            font-size: 10px; color: #8b949e; font-family: monospace;
+            background: rgba(0,0,0,0.2); border-radius: 4px; padding: 3px 6px;
+            margin-top: 4px; display: block;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+        }
+        .chat-meta { font-size: 8px; color: #484f58; margin-top: 2px; padding: 0 4px; }
+        .chat-msg.from-agent .chat-meta { text-align: right; }
+        .chat-msg.from-system .chat-meta { text-align: center; }
+        .tl-empty { text-align: center; padding: 24px; color: #484f58; font-size: 12px; }
+
+        .toast {
+            position: fixed; bottom: 16px; right: 16px;
+            background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+            padding: 8px 16px; font-size: 12px; color: #c9d1d9;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 1000;
+        }
+        .toast.visible { opacity: 1; }
+
+        /* New Window Wizard */
+        .wizard-overlay {
+            display: none; position: fixed; inset: 0; z-index: 900;
+            background: rgba(0,0,0,0.55);
+            align-items: center; justify-content: center;
+        }
+        .wizard-overlay.open { display: flex; }
+        .wizard {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            width: 360px; box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+        .wizard-header {
+            display: flex; align-items: center; padding: 14px 18px;
+            border-bottom: 1px solid #30363d;
+        }
+        .wizard-header .wiz-title { font-size: 14px; font-weight: 600; color: #f0f6fc; flex: 1; }
+        .wizard-header .wiz-close {
+            background: none; border: none; color: #8b949e; font-size: 18px;
+            cursor: pointer; line-height: 1; padding: 0 2px;
+        }
+        .wizard-header .wiz-close:hover { color: #f85149; }
+        .wizard-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+        .wizard-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 16px; border: 1px solid #30363d; border-radius: 8px;
+            background: #0d1117; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+        }
+        .wizard-card:hover { border-color: #58a6ff; background: #1c2128; }
+        .wizard-card .wc-icon {
+            width: 38px; height: 38px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700; color: #fff; flex-shrink: 0;
+            overflow: hidden;
+        }
+        .wizard-card .wc-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .wizard-card .wc-icon.shell-icon {
+            border-radius: 6px; background: transparent !important;
+            border: 2px solid #484f58; color: #8b949e; font-size: 18px;
+        }
+        .wizard-card .wc-info { flex: 1; }
+        .wizard-card .wc-title { font-size: 13px; font-weight: 600; color: #f0f6fc; }
+        .wizard-card .wc-desc { font-size: 11px; color: #8b949e; margin-top: 2px; }
+        .wizard-step { display: none; }
+        .wizard-step.active { display: flex; flex-direction: column; gap: 10px; }
+        .wizard-back {
+            background: none; border: none; color: #8b949e; cursor: pointer;
+            font-size: 12px; padding: 0; display: flex; align-items: center; gap: 4px;
+        }
+        .wizard-back:hover { color: #c9d1d9; }
+        .wizard-agent-list { display: flex; flex-direction: column; gap: 6px; }
+        .wizard-agent-check {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border: 1px solid #30363d; border-radius: 8px;
+            background: #0d1117; cursor: pointer; transition: border-color 0.15s;
+        }
+        .wizard-agent-check:hover { border-color: #58a6ff; }
+        .wizard-agent-check.selected { border-color: #58a6ff; background: #1c2128; }
+        .wizard-agent-check input[type="checkbox"] { accent-color: #58a6ff; }
+        .wizard-agent-check .wac-icon {
+            width: 28px; height: 28px; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+        }
+        .wizard-agent-check .wac-icon img { width: 100%; height: 100%; object-fit: cover; }
+        .wizard-agent-check .wac-name { font-size: 12px; color: #f0f6fc; flex: 1; }
+        .wizard-footer {
+            padding: 12px 18px; border-top: 1px solid #30363d;
+            display: flex; justify-content: flex-end; gap: 8px;
+        }
+        .wizard-footer button {
+            padding: 6px 16px; font-size: 12px; border-radius: 6px; cursor: pointer; border: none;
+        }
+        .wiz-btn-primary { background: #238636; color: #fff; }
+        .wiz-btn-primary:hover { background: #2ea043; }
+        .wiz-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .wiz-scale-btn {
+            flex: 1; padding: 8px 6px; background: #0d1117; border: 1px solid #30363d;
+            border-radius: 6px; color: #c9d1d9; cursor: pointer; font-size: 12px;
+            font-weight: 600; text-align: center; transition: border-color 0.15s;
+        }
+        .wiz-scale-btn span { display: block; font-size: 10px; font-weight: 400; color: #8b949e; margin-top: 2px; }
+        .wiz-scale-btn:hover { border-color: #58a6ff; }
+        .wiz-scale-btn.active { border-color: #58a6ff; background: #1c2128; color: #58a6ff; }
+        .wac-role-icon { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+        .wizard-agent-check .wac-name small {
+            display: block; font-size: 10px; color: #8b949e; font-weight: 400; margin-top: 1px;
+        }
+
+        /* Quick menu (compact popup) */
+        .quick-menu {
+            display: none; position: fixed; z-index: 800;
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            padding: 4px; min-width: 140px;
+        }
+        .quick-menu.open { display: block; }
+        .quick-menu .qm-item {
+            display: flex; align-items: center; gap: 8px; width: 100%;
+            padding: 8px 12px; border: none; background: none;
+            color: #c9d1d9; font-size: 12px; cursor: pointer;
+            border-radius: 4px; text-align: left;
+        }
+        .quick-menu .qm-item:hover { background: #21262d; color: #f0f6fc; }
+        .quick-menu .qm-dot {
+            width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; overflow: hidden;
+        }
+        .quick-menu .qm-dot img { width: 100%; height: 100%; }
+
+        /* Chat input (bottom of timeline) */
+        .chat-input-area {
+            flex-shrink: 0; border-top: 1px solid #30363d;
+            padding: 8px; display: flex; flex-direction: column; gap: 6px;
+            background: #161b22;
+        }
+        .chat-input-row { display: flex; gap: 4px; }
+        .chat-target-select {
+            flex-shrink: 0; width: 100%; padding: 4px 8px; font-size: 11px;
+            background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+            color: #c9d1d9; outline: none;
+        }
+        .chat-target-select:focus { border-color: #58a6ff; }
+        .chat-text-input {
+            flex: 1; padding: 6px 10px; font-size: 12px;
+            background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+            color: #c9d1d9; outline: none; resize: none;
+            font-family: inherit; min-height: 32px; max-height: 80px;
+        }
+        .chat-text-input:focus { border-color: #58a6ff; }
+        .chat-text-input::placeholder { color: #484f58; }
+        .chat-send-btn {
+            flex-shrink: 0; padding: 6px 12px; font-size: 11px; font-weight: 600;
+            background: #238636; border: none; border-radius: 6px;
+            color: #fff; cursor: pointer; white-space: nowrap;
+        }
+        .chat-send-btn:hover { background: #2ea043; }
+        .chat-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="ws-status" id="wsStatus"></div>
+        <span class="logo">Workspace</span>
+        <span class="session-badge" id="sessionBadge"></span>
+        <span class="spacer"></span>
+        <div class="header-actions">
+            <button class="primary" onclick="showQuickMenu(this)">+ New</button>
+            <button id="btnHeaderSplit" onclick="splitCurrentWindow()">Split</button>
+            <button onclick="toggleTimeline()" id="btnTimeline" title="Timeline">Timeline</button>
+            <a href="/workspace">List</a>
+        </div>
+    </div>
+
+    <div class="body-layout">
+        <!-- Left: Window sidebar -->
+        <div class="window-sidebar">
+            <div class="sidebar-header">
+                <span>Windows</span>
+                <span class="spacer"></span>
+                <button class="add-btn" onclick="showQuickMenu(this)" title="New Window">+</button>
+            </div>
+            <div class="window-list" id="windowList">
+                <div class="empty-state" style="padding:24px;font-size:11px;">No windows</div>
+            </div>
+        </div>
+
+        <!-- Center: Panes of selected window -->
+        <div class="main-area">
+            <div class="pane-bar" id="paneBar">
+                <span class="title" id="paneBarTitle">Select a window</span>
+                <div class="pane-actions">
+                    <button id="btnAddPane" onclick="splitCurrentWindow()" title="Add pane">+ Pane</button>
+                    <button id="btnFloat" onclick="setLayoutMode('float')" title="Float: one pane at a time">Float</button>
+                    <button id="btnSplit" onclick="setLayoutMode('split')" title="Split: side by side">Split</button>
+                </div>
+            </div>
+            <div class="pane-tab-bar" id="paneTabBar">
+                <span class="tab-label">Panes</span>
+            </div>
+            <div class="heatmap-bar" id="heatmapBar">
+                <span class="hm-label">Activity</span>
+            </div>
+            <div class="pane-strip" id="paneStrip">
+                <div class="empty-state">Select a window from the sidebar</div>
+            </div>
+        </div>
+
+        <!-- Right: Timeline sidebar -->
+        <div class="timeline-sidebar" id="timelineSidebar">
+            <div class="timeline-resize-handle" id="timelineResizeHandle"></div>
+            <div class="timeline-header">
+                <span class="title">Timeline</span>
+                <button class="close-btn" onclick="toggleTimeline()" title="Close">&times;</button>
+            </div>
+            <div class="timeline-tabs">
+                <button class="active" id="tabRaw" onclick="setTimelineTab('raw')">Raw</button>
+                <button id="tabSummary" onclick="setTimelineTab('summary')">Summary</button>
+            </div>
+            <div class="timeline-feed" id="timelineFeed">
+                <div class="tl-empty">No activity yet</div>
+            </div>
+            <div class="timeline-summary" id="timelineSummary">
+                <div class="tl-summary-empty">Click summarize to generate.</div>
+                <div class="tl-summary-content" id="summaryContent"></div>
+                <button class="tl-summary-btn" id="summarizeBtn" onclick="requestSummary()">Summarize</button>
+            </div>
+            <div class="chat-input-area">
+                <select class="chat-target-select" id="chatTarget">
+                    <option value="broadcast">Broadcast (all agents)</option>
+                </select>
+                <div class="chat-input-row">
+                    <textarea class="chat-text-input" id="chatInput" placeholder="Send message to agent..." rows="1"></textarea>
+                    <button class="chat-send-btn" id="chatSendBtn" onclick="sendChatMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wizard (initial / empty state) -->
+    <div class="wizard-overlay" id="wizardOverlay">
+        <div class="wizard">
+            <div class="wizard-header">
+                <span class="wiz-title" id="wizTitle">New Window</span>
+                <button class="wiz-close" onclick="closeWizard()">&times;</button>
+            </div>
+            <div class="wizard-body">
+                <!-- Step 1: Choose mode -->
+                <div class="wizard-step active" id="wizStep1">
+                    <div class="wizard-card" onclick="wizardGoDiscussion()">
+                        <div class="wc-icon" style="background:#1c2128;border:2px solid #58a6ff;border-radius:10px;font-size:20px;">&#x1F4AC;</div>
+                        <div class="wc-info">
+                            <div class="wc-title">Discussion w/ Agents</div>
+                            <div class="wc-desc">Claude orchestrates multi-agent discussion</div>
+                        </div>
+                    </div>
+                    <div class="wizard-card" onclick="wizardGoAgent()">
+                        <div class="wc-icon" style="background:#1c2128;border:2px solid #3fb950;border-radius:10px;font-size:20px;">&#x1F916;</div>
+                        <div class="wc-info">
+                            <div class="wc-title">Coding Agent</div>
+                            <div class="wc-desc">Launch a single AI coding agent</div>
+                        </div>
+                    </div>
+                    <div class="wizard-card" onclick="wizardSelect('shell')">
+                        <div class="wc-icon shell-icon">$_</div>
+                        <div class="wc-info">
+                            <div class="wc-title">Terminal</div>
+                            <div class="wc-desc">Plain shell session</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Step 2a: Discussion — topic + scope only -->
+                <div class="wizard-step" id="wizStepDiscussion">
+                    <button class="wizard-back" onclick="wizardBack()">&larr; Back</button>
+                    <div style="font-size:11px;color:#8b949e;">Discussion topic:</div>
+                    <textarea id="wizDiscussionTopic" rows="2"
+                        style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:8px 10px;font-size:12px;resize:none;font-family:inherit;"
+                        placeholder="e.g. Discuss microservices migration strategy"></textarea>
+                    <div style="font-size:11px;color:#8b949e;margin-top:8px;">Scale:</div>
+                    <div style="display:flex;gap:6px;" id="wizScaleGroup">
+                        <button class="wiz-scale-btn" data-scale="sme" onclick="wizSetScale('sme')">SME<span>Small team / Lean / Fast</span></button>
+                        <button class="wiz-scale-btn active" data-scale="le" onclick="wizSetScale('le')">LE<span>Large Enterprise / Multi-team</span></button>
+                    </div>
+                    <div style="font-size:10px;color:#484f58;margin-top:8px;line-height:1.5;">
+                        Parent Claude will autonomously decide agent composition,<br>
+                        assign roles, and drive the discussion.
+                    </div>
+                </div>
+                <!-- Step 2b: Single agent select -->
+                <div class="wizard-step" id="wizStepAgent">
+                    <button class="wizard-back" onclick="wizardBack()">&larr; Back</button>
+                    <div class="wizard-card" onclick="wizardSelect('claude')">
+                        <div class="wc-icon"><img src="/icons/claude.svg" alt="Claude"></div>
+                        <div class="wc-info">
+                            <div class="wc-title">Claude Code</div>
+                            <div class="wc-desc">Anthropic Claude</div>
+                        </div>
+                    </div>
+                    <div class="wizard-card" onclick="wizardSelect('codex')">
+                        <div class="wc-icon"><img src="/icons/codex.svg" alt="Codex"></div>
+                        <div class="wc-info">
+                            <div class="wc-title">Codex CLI</div>
+                            <div class="wc-desc">OpenAI Codex agent</div>
+                        </div>
+                    </div>
+                    <div class="wizard-card" onclick="wizardSelect('opencode')">
+                        <div class="wc-icon"><img src="/icons/opencode.svg" alt="OpenCode"></div>
+                        <div class="wc-info">
+                            <div class="wc-title">OpenCode</div>
+                            <div class="wc-desc">Open-source multi-provider agent</div>
+                        </div>
+                    </div>
+                    <div class="wizard-card" onclick="wizardSelect('gemini')">
+                        <div class="wc-icon"><img src="/icons/gemini.svg" alt="Gemini"></div>
+                        <div class="wc-info">
+                            <div class="wc-title">Gemini CLI</div>
+                            <div class="wc-desc">Google Gemini agent</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Footer (only for discussion step) -->
+            <div class="wizard-footer" id="wizFooter" style="display:none;">
+                <button class="wiz-btn-primary" id="wizStartDiscussion" onclick="wizardStartDiscussion()">Start Discussion</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick menu (sidebar + button) -->
+    <div class="quick-menu" id="quickMenu">
+        <button class="qm-item" onclick="quickMenuSelect('discussion')">
+            <span class="qm-dot" style="display:flex;align-items:center;justify-content:center;font-size:12px;">&#x1F4AC;</span> Discussion
+        </button>
+        <div style="height:1px;background:#30363d;margin:2px 4px;"></div>
+        <button class="qm-item" onclick="quickMenuSelect('claude')">
+            <span class="qm-dot"><img src="/icons/claude.svg" alt=""></span> Claude
+        </button>
+        <button class="qm-item" onclick="quickMenuSelect('codex')">
+            <span class="qm-dot"><img src="/icons/codex.svg" alt=""></span> Codex
+        </button>
+        <button class="qm-item" onclick="quickMenuSelect('opencode')">
+            <span class="qm-dot"><img src="/icons/opencode.svg" alt=""></span> OpenCode
+        </button>
+        <button class="qm-item" onclick="quickMenuSelect('gemini')">
+            <span class="qm-dot"><img src="/icons/gemini.svg" alt=""></span> Gemini
+        </button>
+        <div style="height:1px;background:#30363d;margin:2px 4px;"></div>
+        <button class="qm-item" onclick="quickMenuSelect('shell')">
+            <span class="qm-dot" style="display:flex;align-items:center;justify-content:center;font-size:12px;">$_</span> Terminal
+        </button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module">
+    import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm';
+    import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm';
+    import { WebLinksAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/+esm';
+    import { ClipboardAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-clipboard@0.1.0/+esm';
+
+    // ==================================================================
+    // State
+    // ==================================================================
+    const SESSION_NAME = location.pathname.split('/').filter(Boolean)[1] || 'default';
+    const API_BASE = `/api/tmux/${SESSION_NAME}`;
+
+    let controlWs = null;
+    let activeWindowId = null;  // currently selected window
+    let layoutMode = 'float';  // 'float' | 'split'
+    let activePaneId = null;   // currently focused pane in float mode
+
+    // Terminal instances keyed by pane_id
+    const terminals = {};  // pane_id -> { term, fitAddon, ws, sessionId }
+
+    // Cached API data
+    let allWindows = [];
+    let allPanes = [];
+
+    const ROLE_COLORS = {
+        claude: '#238636', codex: '#10a37f', opencode: '#8b5cf6', gemini: '#4285f4',
+        coder: '#238636', reviewer: '#1f6feb', tester: '#8957e5',
+        shell: '#484f58', parent: '#1f6feb', default: '#6e7681',
+    };
+    function roleColor(t) { t = (t||'').toLowerCase(); for (const [r,c] of Object.entries(ROLE_COLORS)) if (t.includes(r)) return c; return ROLE_COLORS.default; }
+    function roleName(t) { t = (t||'').toLowerCase(); for (const r of ['coder','reviewer','tester','shell','parent','claude','codex','opencode','gemini']) if (t.includes(r)) return r; return 'window'; }
+    const AGENT_ICONS = { claude: '/icons/claude.svg', codex: '/icons/codex.svg', opencode: '/icons/opencode.svg', gemini: '/icons/gemini.svg', shell: '/icons/shell.svg' };
+    function agentIcon(title) { const r = roleName(title); return AGENT_ICONS[r] || AGENT_ICONS.shell; }
+    function isAgentWindow(title) { const t = (title||'').toLowerCase(); return t.includes('claude') || t.includes('codex') || t.includes('opencode') || t.includes('gemini') || t.includes('coder') || t.includes('reviewer') || t.includes('tester') || t.includes('agent'); }
+
+    // ==================================================================
+    // Control WebSocket
+    // ==================================================================
+    function connectControl() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        controlWs = new WebSocket(proto + '//' + location.host + '/ws/control');
+        controlWs.onopen = () => document.getElementById('wsStatus').classList.add('connected');
+        controlWs.onclose = () => {
+            document.getElementById('wsStatus').classList.remove('connected');
+            setTimeout(connectControl, 2000);
+        };
+        controlWs.onmessage = (evt) => {
+            try {
+                const msg = JSON.parse(evt.data);
+                if (['open_terminal','close_terminal','refresh','window_created','agent_spawned'].includes(msg.type))
+                    refreshAll();
+            } catch(e) {}
+        };
+    }
+
+    // ==================================================================
+    // API
+    // ==================================================================
+    async function api(method, path, body) {
+        try {
+            const opts = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) opts.body = JSON.stringify(body);
+            const resp = await fetch(path, opts);
+            if (!resp.ok) return null;
+            return await resp.json();
+        } catch(e) { return null; }
+    }
+
+    // ==================================================================
+    // Terminal factory
+    // ==================================================================
+    function createTerminal(container, sessionId) {
+        const term = new Terminal({
+            fontSize: 13,
+            fontFamily: "'JetBrains Mono','Cascadia Code','Fira Code',Menlo,monospace",
+            theme: {
+                background: '#0d1117', foreground: '#c9d1d9', cursor: '#58a6ff',
+                selectionBackground: '#264f78',
+                black: '#484f58', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+                blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39d2c0', white: '#b1bac4',
+            },
+            cursorBlink: true, scrollback: 5000, allowProposedApi: true,
+        });
+        const fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+        term.loadAddon(new WebLinksAddon());
+        term.loadAddon(new ClipboardAddon());
+        let _ctrlCCopied = false;
+        term.attachCustomKeyEventHandler((ev) => {
+            if (ev.ctrlKey && ev.key === 'c') {
+                if (ev.type === 'keydown' && term.hasSelection()) {
+                    _ctrlCCopied = true;
+                    return false; // let browser copy
+                }
+                if (ev.type === 'keyup' && _ctrlCCopied) {
+                    _ctrlCCopied = false;
+                    return false; // block matching keyup
+                }
+            }
+            if (ev.ctrlKey && ev.key === 'v') return false;
+            return true;
+        });
+        term.open(container);
+
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${proto}//${location.host}/ws/${sessionId}?cols=${term.cols}&rows=${term.rows}`);
+        ws.binaryType = 'arraybuffer';
+        ws.onmessage = (evt) => {
+            if (evt.data instanceof ArrayBuffer) term.write(new Uint8Array(evt.data));
+            else {
+                try { const m = JSON.parse(evt.data); if (m.type === 'exit') term.write('\r\n\x1b[90m[exited]\x1b[0m\r\n'); }
+                catch(e) { term.write(evt.data); }
+            }
+        };
+        ws.onopen = () => {
+            // Fit terminal to container and send initial resize to PTY
+            requestAnimationFrame(() => {
+                try {
+                    fitAddon.fit();
+                    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+                } catch(e) {}
+            });
+        };
+        ws.onclose = () => term.write('\r\n\x1b[90m[disconnected]\x1b[0m\r\n');
+        term.onData((data) => { if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(data)); });
+        term.onResize(({ cols, rows }) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows })); });
+
+        return { term, fitAddon, ws, sessionId };
+    }
+
+    function destroyTermInfo(info) {
+        if (!info) return;
+        try { info.ws.close(); } catch(e) {}
+        try { info.term.dispose(); } catch(e) {}
+    }
+
+    function fitAll() {
+        for (const t of Object.values(terminals)) try { t.fitAddon.fit(); } catch(e) {}
+    }
+
+    // ==================================================================
+    // Window sidebar rendering
+    // ==================================================================
+    function renderWindowList() {
+        const list = document.getElementById('windowList');
+        if (allWindows.length === 0) {
+            list.innerHTML = '<div class="empty-state" style="padding:24px;font-size:11px;">No windows</div>';
+            return;
+        }
+
+        list.innerHTML = '';
+        allWindows.forEach(w => {
+            const paneCount = allPanes.filter(p => p.window_id === w.window_id).length;
+            const agent = isAgentWindow(w.title);
+            const iconClass = agent ? 'is-agent' : 'is-shell';
+            const typeLabel = agent ? 'AI' : 'shell';
+            const iconSrc = agentIcon(w.title);
+
+            const item = document.createElement('div');
+            item.className = 'window-item' + (w.window_id === activeWindowId ? ' active' : '');
+            item.innerHTML = `
+                <div class="win-icon ${iconClass}"><img src="${iconSrc}" alt=""></div>
+                <div class="win-info">
+                    <div class="win-title">${esc(w.title)}</div>
+                    <div class="win-meta">${typeLabel} &middot; ${paneCount} pane${paneCount !== 1 ? 's' : ''}</div>
+                </div>
+                <button class="win-close" title="Close window">&times;</button>
+            `;
+            item.addEventListener('click', (e) => {
+                if (e.target.classList.contains('win-close')) {
+                    closeWindow(w.window_id);
+                } else {
+                    selectWindow(w.window_id);
+                }
+            });
+            list.appendChild(item);
+        });
+    }
+
+    function selectWindow(windowId) {
+        activeWindowId = windowId;
+        renderWindowList();
+        renderPanes();
+    }
+
+    // ==================================================================
+    // Layout mode
+    // ==================================================================
+    function setLayoutMode(mode) {
+        layoutMode = mode;
+        document.getElementById('btnFloat').classList.toggle('active', mode === 'float');
+        document.getElementById('btnSplit').classList.toggle('active', mode === 'split');
+        renderPanes();
+    }
+
+    function selectPane(paneId) {
+        activePaneId = paneId;
+        // Update float-active class
+        const strip = document.getElementById('paneStrip');
+        strip.querySelectorAll('.pane-cell').forEach(el => {
+            el.classList.toggle('float-active', el.dataset.paneId === paneId);
+        });
+        // Update tab active state
+        document.querySelectorAll('#paneTabBar .pane-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.paneId === paneId);
+        });
+        requestAnimationFrame(fitAll);
+    }
+
+    function renderPaneTabs(panes) {
+        const bar = document.getElementById('paneTabBar');
+        const win = allWindows.find(w => w.window_id === activeWindowId);
+        const agent = win ? isAgentWindow(win.title) : false;
+        const effectiveMode = agent ? layoutMode : 'split';
+
+        // Only show tab bar in float mode with 2+ panes
+        if (effectiveMode !== 'float' || panes.length <= 1) {
+            bar.classList.remove('visible');
+            return;
+        }
+        bar.classList.add('visible');
+        // Clear tabs but keep label
+        bar.innerHTML = '<span class="tab-label">Panes</span>';
+        panes.forEach(p => {
+            const role = roleName(p.title);
+            const color = roleColor(p.title);
+            const tab = document.createElement('button');
+            tab.className = 'pane-tab' + (p.pane_id === activePaneId ? ' active' : '');
+            tab.dataset.paneId = p.pane_id;
+            tab.innerHTML = `<span class="tab-dot" style="background:${color}"></span>${esc(p.title || role)}`;
+            tab.onclick = () => selectPane(p.pane_id);
+            bar.appendChild(tab);
+        });
+    }
+
+    // ==================================================================
+    // Pane rendering (main area)
+    // ==================================================================
+    function renderPanes() {
+        const strip = document.getElementById('paneStrip');
+        const titleEl = document.getElementById('paneBarTitle');
+
+        if (!activeWindowId) {
+            strip.innerHTML = '<div class="empty-state">Select a window from the sidebar</div>';
+            titleEl.textContent = 'Select a window';
+            document.getElementById('paneTabBar').classList.remove('visible');
+            return;
+        }
+
+        const win = allWindows.find(w => w.window_id === activeWindowId);
+        const panes = allPanes.filter(p => p.window_id === activeWindowId);
+        const agent = win ? isAgentWindow(win.title) : false;
+
+        titleEl.textContent = win ? win.title : 'Window';
+
+        // Show Float/Split only for agent windows; hide Split button for agent windows
+        document.getElementById('btnFloat').style.display = agent ? '' : 'none';
+        document.getElementById('btnSplit').style.display = agent ? '' : 'none';
+        document.getElementById('btnHeaderSplit').style.display = agent ? 'none' : '';
+        // Hide + Pane button for agent windows
+        document.getElementById('btnAddPane').style.display = agent ? 'none' : '';
+        // Shell windows always use split mode
+        const effectiveMode = agent ? layoutMode : 'split';
+
+        if (panes.length === 0) {
+            strip.innerHTML = '<div class="empty-state">No panes in this window</div>';
+            document.getElementById('paneTabBar').classList.remove('visible');
+            return;
+        }
+
+        // Ensure activePaneId is valid
+        if (!activePaneId || !panes.find(p => p.pane_id === activePaneId)) {
+            activePaneId = panes[0].pane_id;
+        }
+
+        // Set strip mode class
+        const stripMode = (agent && effectiveMode === 'split') ? 'split-agent' : effectiveMode;
+        strip.className = 'pane-strip mode-' + stripMode;
+        strip.innerHTML = '';
+
+        const heatBar = document.getElementById('heatmapBar');
+        const tabBar = document.getElementById('paneTabBar');
+
+        // --- Float mode (agent): parent floats, agents in background ---
+        if (stripMode === 'float' && agent && panes.length > 0) {
+            const parentPane = panes[0];
+            const childPanes = panes.slice(1);
+
+            // Background: ghost agents
+            const bg = document.createElement('div');
+            bg.className = 'float-bg';
+            childPanes.forEach(p => {
+                const role = roleName(p.title);
+                const color = roleColor(p.title);
+                const ghost = document.createElement('div');
+                ghost.className = 'pane-cell';
+                ghost.innerHTML = `
+                    <div class="pane-cell-header">
+                        <span class="pane-cell-role" style="background:${color}">${esc(role)}</span>
+                        <span class="pane-cell-title">${esc(p.title)}</span>
+                        <span class="ghost-pulse"></span>
+                    </div>
+                    <div class="terminal-wrap" style="display:flex;align-items:center;justify-content:center;color:#30363d;font-size:11px;">
+                        Active...
+                    </div>
+                `;
+                bg.appendChild(ghost);
+            });
+            if (childPanes.length === 0) {
+                bg.innerHTML = '<div class="empty-state" style="opacity:0.3">No child agents</div>';
+            }
+            strip.appendChild(bg);
+
+            // Foreground: parent float
+            const fg = document.createElement('div');
+            fg.className = 'float-fg';
+            fg.id = 'floatFg';
+            fg.innerHTML = `
+                <div class="float-toggle-bar">
+                    <span class="title">${esc(parentPane.title || 'Parent')}</span>
+                    <span style="font-size:10px;color:#8b949e">parent</span>
+                    <button class="ftb-btn" onclick="showFloatChildren()">Show Children</button>
+                </div>
+                <div class="terminal-wrap"></div>
+            `;
+            strip.appendChild(fg);
+            mountTerminal(fg.querySelector('.terminal-wrap'), parentPane);
+
+            // Full children overlay
+            const full = document.createElement('div');
+            full.className = 'float-children-full';
+            full.id = 'floatChildrenFull';
+            full.innerHTML = `<div class="back-bar" onclick="hideFloatChildren()"><span>&larr;</span> Back to Parent</div>`;
+            const body = document.createElement('div');
+            body.className = 'children-body';
+            childPanes.forEach(p => {
+                const el = makePaneCell(p);
+                body.appendChild(el);
+                mountTerminal(el.querySelector('.terminal-wrap'), p);
+            });
+            full.appendChild(body);
+            strip.appendChild(full);
+
+            // Heatmap bar (horizontal, always visible)
+            if (childPanes.length > 0) {
+                heatBar.classList.add('visible');
+                renderHeatmapBar(heatBar, childPanes);
+            } else {
+                heatBar.classList.remove('visible');
+            }
+            tabBar.classList.remove('visible');
+            return;
+        }
+
+        // --- Split-agent mode: parent left, agents+heatmap right ---
+        heatBar.classList.remove('visible');
+        tabBar.classList.remove('visible');
+
+        let parentContainer = strip;
+        let agentContainer = strip;
+        let heatmapRail = null;
+        if (stripMode === 'split-agent' && panes.length > 1) {
+            const parentDiv = document.createElement('div');
+            parentDiv.className = 'split-parent';
+            const agentsWrap = document.createElement('div');
+            agentsWrap.className = 'split-agents-wrap';
+            const agentsDiv = document.createElement('div');
+            agentsDiv.className = 'split-agents';
+            heatmapRail = document.createElement('div');
+            heatmapRail.className = 'heatmap-rail';
+            agentsWrap.appendChild(agentsDiv);
+            agentsWrap.appendChild(heatmapRail);
+            strip.appendChild(parentDiv);
+            strip.appendChild(agentsWrap);
+            parentContainer = parentDiv;
+            agentContainer = agentsDiv;
+        }
+
+        const agentPanes = [];
+
+        panes.forEach((p, i) => {
+            const el = makePaneCell(p);
+
+            if (stripMode === 'split-agent' && panes.length > 1) {
+                if (i === 0) {
+                    parentContainer.appendChild(el);
+                } else {
+                    agentContainer.appendChild(el);
+                    agentPanes.push({ pane_id: p.pane_id, title: p.title, color: roleColor(p.title), role: roleName(p.title), index: i });
+                }
+            } else {
+                strip.appendChild(el);
+            }
+
+            mountTerminal(el.querySelector('.terminal-wrap'), p);
+        });
+
+        if (heatmapRail && agentPanes.length > 0) {
+            renderHeatmapRail(heatmapRail, agentPanes, agentContainer);
+        }
+
+        renderPaneTabs(panes);
+    }
+
+    // Helper: create a pane cell element
+    function makePaneCell(p) {
+        const el = document.createElement('div');
+        el.className = 'pane-cell';
+        el.dataset.paneId = p.pane_id;
+        const role = roleName(p.title);
+        const color = roleColor(p.title);
+        el.innerHTML = `
+            <div class="pane-cell-header">
+                <span class="pane-cell-role" style="background:${color}">${esc(role)}</span>
+                <span class="pane-cell-title">${esc(p.title)}</span>
+                <button class="pane-cell-btn" onclick="closePane('${p.pane_id}')" title="Close">&times;</button>
+            </div>
+            <div class="terminal-wrap"></div>
+        `;
+        return el;
+    }
+
+    // Helper: mount or reattach terminal to a wrap element
+    function mountTerminal(wrap, pane) {
+        if (terminals[pane.pane_id] && terminals[pane.pane_id].sessionId === pane.session_id) {
+            wrap.appendChild(terminals[pane.pane_id].term.element);
+            requestAnimationFrame(() => { try { terminals[pane.pane_id].fitAddon.fit(); } catch(e) {} });
+        } else {
+            if (terminals[pane.pane_id]) destroyTermInfo(terminals[pane.pane_id]);
+            terminals[pane.pane_id] = createTerminal(wrap, pane.session_id);
+        }
+    }
+
+    // Float mode: show/hide children
+    function showFloatChildren() {
+        const fg = document.getElementById('floatFg');
+        const full = document.getElementById('floatChildrenFull');
+        if (fg) fg.classList.add('behind');
+        if (full) full.classList.add('visible');
+        requestAnimationFrame(fitAll);
+    }
+    function hideFloatChildren() {
+        const fg = document.getElementById('floatFg');
+        const full = document.getElementById('floatChildrenFull');
+        if (fg) fg.classList.remove('behind');
+        if (full) full.classList.remove('visible');
+        requestAnimationFrame(fitAll);
+    }
+
+    // Heatmap helpers
+    function getLineCount(paneId) {
+        const t = terminals[paneId];
+        if (!t) return 0;
+        return t.term.buffer.active.length;
+    }
+
+    function renderHeatmapRail(rail, agentPanes, scrollContainer) {
+        rail.innerHTML = '';
+        agentPanes.forEach(ap => {
+            const dot = document.createElement('div');
+            dot.className = 'hm-dot';
+            dot.dataset.paneId = ap.pane_id;
+            dot.style.background = ap.color;
+            const lines = getLineCount(ap.pane_id);
+            dot.innerHTML = `<span style="font-size:7px;line-height:1;text-align:center">${esc(ap.role.charAt(0).toUpperCase())}<br>${lines}</span>`;
+            dot.title = `${ap.title} (${lines} lines)`;
+            dot.onclick = () => {
+                const target = scrollContainer.querySelector(`[data-pane-id="${ap.pane_id}"]`);
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            };
+            rail.appendChild(dot);
+        });
+    }
+
+    function renderHeatmapBar(bar, panes) {
+        bar.innerHTML = '<span class="hm-label">Activity</span>';
+        panes.forEach(p => {
+            const color = roleColor(p.title);
+            const role = roleName(p.title);
+            const lines = getLineCount(p.pane_id);
+            const cell = document.createElement('div');
+            cell.className = 'heatmap-cell' + (p.pane_id === activePaneId ? ' active' : '');
+            cell.style.background = color;
+            cell.innerHTML = `${esc(role)} <span class="hm-lines">${lines}</span>`;
+            cell.title = `${p.title} (${lines} lines)`;
+            cell.onclick = () => selectPane(p.pane_id);
+            bar.appendChild(cell);
+        });
+    }
+
+    // Periodically update heatmap line counts
+    setInterval(() => {
+        // Update vertical rail dots
+        document.querySelectorAll('.heatmap-rail .hm-dot[data-pane-id]').forEach(dot => {
+            const lines = getLineCount(dot.dataset.paneId);
+            const span = dot.querySelector('span');
+            if (span) {
+                const letter = span.textContent.charAt(0);
+                span.innerHTML = `${letter}<br>${lines}`;
+            }
+            dot.title = dot.title.replace(/\(\d+ lines\)/, `(${lines} lines)`);
+        });
+        // Update horizontal bar cells
+        document.querySelectorAll('#heatmapBar .heatmap-cell').forEach((cell, i) => {
+            const panes = allPanes.filter(p => p.window_id === activeWindowId);
+            if (panes[i]) {
+                const lines = getLineCount(panes[i].pane_id);
+                const linesSpan = cell.querySelector('.hm-lines');
+                if (linesSpan) linesSpan.textContent = lines;
+            }
+        });
+    }, 3000);
+
+    // ==================================================================
+    // Wizard / Quick Menu
+    // ==================================================================
+    function _wizShowStep(stepId, title) {
+        document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+        document.getElementById(stepId).classList.add('active');
+        document.getElementById('wizTitle').textContent = title;
+        document.getElementById('wizFooter').style.display =
+            stepId === 'wizStepDiscussion' ? '' : 'none';
+    }
+
+    function openWizard() {
+        _wizShowStep('wizStep1', 'New Window');
+        document.getElementById('wizardOverlay').classList.add('open');
+    }
+    function closeWizard() {
+        document.getElementById('wizardOverlay').classList.remove('open');
+    }
+    function wizardBack() {
+        _wizShowStep('wizStep1', 'New Window');
+    }
+    let _discussionScale = 'le';
+
+    function wizardGoDiscussion() {
+        _wizShowStep('wizStepDiscussion', 'Discussion w/ Agents');
+        wizSetScale('le');
+    }
+    function wizardGoAgent() {
+        _wizShowStep('wizStepAgent', 'Coding Agent');
+    }
+    function wizardSelect(type) {
+        closeWizard();
+        newWindow(type);
+    }
+
+    function wizSetScale(scale) {
+        _discussionScale = scale;
+        document.querySelectorAll('.wiz-scale-btn').forEach(b => b.classList.toggle('active', b.dataset.scale === scale));
+    }
+
+    function wizardStartDiscussion() {
+        const topic = (document.getElementById('wizDiscussionTopic').value || '').trim();
+        if (!topic) {
+            document.getElementById('wizDiscussionTopic').focus();
+            return;
+        }
+        closeWizard();
+        newDiscussion(_discussionScale, topic);
+    }
+
+    function showQuickMenu(anchor) {
+        const menu = document.getElementById('quickMenu');
+        const rect = anchor.getBoundingClientRect();
+        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.left = rect.left + 'px';
+        menu.classList.add('open');
+        setTimeout(() => {
+            const handler = (e) => {
+                if (!menu.contains(e.target) && e.target !== anchor) {
+                    menu.classList.remove('open');
+                    document.removeEventListener('click', handler);
+                }
+            };
+            document.addEventListener('click', handler);
+        }, 0);
+    }
+    function quickMenuSelect(type) {
+        document.getElementById('quickMenu').classList.remove('open');
+        if (type === 'discussion') {
+            openWizard();
+            wizardGoDiscussion();
+        } else {
+            newWindow(type);
+        }
+    }
+
+    // ==================================================================
+    // Actions
+    // ==================================================================
+    const AGENT_TYPES = {
+        claude:    { title: 'claude:agent',    agent: true, color: '#238636' },
+        codex:     { title: 'codex:agent',     agent: true, color: '#10a37f' },
+        opencode:  { title: 'opencode:agent',  agent: true, color: '#8b5cf6' },
+        gemini:    { title: 'gemini:agent',    agent: true, color: '#4285f4' },
+        shell:     { title: 'Shell',           agent: false },
+    };
+
+    async function newWindow(agentType) {
+        const info = AGENT_TYPES[agentType] || AGENT_TYPES.shell;
+        const agentId = info.agent ? `${agentType}-${Math.random().toString(36).slice(2,8)}` : '';
+        const title = info.agent ? `${agentType}:${agentId}` : 'Shell';
+
+        // AgentShell wraps the actual command — server resolves cmd from agent-type
+        const cmd = info.agent
+            ? `python3 -m aetherterm.agentshell.agent_shell --agent-id ${agentId} --role ${agentType} --agent-type ${agentType}`
+            : '';
+
+        await api('POST', `${API_BASE}/windows`, { title, cmd });
+        await refreshAll();
+    }
+
+    async function newDiscussion(scale, topic) {
+        // Start discussion via API — creates parent pane + sends orchestration prompt
+        const resp = await api('POST', `${API_BASE}/discussion`, { topic, scale });
+        if (resp && resp.error) {
+            console.error('Discussion start failed:', resp.error);
+        }
+        await refreshAll();
+    }
+
+    async function splitCurrentWindow() {
+        if (!activeWindowId) {
+            showToast('Select a window first');
+            return;
+        }
+        await api('POST', `${API_BASE}/windows/${activeWindowId}/split`, { direction: 'h', cmd: '' });
+        await refreshAll();
+    }
+
+    async function closeWindow(windowId) {
+        // Clean up terminals for this window's panes
+        const panes = allPanes.filter(p => p.window_id === windowId);
+        panes.forEach(p => {
+            if (terminals[p.pane_id]) {
+                destroyTermInfo(terminals[p.pane_id]);
+                delete terminals[p.pane_id];
+            }
+        });
+
+        await api('DELETE', `${API_BASE}/windows/${windowId}`);
+        if (activeWindowId === windowId) {
+            activeWindowId = null;
+        }
+        await refreshAll();
+    }
+
+    async function closePane(paneId) {
+        if (terminals[paneId]) {
+            destroyTermInfo(terminals[paneId]);
+            delete terminals[paneId];
+        }
+        await api('DELETE', `${API_BASE}/panes/${paneId}`);
+        await refreshAll();
+    }
+
+    // ==================================================================
+    // Refresh — main data sync
+    // ==================================================================
+    async function refreshAll() {
+        const [windows, panes] = await Promise.all([
+            api('GET', `${API_BASE}/windows`),
+            api('GET', `${API_BASE}/panes`),
+        ]);
+        if (!windows || !panes) return;
+
+        allWindows = windows;
+        allPanes = panes;
+
+        // Clean up terminals for panes that no longer exist
+        const validPaneIds = new Set(panes.map(p => p.pane_id));
+        for (const id of Object.keys(terminals)) {
+            if (!validPaneIds.has(id)) {
+                destroyTermInfo(terminals[id]);
+                delete terminals[id];
+            }
+        }
+
+        // Auto-select first window if none selected
+        if (!activeWindowId && windows.length > 0) {
+            activeWindowId = windows[0].window_id;
+        }
+        // If active window was deleted, select first
+        if (activeWindowId && !windows.find(w => w.window_id === activeWindowId)) {
+            activeWindowId = windows.length > 0 ? windows[0].window_id : null;
+        }
+
+        renderWindowList();
+        renderPanes();
+
+        // Show wizard when no windows exist
+        if (windows.length === 0) openWizard();
+    }
+
+    // ==================================================================
+    // Util
+    // ==================================================================
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    function showToast(text) {
+        const el = document.getElementById('toast');
+        el.textContent = text;
+        el.classList.add('visible');
+        setTimeout(() => el.classList.remove('visible'), 3000);
+    }
+
+    // ==================================================================
+    // Timeline resize handle
+    // ==================================================================
+    {
+        const handle = document.getElementById('timelineResizeHandle');
+        const sidebar = document.getElementById('timelineSidebar');
+        let dragging = false;
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            dragging = true;
+            sidebar.classList.add('resizing');
+            handle.classList.add('active');
+            const onMove = (ev) => {
+                if (!dragging) return;
+                const newWidth = window.innerWidth - ev.clientX;
+                sidebar.style.width = Math.max(200, Math.min(newWidth, window.innerWidth * 0.6)) + 'px';
+                fitAll();
+            };
+            const onUp = () => {
+                dragging = false;
+                sidebar.classList.remove('resizing');
+                handle.classList.remove('active');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                fitAll();
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+
+    // ==================================================================
+    // Timeline
+    // ==================================================================
+    let timelineVisible = true;
+    let lastTimelineId = 0;
+    let timelineTab = 'raw';
+
+    function toggleTimeline() {
+        timelineVisible = !timelineVisible;
+        document.getElementById('timelineSidebar').classList.toggle('collapsed', !timelineVisible);
+        document.getElementById('btnTimeline').classList.toggle('active', timelineVisible);
+        requestAnimationFrame(fitAll);
+    }
+
+    function setTimelineTab(tab) {
+        timelineTab = tab;
+        document.getElementById('tabRaw').classList.toggle('active', tab === 'raw');
+        document.getElementById('tabSummary').classList.toggle('active', tab === 'summary');
+        document.getElementById('timelineFeed').style.display = tab === 'raw' ? '' : 'none';
+        document.getElementById('timelineSummary').classList.toggle('visible', tab === 'summary');
+    }
+
+    const PARENT_SOURCES = new Set(['orchestrator', 'ui', 'parent']);
+    const SYSTEM_TYPES = new Set(['create', 'close', 'spawn', 'split']);
+    const TL_TYPE_LABELS = {
+        spawn: 'spawn', create: 'create', send_keys: 'keys', split: 'split', close: 'close',
+        nats: 'nats', task_create: 'task', task_complete: 'done', task_failed: 'fail',
+        agent_dm: 'dm', agent_broadcast: 'broadcast', agent_register: 'register',
+        heartbeat: 'heartbeat', status: 'status', progress: 'progress',
+    };
+
+    function classifySource(entry) {
+        const src = (entry.source || '').toLowerCase();
+        if (SYSTEM_TYPES.has(entry.type) && (src === 'ui' || !src)) return 'system';
+        if (PARENT_SOURCES.has(src) || src.includes('parent') || src.includes('orchestrator')) return 'parent';
+        return 'agent';
+    }
+
+    function renderTimelineEntry(entry) {
+        const time = new Date(entry.ts).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const label = TL_TYPE_LABELS[entry.type] || entry.type;
+        const side = classifySource(entry);
+        const sender = entry.source || 'system';
+        const target = entry.target ? ` &rarr; ${esc(entry.target)}` : '';
+
+        let bodyHtml = `<div class="chat-detail">${esc(entry.detail)}</div>`;
+        if (entry.meta && entry.meta.payload) {
+            const raw = entry.meta.payload;
+            const preview = typeof raw === 'string' ? raw : JSON.stringify(raw).slice(0, 140);
+            bodyHtml += `<span class="chat-payload">${esc(preview)}</span>`;
+        }
+        if (entry.type === 'send_keys' && entry.detail) {
+            bodyHtml = `<span class="chat-payload">${esc(entry.detail)}</span>`;
+        }
+
+        if (side === 'system') {
+            return `<div class="chat-msg from-system">
+                <div class="chat-bubble">
+                    <span class="chat-type">${label}</span> ${esc(entry.detail)}${target}
+                </div>
+                <div class="chat-meta">${time}</div>
+            </div>`;
+        }
+
+        return `<div class="chat-msg from-${side}">
+            <div class="chat-sender">${esc(sender)}${target}</div>
+            <div class="chat-bubble">
+                <div class="chat-type">${label}</div>
+                ${bodyHtml}
+            </div>
+            <div class="chat-meta">${time}</div>
+        </div>`;
+    }
+
+    async function pollTimeline() {
+        const entries = await api('GET', `${API_BASE}/timeline?since_id=${lastTimelineId}`);
+        if (!entries || entries.length === 0) return;
+        const feed = document.getElementById('timelineFeed');
+        const empty = feed.querySelector('.tl-empty');
+        if (empty) empty.remove();
+        entries.forEach(e => {
+            if (e.id > lastTimelineId) lastTimelineId = e.id;
+            feed.insertAdjacentHTML('beforeend', renderTimelineEntry(e));
+        });
+        feed.scrollTop = feed.scrollHeight;
+    }
+
+    async function requestSummary() {
+        const btn = document.getElementById('summarizeBtn');
+        const content = document.getElementById('summaryContent');
+        btn.disabled = true; btn.textContent = 'Summarizing...'; content.textContent = '';
+        const result = await api('POST', `${API_BASE}/timeline/summarize`);
+        if (result && result.summary) {
+            content.textContent = result.summary;
+            const emptyEl = document.querySelector('#timelineSummary .tl-summary-empty');
+            if (emptyEl) emptyEl.style.display = 'none';
+        } else {
+            content.textContent = result?.error || 'Failed to generate summary';
+        }
+        btn.disabled = false; btn.textContent = 'Summarize';
+    }
+
+    // ==================================================================
+    // Chat / Messaging
+    // ==================================================================
+    async function refreshAgentList() {
+        const agents = await api('GET', `${API_BASE}/agents`);
+        const select = document.getElementById('chatTarget');
+        const currentVal = select.value;
+        select.innerHTML = '<option value="broadcast">Broadcast (all agents)</option>';
+        if (agents && agents.length) {
+            agents.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.agent_id;
+                opt.textContent = `${a.role}: ${a.agent_id}`;
+                select.appendChild(opt);
+            });
+        }
+        // Restore selection
+        if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) {
+            select.value = currentVal;
+        }
+    }
+
+    async function sendChatMessage() {
+        const input = document.getElementById('chatInput');
+        const target = document.getElementById('chatTarget');
+        const btn = document.getElementById('chatSendBtn');
+        const content = input.value.trim();
+        if (!content) return;
+
+        btn.disabled = true;
+        const toAgent = target.value;
+        const msgType = toAgent === 'broadcast' ? 'broadcast' : 'dm';
+
+        await api('POST', `${API_BASE}/message`, {
+            from_agent: 'ui',
+            to_agent: toAgent === 'broadcast' ? '' : toAgent,
+            content: content,
+            message_type: msgType,
+        });
+
+        input.value = '';
+        btn.disabled = false;
+        // Poll timeline immediately to show the message
+        await pollTimeline();
+        input.focus();
+    }
+
+    // Send on Enter (Shift+Enter for newline)
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+
+    // ==================================================================
+    // Expose to inline onclick handlers
+    // ==================================================================
+    Object.assign(window, {
+        newWindow, splitCurrentWindow, closeWindow, closePane,
+        toggleTimeline, setTimelineTab, requestSummary, showToast,
+        setLayoutMode, selectPane,
+        openWizard, closeWizard, wizardSelect, wizardGoDiscussion, wizardGoAgent, wizardBack, wizardStartDiscussion, wizSetScale,
+        showQuickMenu, quickMenuSelect,
+        showFloatChildren, hideFloatChildren,
+        sendChatMessage, refreshAgentList,
+    });
+
+    // ==================================================================
+    // Init
+    // ==================================================================
+    document.getElementById('sessionBadge').textContent = SESSION_NAME;
+    document.getElementById('btnTimeline').classList.add('active');
+    document.getElementById('btnFloat').classList.add('active');
+    connectControl();
+    refreshAll();
+    pollTimeline();
+    refreshAgentList();
+    setInterval(pollTimeline, 2000);
+    setInterval(refreshAgentList, 5000);
+    window.addEventListener('resize', fitAll);
+    </script>
+</body>
+</html>

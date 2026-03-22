@@ -14,7 +14,7 @@ export const useUIModeStore = defineStore('uiMode', () => {
   const isTransitioning = ref(false)
   const sidebarWidth = ref(320)
   const isSidebarCollapsed = ref(false)
-  const activeSidebarTab = ref<'chat' | 'agents' | 'tasks'>('chat')
+  const activeSidebarTab = ref<'chat' | 'agents' | 'tasks' | 'timeline'>('chat')
 
   // Getters
   const isTmuxMode = computed(() => interactionMode.value === 'tmux')
@@ -39,7 +39,7 @@ export const useUIModeStore = defineStore('uiMode', () => {
     setInteractionMode(interactionMode.value === 'tmux' ? 'pilot' : 'tmux')
   }
 
-  function setSidebarTab(tab: 'chat' | 'agents' | 'tasks') {
+  function setSidebarTab(tab: 'chat' | 'agents' | 'tasks' | 'timeline') {
     activeSidebarTab.value = tab
     // Auto-expand sidebar when selecting a tab
     if (isSidebarCollapsed.value) {

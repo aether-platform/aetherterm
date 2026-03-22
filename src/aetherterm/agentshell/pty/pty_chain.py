@@ -9,7 +9,7 @@ AsyncioTerminalとOS Shellの間にAgentShellをPTYミドルウェアとして�
          │                   │                                             │
          │              I/O Monitor ←→ AI Analyzer                         │
          │                   │                │                            │
-         │              Command Filter   ZMQ DEALER (to Broker)            │
+         │              Command Filter                                     │
          │                   │                                             │
          │              PTY2 master ──── PTY2 slave = stdin/stdout/stderr
          │                                                                 │
@@ -17,7 +17,7 @@ AsyncioTerminalとOS Shellの間にAgentShellをPTYミドルウェアとして�
 データフロー:
 1. ユーザー入力 → PTY1 slave(stdin) → _relay_user_to_shell() → input_filter → PTY2 master → OS Shell
 2. OS Shell出力 → PTY2 slave(stdout) → PTY2 master → _relay_shell_to_user() → output_filter → PTY1 slave(stdout) → AsyncioTerminal → Frontend
-3. 全I/OはZMQ PUB/SUBでイベント配信（他Agentが監視可能）
+3. 全I/OはNATS pub/subでイベント配信（他Agentが監視可能）
 """
 
 import asyncio
@@ -54,7 +54,7 @@ class PTYChain:
         self._input_filter: Optional[FilterFn] = None
         self._output_filter: Optional[FilterFn] = None
 
-        # I/Oコールバック（ZMQ配信用）
+        # I/Oコールバック（NATS配信用）
         self._on_user_input: Optional[Callable[[bytes], None]] = None
         self._on_shell_output: Optional[Callable[[bytes], None]] = None
 
@@ -215,11 +215,11 @@ class PTYChain:
         self._output_filter = filter_fn
 
     def set_on_user_input(self, callback: Callable[[bytes], None]) -> None:
-        """ユーザー入力コールバックを設定（ZMQ配信用）"""
+        """ユーザー入力コールバックを設定（NATS配信用）"""
         self._on_user_input = callback
 
     def set_on_shell_output(self, callback: Callable[[bytes], None]) -> None:
-        """Shell出力コールバックを設定（ZMQ配信用）"""
+        """Shell出力コールバックを設定（NATS配信用）"""
         self._on_shell_output = callback
 
     @property

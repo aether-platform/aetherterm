@@ -1,7 +1,10 @@
-"""CRI (containerd) sandbox for session isolation.
+"""Sandbox backends for session isolation.
 
-All sessions run inside CRI PodSandbox + Container.
-Requires containerd and crictl.
+Supports:
+  - nsjail: lightweight process-level isolation (default when available)
+  - CRI: containerd PodSandbox + Container (Kubernetes environments)
+
+Set SANDBOX_BACKEND=nsjail|cri|auto (default: auto).
 """
 
 from aetherterm.agiterm.sandbox.backend import (

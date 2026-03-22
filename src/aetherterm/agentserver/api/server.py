@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import shutil
+from pathlib import Path
 from typing import Any, Dict
 
 import httpx
@@ -9,15 +11,45 @@ from fastapi import Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from ..core.control_bridge import ControlBridge
+from ..core.activity import get_event_hub
+from ..core.nats_bridge import NATSControlBridge
 from ..core.messaging import MessageRouter
 from ..core.sessions.tmux.session_registry import TmuxSessionRegistry
+from ..core.sessions.tmux.wm_socket import WmSocketServer
 from ..core.sessions.tmux.ws_handler import TmuxWebSocketHandler
 from .containers import initialize_container
+from .handlers import ControlCommandHandler, handle_agent_websocket
 from .routes import router as api_router
 from .tmux_routes import router as tmux_api_router
 
 log = logging.getLogger("aetherterm.server")
+
+_SHIM_DIR = Path(f"/tmp/aetherterm-shim-{os.getuid()}")
+
+
+def _setup_tmux_shim_path() -> None:
+    """Create a shim directory with `tmux` symlinked to `aetherterm-tmux-shim`.
+
+    Prepends the directory to PATH so child processes (Claude --teammate-mode tmux)
+    use our shim instead of the real tmux binary.
+    """
+    _SHIM_DIR.mkdir(parents=True, exist_ok=True)
+    shim_bin = shutil.which("aetherterm-tmux-shim")
+    if not shim_bin:
+        log.warning("aetherterm-tmux-shim not found on PATH; tmux shim disabled")
+        return
+
+    tmux_link = _SHIM_DIR / "tmux"
+    if tmux_link.exists() or tmux_link.is_symlink():
+        tmux_link.unlink()
+    tmux_link.symlink_to(shim_bin)
+
+    # Prepend shim dir to PATH for this process and all children
+    current_path = os.environ.get("PATH", "")
+    shim_str = str(_SHIM_DIR)
+    if shim_str not in current_path.split(os.pathsep):
+        os.environ["PATH"] = f"{shim_str}{os.pathsep}{current_path}"
+    log.info("tmux-shim installed: %s -> %s", tmux_link, shim_bin)
 
 
 def create_asgi_app(config: Dict[str, Any] = None) -> Any:
@@ -34,10 +66,10 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
 
     tmux_registry = TmuxSessionRegistry()
 
-    # ControlBridge: direct DEALER/SUB to ControlServer
-    control_bridge = ControlBridge()
+    # NATSControlBridge: NATS pub/sub to ControlServer
+    control_bridge = NATSControlBridge()
 
-    # MessageRouter (no longer depends on ZMQ Broker)
+    # MessageRouter
     message_router = MessageRouter()
     task_list_manager = container.task_list_manager()
 
@@ -45,8 +77,6 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
     tmux_ws = TmuxWebSocketHandler(tmux_registry, message_router=message_router)
 
     # ControlCommand Handler
-    from .handlers import ControlCommandHandler, handle_agent_websocket
-
     control_handler = ControlCommandHandler(tmux_registry)
 
     # Store on app.state for access from routes and other components
@@ -74,17 +104,33 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
         # Forward control commands to ControlCommandHandler
         control_bridge.on_control_command(control_handler.handle_command)
 
-        # Forward PTY output to ControlBridge
+        # Forward PTY output to NATSControlBridge
         async def _forward_pty_output(session_id: str, pane_id: str, data: bytes) -> None:
             await control_bridge.forward_log(session_id, pane_id, data)
 
         tmux_registry.on_pane_output(_forward_pty_output)
 
         await control_bridge.start()
-        asyncio.create_task(_session_report_loop(control_bridge, tmux_registry))
+        app.state._bg_tasks = set()
+        t1 = asyncio.create_task(_session_report_loop(control_bridge, tmux_registry))
+        app.state._bg_tasks.add(t1)
+        t1.add_done_callback(app.state._bg_tasks.discard)
+
+        # Start WM socket server for tmux-shim CLI access
+        wm_socket = WmSocketServer(tmux_registry)
+        app.state.wm_socket = wm_socket
+        t2 = asyncio.create_task(wm_socket.start())
+        app.state._bg_tasks.add(t2)
+        t2.add_done_callback(app.state._bg_tasks.discard)
+
+        # Create shim directory so child processes find `tmux` → tmux-shim
+        _setup_tmux_shim_path()
 
     @app.on_event("shutdown")
     async def shutdown_all():
+        wm_socket = getattr(app.state, "wm_socket", None)
+        if wm_socket:
+            await wm_socket.stop()
         await tmux_registry.cleanup_all()
         await control_bridge.stop()
         log.info("Shutdown complete")
@@ -107,6 +153,17 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
     async def tmux_ws_wrapper(websocket: WebSocket, session_id: str):
         await tmux_ws.handle(websocket, session_id)
 
+    @app.websocket("/ws/events")
+    async def events_ws(websocket: WebSocket):
+        """EventHub: push state-change events to connected browsers."""
+        hub = get_event_hub()
+        await hub.connect(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            hub.disconnect(websocket)
+
     # --- Proxy & Static ---
 
     OPEN_WEBUI_URL = os.environ.get("OPEN_WEBUI_URL", "http://open-webui:8080")
@@ -128,8 +185,10 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
                 content=res.content, status_code=res.status_code, headers=dict(res.headers)
             )
 
-    # SPA: prefer development frontend/dist, fallback to installed web/static
-    dist_path = os.path.join(os.getcwd(), "frontend/dist")
+    # SPA: env override > frontend/dist > installed web/static
+    dist_path = os.environ.get("AETHERTERM_STATIC_DIR", "")
+    if not dist_path or not os.path.isdir(dist_path):
+        dist_path = os.path.join(os.getcwd(), "frontend/dist")
     if not os.path.isdir(dist_path):
         dist_path = os.path.join(os.path.dirname(__file__), "..", "web", "static")
     if os.path.isdir(dist_path):
@@ -138,7 +197,7 @@ def create_asgi_app(config: Dict[str, Any] = None) -> Any:
     return container.app()
 
 
-async def _session_report_loop(bridge: ControlBridge, registry: TmuxSessionRegistry) -> None:
+async def _session_report_loop(bridge: NATSControlBridge, registry: TmuxSessionRegistry) -> None:
     while True:
         try:
             await asyncio.sleep(10)
@@ -147,14 +206,35 @@ async def _session_report_loop(bridge: ControlBridge, registry: TmuxSessionRegis
             sessions = []
             for session in registry.sessions.values():
                 pane_ids = []
+                windows = []
                 for window in session.windows.values():
                     pane_ids.extend(window.panes.keys())
+                    pane_details = []
+                    for pane in window.panes.values():
+                        pane_details.append({
+                            "pane_id": pane.pane_id,
+                            "status": pane.status.value,
+                            "role": pane.role,
+                            "title": pane.title,
+                            "cols": pane.cols,
+                            "rows": pane.rows,
+                            "exit_code": pane.exit_code,
+                            "created_at": pane.created_at,
+                        })
+                    windows.append({
+                        "window_id": window.window_id,
+                        "name": window.name,
+                        "active_pane_id": window.active_pane_id,
+                        "panes": pane_details,
+                    })
                 sessions.append(
                     {
                         "session_id": session.session_id,
                         "name": session.name,
                         "pane_ids": pane_ids,
                         "window_count": len(session.windows),
+                        "windows": windows,
+                        "created_at": session.created_at,
                     }
                 )
             if sessions:

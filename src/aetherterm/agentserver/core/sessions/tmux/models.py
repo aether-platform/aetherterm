@@ -1,86 +1,23 @@
-"""Data models for tmux-style session/window/pane hierarchy."""
+"""Data models for tmux-style session/window/pane hierarchy.
+
+PaneStatus, LayoutType, and LayoutNode are re-exported from the shared core.
+TmuxPane, TmuxWindow, TmuxSession are tmux-specific.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 from uuid import uuid4
 
-
-class PaneStatus(str, Enum):
-    RUNNING = "running"
-    EXITED = "exited"
-    BLOCKED = "blocked"
-
-
-class LayoutType(str, Enum):
-    LEAF = "leaf"
-    HSPLIT = "hsplit"
-    VSPLIT = "vsplit"
-
-
-@dataclass
-class LayoutNode:
-    """Binary tree node for pane layout.
-
-    For leaf nodes: pane_id is set, children is empty.
-    For split nodes: two children with a ratio.
-    """
-
-    type: LayoutType = LayoutType.LEAF
-    pane_id: Optional[str] = None
-    children: List[LayoutNode] = field(default_factory=list)
-    ratio: float = 0.5
-
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {"type": self.type.value, "ratio": self.ratio}
-        if self.pane_id is not None:
-            d["pane_id"] = self.pane_id
-        if self.children:
-            d["children"] = [c.to_dict() for c in self.children]
-        return d
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> LayoutNode:
-        children = [cls.from_dict(c) for c in data.get("children", [])]
-        return cls(
-            type=LayoutType(data["type"]),
-            pane_id=data.get("pane_id"),
-            children=children,
-            ratio=data.get("ratio", 0.5),
-        )
-
-    def find_leaf(self, pane_id: str) -> Optional[LayoutNode]:
-        """Find a leaf node by pane_id."""
-        if self.type == LayoutType.LEAF and self.pane_id == pane_id:
-            return self
-        for child in self.children:
-            result = child.find_leaf(pane_id)
-            if result is not None:
-                return result
-        return None
-
-    def find_parent(self, pane_id: str) -> Optional[LayoutNode]:
-        """Find the parent node of a leaf with the given pane_id."""
-        for child in self.children:
-            if child.type == LayoutType.LEAF and child.pane_id == pane_id:
-                return self
-            result = child.find_parent(pane_id)
-            if result is not None:
-                return result
-        return None
-
-    def collect_pane_ids(self) -> List[str]:
-        """Collect all pane IDs in traversal order."""
-        if self.type == LayoutType.LEAF:
-            return [self.pane_id] if self.pane_id else []
-        ids: List[str] = []
-        for child in self.children:
-            ids.extend(child.collect_pane_ids())
-        return ids
+# Re-export shared models for backward compatibility
+from aetherterm.core.pane.models import (
+    LayoutNode,
+    LayoutType,
+    PaneStatus,
+)
 
 
 @dataclass
@@ -94,7 +31,6 @@ class TmuxPane:
     cols: int = 80
     rows: int = 24
     history: bytearray = field(default_factory=bytearray)
-    zmq_topic: str = ""
     title: str = ""
     exit_code: Optional[int] = None
     created_at: float = field(default_factory=time.time)
@@ -121,7 +57,6 @@ class TmuxPane:
             "title": self.title,
             "exit_code": self.exit_code,
             "created_at": self.created_at,
-            "zmq_topic": self.zmq_topic,
             "history_size": len(self.history),
             "role": self.role,
         }

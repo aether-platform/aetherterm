@@ -1,58 +1,61 @@
-import array
+"""PTY session management — delegates to shared core.
+
+Backward-compatible re-exports:
+    from aetherterm.agentserver.core.sessions.manager import PTYSession, PTYSessionManager
+
+The actual PTYSession implementation lives in aetherterm.core.pty.session.
+PTYSessionManager is a thin singleton wrapper around core.pty.PTYManager.
+"""
+
 import asyncio
 import contextlib
 import fcntl
 import logging
 import os
 import pty
-import signal
-import termios
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
+
+from aetherterm.core.pty.manager import PTYManager
+from aetherterm.core.pty.session import PTYSession
 
 log = logging.getLogger("aetherterm.pty_manager")
 
 
-class PTYSession:
-    """Represents an individual PTY session process."""
-
-    def __init__(self, session_id: str, master_fd: int, pid: int):
-        """Initialize a PTY session."""
-        self.id = session_id
-        self.master_fd = master_fd
-        self.pid = pid
-        self.history = bytearray()
-        self.clients: Set[asyncio.Queue] = set()
-
-    def write(self, data: bytes) -> None:
-        """Write data to the PTY."""
-        if self.master_fd != -1:
-            with contextlib.suppress(OSError):
-                os.write(self.master_fd, data)
-
-    def resize(self, cols: int, rows: int) -> None:
-        """Resize the PTY terminal."""
-        if self.master_fd != -1:
-            with contextlib.suppress(OSError):
-                buf = array.array("h", [rows, cols, 0, 0])
-                fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, buf)
-
-
 class PTYSessionManager:
-    """Manages multiple PTY sessions."""
+    """Singleton wrapper around the shared PTYManager.
+
+    Preserves the old synchronous create_session/remove_session interface.
+    For async code, use .manager directly.
+    """
 
     _instance = None
-    sessions: Dict[str, PTYSession] = {}
 
     def __new__(cls):
-        """Singleton pattern for PTYSessionManager."""
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            inst = super().__new__(cls)
+            inst._manager = PTYManager()
+            cls._instance = inst
         return cls._instance
 
+    @property
+    def manager(self) -> PTYManager:
+        """Access the underlying async PTYManager."""
+        return self._manager
+
+    @property
+    def sessions(self) -> Dict[str, PTYSession]:
+        return self._manager._sessions
+
     def create_session(self, session_id: str, cmd: Optional[List[str]] = None) -> PTYSession:
-        """Create or get a PTY session."""
-        if session_id in self.sessions:
-            return self.sessions[session_id]
+        """Create or get a PTY session (synchronous).
+
+        This performs the fork synchronously (like the original implementation)
+        and starts the async read loop as a background task. Safe to call from
+        within a running event loop.
+        """
+        existing = self._manager.get(session_id)
+        if existing is not None:
+            return existing
 
         if cmd is None:
             cmd = [os.environ.get("SHELL", "bash")]
@@ -83,42 +86,23 @@ class PTYSessionManager:
         fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
         session = PTYSession(session_id, master_fd, pid)
-        self.sessions[session_id] = session
+        self._manager._sessions[session_id] = session
 
-        asyncio.create_task(self._read_loop(session))
+        # Start the read loop from the shared manager
+        session._read_task = asyncio.create_task(
+            self._manager._read_loop(session),
+            name=f"pty-read-{session_id}",
+        )
 
         return session
 
-    async def _read_loop(self, session: PTYSession) -> None:
-        """Read output from the PTY."""
-        while session.id in self.sessions:
-            try:
-                await asyncio.sleep(0.01)  # Yield
-                data = os.read(session.master_fd, 65536)
-                if not data:
-                    break
-
-                session.history.extend(data)
-                if len(session.history) > 1024 * 1024:
-                    session.history = session.history[-(1024 * 512) :]
-
-                for q in list(session.clients):
-                    with contextlib.suppress(asyncio.QueueFull):
-                        q.put_nowait(data)
-            except (BlockingIOError, OSError):
-                await asyncio.sleep(0.01)
-            except Exception:
-                break
-
-        self.remove_session(session.id)
-
     def remove_session(self, session_id: str) -> None:
-        """Terminate and remove a PTY session."""
-        if session_id in self.sessions:
-            session = self.sessions.pop(session_id)
+        """Terminate and remove a PTY session (synchronous)."""
+        session = self._manager._sessions.pop(session_id, None)
+        if session is None:
+            return
+        session.close_fd()
+        if session.pid > 0:
             with contextlib.suppress(OSError):
-                os.close(session.master_fd)
-                os.kill(session.pid, signal.SIGTERM)
-            for q in session.clients:
-                with contextlib.suppress(asyncio.QueueFull):
-                    q.put_nowait(None)
+                os.kill(session.pid, os.SIGTERM)
+        session.signal_clients_eof()

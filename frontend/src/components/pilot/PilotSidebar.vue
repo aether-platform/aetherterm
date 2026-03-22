@@ -26,6 +26,7 @@
       <PilotChat v-if="uiMode.activeSidebarTab === 'chat'" />
       <SidebarAgentsTab v-else-if="uiMode.activeSidebarTab === 'agents'" />
       <SidebarTasksTab v-else-if="uiMode.activeSidebarTab === 'tasks'" />
+      <SidebarTimelineTab v-else-if="uiMode.activeSidebarTab === 'timeline'" />
     </div>
   </aside>
 </template>
@@ -35,6 +36,7 @@
   import PilotChat from './PilotChat.vue'
   import SidebarAgentsTab from './SidebarAgentsTab.vue'
   import SidebarTasksTab from './SidebarTasksTab.vue'
+  import SidebarTimelineTab from './SidebarTimelineTab.vue'
 
   const uiMode = useUIModeStore()
 
@@ -42,6 +44,7 @@
     { id: 'chat' as const, label: 'Chat' },
     { id: 'agents' as const, label: 'Agents' },
     { id: 'tasks' as const, label: 'Tasks' },
+    { id: 'timeline' as const, label: 'Timeline' },
   ]
 
   function startResize(e: MouseEvent) {

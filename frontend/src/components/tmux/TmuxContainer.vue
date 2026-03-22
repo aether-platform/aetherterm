@@ -61,17 +61,22 @@
 
     <!-- Agent notification toasts -->
     <AgentNotificationToast />
+
+    <!-- Discussion wizard -->
+    <DiscussionWizard v-if="discussionStore.isWizardOpen" />
   </div>
 </template>
 
 <script setup lang="ts">
   import { computed, onMounted, onUnmounted, ref } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { useDiscussionStore } from '../../stores/discussionStore'
   import { useTmuxCopyModeStore } from '../../stores/tmuxCopyModeStore'
   import { useTmuxKeybindingStore } from '../../stores/tmuxKeybindingStore'
   import { useTmuxStore } from '../../stores/tmuxStore'
   import { useUIModeStore } from '../../stores/uiModeStore'
   import AgentNotificationToast from './AgentNotificationToast.vue'
+  import DiscussionWizard from './DiscussionWizard.vue'
   import TmuxCommandLine from './TmuxCommandLine.vue'
   import TmuxConfirmDialog from './TmuxConfirmDialog.vue'
   import TmuxCopyMode from './TmuxCopyMode.vue'
@@ -84,6 +89,7 @@
   import TmuxStatusBar from './TmuxStatusBar.vue'
 
   const tmuxStore = useTmuxStore()
+  const discussionStore = useDiscussionStore()
   const keybindingStore = useTmuxKeybindingStore()
   const copyModeStore = useTmuxCopyModeStore()
   const uiModeStore = useUIModeStore()

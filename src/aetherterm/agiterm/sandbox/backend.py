@@ -66,11 +66,31 @@ def _check_cri() -> None:
         )
 
 
+SANDBOX_BACKEND = os.environ.get("SANDBOX_BACKEND", "auto")
+
+
 def create_backend() -> SandboxBackend:
-    """Create the CRI sandbox backend. Raises RuntimeError if unavailable."""
-    _check_cri()
+    """Create a sandbox backend based on SANDBOX_BACKEND env var.
 
-    from aetherterm.agiterm.sandbox.cri import CriBackend
+    Values: "nsjail", "cri", "auto" (default).
+    Auto: tries nsjail first, then CRI, then raises.
+    """
+    backend = SANDBOX_BACKEND
 
-    log.info("CRI sandbox backend initialized at %s", CRI_SOCKET)
-    return CriBackend()
+    if backend == "nsjail" or (backend == "auto" and shutil.which("nsjail")):
+        from aetherterm.agiterm.sandbox.nsjail import NsjailBackend
+
+        log.info("nsjail sandbox backend initialized")
+        return NsjailBackend()
+
+    if backend == "cri" or backend == "auto":
+        _check_cri()
+        from aetherterm.agiterm.sandbox.cri import CriBackend
+
+        log.info("CRI sandbox backend initialized at %s", CRI_SOCKET)
+        return CriBackend()
+
+    raise RuntimeError(
+        f"Unknown sandbox backend: {backend!r}. "
+        "Supported: nsjail, cri, auto"
+    )
