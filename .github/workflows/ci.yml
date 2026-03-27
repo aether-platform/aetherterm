@@ -139,7 +139,7 @@ jobs:
           pytest -v || echo "No tests found"
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         if: false  # Disable until tests are implemented
         with:
           file: ./coverage.xml
