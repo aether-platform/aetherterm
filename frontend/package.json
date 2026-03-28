@@ -33,7 +33,7 @@
     "@vue/tsconfig": "^0.7.0",
     "buffer": "^6.0.3",
     "npm-run-all2": "^7.0.2",
-    "prettier": "3.5.3",
+    "prettier": "3.6.2",
     "sass-embedded": "^1.89.2",
     "stream-browserify": "^3.0.0",
     "typescript": "~5.8.0",
